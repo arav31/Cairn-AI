@@ -19,6 +19,14 @@ Current focus: a Smithery-style marketplace for agent-ready endpoints, prepaid C
 
 This repo is intentionally dependency-light. It uses Node's built-in HTTP server and test runner.
 
+Create your local environment file:
+
+```bash
+cp .env.example .env
+```
+
+For a local stub-mode demo, you can leave the Stripe values blank.
+
 ```bash
 npm start
 ```
@@ -30,7 +38,7 @@ http://localhost:3000
 http://localhost:3000/pricing
 ```
 
-If port `3000` is already taken:
+If port `3000` is already taken, either edit `PORT` in `.env` or run:
 
 ```bash
 PORT=3005 npm start
@@ -253,6 +261,8 @@ This is currently an upload stub for the teammate-owned recorder/compiler toolin
 
 ## Stripe Configuration
 
+The app automatically loads `.env` from the repo root when `npm start` runs. Real `.env` files are ignored by Git; `.env.example` is the committed template.
+
 Set these for real Stripe payments:
 
 ```bash
@@ -287,6 +297,44 @@ If no Stripe secret key is present, Cairn runs in stub mode:
 - API checkout returns a test authorization.
 - Token checkout grants a test token pack.
 - Usage billing returns a stub response instead of sending a Stripe meter event.
+
+## Environment Variables
+
+Current app variables:
+
+| Name | Required | Used for |
+| --- | --- | --- |
+| `PORT` | no | Local HTTP port. Defaults to `3000`. |
+| `HOST` | no | Bind host. Defaults to `127.0.0.1`; use `0.0.0.0` in containers. |
+| `CAIRN_PUBLIC_URL` | production | Public app URL used for Stripe Checkout return URLs. |
+| `STRIPE_SECRET_KEY` | production payments | Creates Stripe Checkout Sessions and meter events. Blank means stub mode. |
+| `STRIPE_WEBHOOK_SECRET` | production payments | Webhook signature secret. The current webhook route is still a stub. |
+| `STRIPE_PRICE_INSURANCE_COMPARE` | optional | Prebuilt Stripe Price for the insurance API. |
+| `STRIPE_PRICE_PROPERTY_SEARCH` | optional | Prebuilt Stripe Price for the property API. |
+| `STRIPE_METER_EVENT_NAME` | optional | Shared Stripe meter event name for usage billing. |
+| `STRIPE_PRICE_TOKENS_STARTER` | optional | Prebuilt Stripe Price for the Starter token pack. |
+| `STRIPE_PRICE_TOKENS_BUILDER` | optional | Prebuilt Stripe Price for the Builder token pack. |
+| `STRIPE_PRICE_TOKENS_TEAM` | optional | Prebuilt Stripe Price for the Team token pack. |
+
+Reserved production variables in `.env.example`:
+
+| Name | Future use |
+| --- | --- |
+| `AWS_REGION` | AWS SDK region. |
+| `DATABASE_URL` | RDS Postgres connection string. |
+| `S3_RECORDINGS_BUCKET` | Raw workflow recording artifacts. |
+| `S3_TRACES_BUCKET` | Browser/proxy traces. |
+| `S3_SCREENSHOTS_BUCKET` | Screenshots and visual artifacts. |
+| `KMS_KEY_ARN` | KMS key for encrypted artifacts/secrets. |
+| `SQS_RECORDING_QUEUE_URL` | Recording job queue. |
+| `SQS_SYNTHESIS_QUEUE_URL` | Compiler job queue. |
+| `SQS_VERIFICATION_QUEUE_URL` | Verification job queue. |
+| `SQS_INVOCATION_QUEUE_URL` | Runtime invocation queue. |
+| `SQS_REPAIR_QUEUE_URL` | Drift repair queue. |
+| `EVENTBRIDGE_BUS_NAME` | Run/listing/repair event bus. |
+| `SECRETS_PREFIX` | Prefix for AWS Secrets Manager paths. |
+| `OPENAI_API_KEY` | Computer-use or repair assistant integration. |
+| `BROWSER_USE_API_KEY` | Browser Use repair adapter integration. |
 
 ## Project Map
 

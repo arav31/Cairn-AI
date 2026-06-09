@@ -1,3 +1,6 @@
+const { loadEnv } = require("./cairn/env");
+loadEnv();
+
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
