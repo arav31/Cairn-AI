@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cairn Pricing</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="marketplace-shell">
+    <header class="topbar">
+      <a class="brand" href="/">
+        <span class="brand-mark">C</span>
+        <span>Cairn</span>
+      </a>
+      <nav class="topnav" aria-label="Marketplace sections">
+        <a href="/">Find APIs</a>
+        <a class="active" href="/pricing">Pricing</a>
+        <a href="/#publish">Add your task</a>
+        <a href="/.well-known/cairn.json">Discovery</a>
+        <a href="/openapi.json">OpenAPI</a>
+      </nav>
+    </header>
+
+    <main class="pricing-page">
+      <section class="pricing-hero">
+        <div>
+          <p class="eyebrow">Simple pricing</p>
+          <h1>Pay a few cents, or buy tokens once.</h1>
+          <p class="hero-text">Use Cairn when an AI needs to finish a real browser workflow. Agents can pay per call, or teams can add tokens to one wallet and spend them across every API in the marketplace.</p>
+        </div>
+        <aside class="pricing-summary" aria-label="Pricing summary">
+          <span>Most calls today</span>
+          <strong>1 token</strong>
+          <p>Tokens work across every marketplace API. The current demo wallet starts with 50 test tokens.</p>
+          <a class="button-link" href="/#catalog">Browse APIs</a>
+        </aside>
+      </section>
+
+      <section class="pricing-band" aria-labelledby="token-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Prepaid wallet</p>
+            <h2 id="token-heading">Token packs</h2>
+          </div>
+          <p class="pricing-note">Best for agents, teams, and repeated tasks.</p>
+        </div>
+        <div id="pricing-token-grid" class="pricing-grid"></div>
+      </section>
+
+      <section class="pricing-band" aria-labelledby="api-heading">
+        <div class="section-heading">
+          <div>
+            <p class="eyebrow">Per call</p>
+            <h2 id="api-heading">Marketplace API prices</h2>
+          </div>
+          <p class="pricing-note">Good for one-off runs before buying tokens.</p>
+        </div>
+        <div id="pricing-api-table" class="pricing-table"></div>
+      </section>
+
+      <section class="pricing-how">
+        <article>
+          <span>1</span>
+          <h3>Connect an agent</h3>
+          <p>Point ChatGPT, an MCP client, or another AI tool at Cairn discovery or OpenAPI.</p>
+        </article>
+        <article>
+          <span>2</span>
+          <h3>Choose payment</h3>
+          <p>Use prepaid Cairn tokens, Stripe Checkout, or a Stripe Shared Payment Token from the agent.</p>
+        </article>
+        <article>
+          <span>3</span>
+          <h3>Run the task</h3>
+          <p>The API runs the verified workflow and returns clean JSON to the agent.</p>
+        </article>
+      </section>
+    </main>
+  </div>
+  <script src="/pricing.js"></script>
+</body>
+</html>

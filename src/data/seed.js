@@ -94,6 +94,81 @@ const civicRecords = [
   }
 ];
 
+const insuranceQuoteTemplates = [
+  {
+    provider: "Harbor Mutual",
+    coverage: "Full coverage",
+    baseMonthlyPremium: 128,
+    deductible: 500,
+    confidence: "high"
+  },
+  {
+    provider: "Northstar Insurance",
+    coverage: "Standard coverage",
+    baseMonthlyPremium: 111,
+    deductible: 750,
+    confidence: "high"
+  },
+  {
+    provider: "Pioneer Direct",
+    coverage: "Budget coverage",
+    baseMonthlyPremium: 94,
+    deductible: 1000,
+    confidence: "medium"
+  }
+];
+
+const properties = [
+  {
+    id: "PROP-9001",
+    address: "18 Willow Lane, Austin, TX",
+    city: "Austin",
+    state: "TX",
+    price: 685000,
+    bedrooms: 3,
+    bathrooms: 2,
+    propertyType: "House",
+    agent: "Demo Realty",
+    url: "https://example-property.test/PROP-9001"
+  },
+  {
+    id: "PROP-9002",
+    address: "44 Market Street, Austin, TX",
+    city: "Austin",
+    state: "TX",
+    price: 520000,
+    bedrooms: 2,
+    bathrooms: 2,
+    propertyType: "Condo",
+    agent: "Demo Realty",
+    url: "https://example-property.test/PROP-9002"
+  },
+  {
+    id: "PROP-9003",
+    address: "7 Palm Court, Miami, FL",
+    city: "Miami",
+    state: "FL",
+    price: 740000,
+    bedrooms: 3,
+    bathrooms: 2,
+    propertyType: "Townhouse",
+    agent: "Coastal Demo Homes",
+    url: "https://example-property.test/PROP-9003"
+  },
+  {
+    id: "PROP-9004",
+    address: "201 Pine Avenue, Denver, CO",
+    city: "Denver",
+    state: "CO",
+    price: 610000,
+    bedrooms: 4,
+    bathrooms: 3,
+    propertyType: "House",
+    agent: "Mountain Demo Realty",
+    url: "https://example-property.test/PROP-9004"
+  }
+];
+
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -121,11 +196,66 @@ function getCivicRecord(id) {
   return civicRecords.find((record) => record.record_id === id);
 }
 
+function compareInsuranceQuotes(input) {
+  const age = Number(input.driverAge || input.age || 35);
+  const vehicleYear = Number(input.vehicleYear || 2021);
+  const zipCode = String(input.zipCode || "78701");
+  const ageFactor = age < 25 ? 1.22 : age > 60 ? 0.94 : 1;
+  const yearFactor = vehicleYear < 2018 ? 0.91 : vehicleYear > 2023 ? 1.08 : 1;
+  const zipFactor = zipCode.startsWith("9") ? 1.12 : zipCode.startsWith("3") ? 1.06 : 1;
+  return {
+    coverageType: input.coverageType || "auto",
+    zipCode,
+    quotes: insuranceQuoteTemplates.map((quote, index) => ({
+      provider: quote.provider,
+      coverage: quote.coverage,
+      monthlyPremium: Math.round(quote.baseMonthlyPremium * ageFactor * yearFactor * zipFactor),
+      deductible: quote.deductible,
+      rank: index + 1,
+      confidence: quote.confidence,
+      source: "Recorded workflow demo"
+    })),
+    notes: "Synthetic quote results for the Cairn marketplace demo."
+  };
+}
+
+function searchProperties(input) {
+  const location = normalize(input.location || "Austin");
+  const maxPrice = Number(input.maxPrice || 700000);
+  const minBedrooms = Number(input.bedrooms || input.minBedrooms || 2);
+  const matches = properties
+    .filter((property) => (
+      property.price <= maxPrice &&
+      property.bedrooms >= minBedrooms &&
+      (
+        normalize(property.city).includes(location) ||
+        normalize(property.state).includes(location) ||
+        normalize(property.address).includes(location)
+      )
+    ))
+    .map((property, index) => ({
+      ...property,
+      matchScore: Math.max(94 - index * 6, 72),
+      source: "Recorded workflow demo"
+    }));
+  return {
+    location: input.location || "Austin",
+    maxPrice,
+    bedrooms: minBedrooms,
+    results: matches,
+    notes: "Synthetic property results for the Cairn marketplace demo."
+  };
+}
+
 module.exports = {
   customers,
   civicRecords,
+  insuranceQuoteTemplates,
+  properties,
   searchCustomers,
   searchCivicRecords,
+  compareInsuranceQuotes,
+  searchProperties,
   getCustomer,
   getCivicRecord
 };

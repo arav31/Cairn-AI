@@ -15,6 +15,8 @@ function createState() {
     verificationRecords: {},
     repairJobs: {},
     invocationLogs: [],
+    tokenWallets: {},
+    tokenLedger: [],
     currentOperationId: null,
     targetState: {
       civicDetailPath: "/civic/detail"
