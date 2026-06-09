@@ -41,7 +41,7 @@ This project bridges the two:
 - Windows, macOS, or Linux with Node.js 20 or newer.
 - Google Chrome or Chromium installed.
 - Network access to the target websites.
-- Optional: `OPENAI_API_KEY` for contextual LLM analysis during learning.
+- Optional: `OPENAI_API_KEY` or `NVIDIA_API_KEY` for contextual LLM analysis during learning.
 
 No npm dependencies are currently required beyond Node built-ins.
 
@@ -54,7 +54,7 @@ The project works without an API key. In that mode it uses deterministic evidenc
 - final URL query parameters
 - recorded input/change/click events
 
-For better skill learning, set `OPENAI_API_KEY`. The learner will then call the OpenAI Responses API with Structured Outputs and ask the model to behave like an endpoint engineer reviewing the browser recording.
+For better skill learning, configure an LLM provider. The learner can use either OpenAI Responses with Structured Outputs or NVIDIA's OpenAI-compatible Chat Completions API with Nemotron JSON mode. In both cases, the model behaves like an endpoint engineer reviewing the browser recording.
 
 The GPT pass receives a compact, redacted evidence packet from the recording:
 
@@ -87,11 +87,26 @@ notepad .env
 node src/cli.js menu
 ```
 
-Fill `.env` like this:
+For OpenAI, fill `.env` like this:
 
 ```env
+SKILL_BUILDER_LLM_PROVIDER=openai
 OPENAI_API_KEY=sk-...
 OPENAI_MODEL=gpt-5.4-mini
+```
+
+For NVIDIA Nemotron, fill `.env` like this:
+
+```env
+SKILL_BUILDER_LLM_PROVIDER=nvidia
+NVIDIA_API_KEY=nvapi-...
+NVIDIA_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+NVIDIA_ENABLE_THINKING=1
+NVIDIA_REASONING_BUDGET=16384
+NVIDIA_MAX_TOKENS=16384
+NVIDIA_TEMPERATURE=1
+NVIDIA_TOP_P=0.95
 ```
 
 Real terminal environment variables still win over `.env` values when both are set. The real `.env` file is ignored by git; only `.env.example` is committed.
@@ -100,14 +115,23 @@ Useful environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | unset | Enables contextual LLM analysis when set |
-| `OPENAI_MODEL` | `gpt-5.4-mini` | Model used for recording analysis |
+| `SKILL_BUILDER_LLM_PROVIDER` | auto | `openai` or `nvidia`; auto uses NVIDIA when `NVIDIA_API_KEY` is set, otherwise OpenAI |
+| `OPENAI_API_KEY` | unset | Enables OpenAI Responses analysis when using the OpenAI provider |
+| `OPENAI_MODEL` | `gpt-5.4-mini` | OpenAI model used for recording analysis |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for OpenAI-compatible endpoints |
+| `NVIDIA_API_KEY` | unset | Enables NVIDIA Nemotron analysis when using the NVIDIA provider |
+| `NVIDIA_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` | NVIDIA model used for recording analysis |
+| `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NVIDIA OpenAI-compatible API base URL |
+| `NVIDIA_TEMPERATURE` | `1` | NVIDIA chat completion temperature |
+| `NVIDIA_TOP_P` | `0.95` | NVIDIA chat completion top-p |
+| `NVIDIA_MAX_TOKENS` | `16384` | NVIDIA maximum output tokens |
+| `NVIDIA_ENABLE_THINKING` | `1` | Sends Nemotron thinking controls unless set to `0` or `off` |
+| `NVIDIA_REASONING_BUDGET` | `16384` | Reasoning budget sent to NVIDIA when thinking is enabled |
 | `SKILL_BUILDER_LLM` | unset | Set to `off` or `0` to force-disable LLM analysis |
 | `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if GPT endpoint engineering fails |
 | `SKILL_BUILDER_LLM_TIMEOUT_MS` | `30000` | LLM analysis timeout |
 
-The OpenAI request intentionally does not send `temperature`. Some GPT models reject that parameter on the Responses API, so the learner lets the selected model use its default sampling behavior.
+The OpenAI Responses request intentionally does not send `temperature`. Some GPT models reject that parameter on the Responses API, so the learner lets the selected model use its default sampling behavior. The NVIDIA provider uses Chat Completions and does send `temperature`, `top_p`, `max_tokens`, and optional Nemotron thinking controls.
 
 The LLM request uses `store: false` and sends a compact evidence packet, not the full raw recording. The packet includes redacted page text, field metadata, selected options, click/input summaries, ranked request candidates, and JSON request shapes. Raw recordings can still contain sensitive data and should remain local.
 
@@ -330,9 +354,9 @@ The CLI no longer asks the user to pick a random candidate during the normal men
 
 ## How GPT Endpoint Engineering Works
 
-The optional GPT layer lives in `src/llm-analyzer.js`.
+The optional GPT/Nemotron layer lives in `src/llm-analyzer.js`.
 
-It does not drive the browser and does not execute requests. Browser recording is still handled by Chrome/CDP. GPT interprets the recording evidence and returns strict structured JSON. The deterministic generator then compiles that JSON into the actual skill.
+It does not drive the browser and does not execute requests. Browser recording is still handled by Chrome/CDP. The model interprets the recording evidence and returns strict structured JSON. The deterministic generator then compiles that JSON into the actual skill.
 
 The evidence packet includes:
 
@@ -346,6 +370,11 @@ The evidence packet includes:
 - request body shapes with keys and value types instead of full raw values
 - short response body previews for top candidates, when available
 - safe header names, excluding cookies/authorization/token-like headers
+
+The provider paths are:
+
+- OpenAI: `POST /responses` with `text.format.type=json_schema`
+- NVIDIA: `POST /chat/completions` with `response_format.type=json_object`
 
 The model returns:
 

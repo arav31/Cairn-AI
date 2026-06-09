@@ -295,7 +295,8 @@ async function analyzeRecording(args) {
   const status = llmAnalysisStatus();
   if (!status.enabled) {
     console.log(`LLM analysis is not enabled: ${status.reason}.`);
-    console.log("Set OPENAI_API_KEY to enable contextual recording analysis.");
+    const keyName = status.provider === "nvidia" ? "NVIDIA_API_KEY" : "OPENAI_API_KEY";
+    console.log(`Set ${keyName} to enable contextual recording analysis.`);
     return;
   }
   const analysis = await analyzeRecordingFile(file);
@@ -508,7 +509,7 @@ function printLlmStatus() {
   const status = llmAnalysisStatus();
   const enabledText = status.enabled ? "enabled" : "disabled";
   const envText = envFile.loaded ? `.env loaded` : ".env not found";
-  console.log(`Contextual LLM analysis: ${enabledText} (${status.reason}; model=${status.model}; ${envText}).`);
+  console.log(`Contextual LLM analysis: ${enabledText} (${status.reason}; provider=${status.provider}; model=${status.model}; ${envText}).`);
 }
 
 async function printDraftLearningSummary(file) {

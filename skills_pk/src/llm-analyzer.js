@@ -1,5 +1,7 @@
 const DEFAULT_MODEL = "gpt-5.4-mini";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
+const DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 
 const ANALYSIS_SCHEMA = {
   type: "object",
@@ -200,24 +202,30 @@ const ANALYSIS_SCHEMA = {
 };
 
 export function llmAnalysisStatus(env = process.env) {
+  const provider = resolveLlmProvider(env);
+  const model = modelForProvider(provider, env);
   if (env.SKILL_BUILDER_LLM === "off" || env.SKILL_BUILDER_LLM === "0") {
     return {
       enabled: false,
       reason: "disabled by SKILL_BUILDER_LLM",
-      model: env.OPENAI_MODEL || DEFAULT_MODEL,
+      provider,
+      model,
     };
   }
-  if (!env.OPENAI_API_KEY) {
+  const apiKeyName = apiKeyNameForProvider(provider);
+  if (!env[apiKeyName]) {
     return {
       enabled: false,
-      reason: "OPENAI_API_KEY is not set",
-      model: env.OPENAI_MODEL || DEFAULT_MODEL,
+      reason: `${apiKeyName} is not set`,
+      provider,
+      model,
     };
   }
   return {
     enabled: true,
-    reason: "OPENAI_API_KEY is set",
-    model: env.OPENAI_MODEL || DEFAULT_MODEL,
+    reason: `${apiKeyName} is set`,
+    provider,
+    model,
   };
 }
 
@@ -227,16 +235,30 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
   if (!status.enabled) return null;
 
   const evidence = buildRecordingEvidence(recording, candidates);
-  const model = options.model || env.OPENAI_MODEL || DEFAULT_MODEL;
-  const response = await callOpenAiStructured({
-    apiKey: env.OPENAI_API_KEY,
-    baseUrl: env.OPENAI_BASE_URL || DEFAULT_BASE_URL,
-    model,
-    evidence,
-    timeoutMs: Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || 30000),
-  });
+  const provider = status.provider;
+  const timeoutMs = Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || 30000);
+  const response = provider === "nvidia"
+    ? await callNvidiaChatJson({
+        apiKey: env.NVIDIA_API_KEY,
+        baseUrl: env.NVIDIA_BASE_URL || env.NVIDIA_API_BASE_URL || DEFAULT_NVIDIA_BASE_URL,
+        model: options.model || env.NVIDIA_MODEL || DEFAULT_NVIDIA_MODEL,
+        evidence,
+        env,
+        timeoutMs,
+      })
+    : await callOpenAiStructured({
+        apiKey: env.OPENAI_API_KEY,
+        baseUrl: env.OPENAI_BASE_URL || DEFAULT_BASE_URL,
+        model: options.model || env.OPENAI_MODEL || DEFAULT_MODEL,
+        evidence,
+        timeoutMs,
+      });
 
-  return normalizeAnalysis(response, evidence);
+  return {
+    ...normalizeAnalysis(response, evidence),
+    analyzer: provider === "nvidia" ? "nvidia-chat-completions-json-mode" : "openai-responses-structured-output",
+    provider,
+  };
 }
 
 export function buildRecordingEvidence(recording, candidates = []) {
@@ -261,7 +283,8 @@ export function applyLlmAnalysisToSkill(skill, analysis) {
   improved.description = enhancedDescription(improved.description, analysis);
   improved.learning = {
     ...(improved.learning || {}),
-    analyzer: "openai-responses-structured-output",
+    analyzer: analysis.analyzer || "openai-responses-structured-output",
+    provider: analysis.provider || "openai",
     summary: cleanText(analysis.summary),
     inferredGoal: cleanText(analysis.goal),
     confidence: clampConfidence(analysis.confidence),
@@ -408,19 +431,7 @@ async function callOpenAiStructured({ apiKey, baseUrl, model, evidence, timeoutM
       model,
       store: false,
       max_output_tokens: 3200,
-      instructions: [
-        "You are an endpoint reverse-engineering assistant for one recorded website workflow and return JSON only.",
-        "Use only the evidence supplied. Do not invent endpoints, selectors, fields, buttons, prices, or outputs.",
-        "Infer the website's purpose from page text, visible fields, clicks, final URL, candidate requests, request payload shapes, and response previews.",
-        "Identify which captured request actually completes the user goal, which request fields are user-controlled, which are constants, and which are volatile session/generated fields.",
-        "For payload paths, use JSONPath-like strings such as $.tripType, $.travellers[0].age, or query.region.",
-        "Prefer direct_api or query_api only when a candidate request clearly represents the final user goal.",
-        "Use browser_result_url when the final URL query appears to carry the result state.",
-        "Use browser_replay when the workflow depends on visible UI interactions and no reusable endpoint is clear.",
-        "Write input questions as a user would see them on the website. Avoid raw JSON paths or UUIDs.",
-        "Never recommend bypassing CAPTCHA, login, payment, access control, bot protection, or website security.",
-        "Do not include private user-entered values in your answer.",
-      ].join(" "),
+      instructions: analyzerInstructions(),
       input: [
         {
           role: "user",
@@ -462,6 +473,76 @@ async function callOpenAiStructured({ apiKey, baseUrl, model, evidence, timeoutM
   }
 }
 
+async function callNvidiaChatJson({ apiKey, baseUrl, model, evidence, env, timeoutMs }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const body = {
+      model,
+      messages: [
+        {
+          role: "system",
+          content: analyzerInstructions(),
+        },
+        {
+          role: "user",
+          content: [
+            "Analyze this recording evidence and return one JSON object only.",
+            "The JSON must match this schema shape. Use empty strings, empty arrays, false, or 0 when evidence is missing.",
+            JSON.stringify(ANALYSIS_SCHEMA),
+            "",
+            "Recording evidence:",
+            JSON.stringify(evidence),
+          ].join("\n"),
+        },
+      ],
+      response_format: { type: "json_object" },
+      temperature: numberFromEnv(env.NVIDIA_TEMPERATURE, 1),
+      top_p: numberFromEnv(env.NVIDIA_TOP_P, 0.95),
+      max_tokens: numberFromEnv(env.NVIDIA_MAX_TOKENS, 16384),
+    };
+
+    if (env.NVIDIA_ENABLE_THINKING !== "0" && env.NVIDIA_ENABLE_THINKING !== "off") {
+      body.chat_template_kwargs = { enable_thinking: true };
+      body.reasoning_budget = numberFromEnv(env.NVIDIA_REASONING_BUDGET, 16384);
+    }
+
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`NVIDIA analysis failed: ${response.status} ${response.statusText} ${text.slice(0, 500)}`);
+    }
+    return parseChatCompletionJson(JSON.parse(text));
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+function analyzerInstructions() {
+  return [
+    "You are an endpoint reverse-engineering assistant for one recorded website workflow and return JSON only.",
+    "Use only the evidence supplied. Do not invent endpoints, selectors, fields, buttons, prices, or outputs.",
+    "Infer the website's purpose from page text, visible fields, clicks, final URL, candidate requests, request payload shapes, and response previews.",
+    "Identify which captured request actually completes the user goal, which request fields are user-controlled, which are constants, and which are volatile session/generated fields.",
+    "For payload paths, use JSONPath-like strings such as $.tripType, $.travellers[0].age, query.region, or form.height.",
+    "Prefer direct_api or query_api only when a candidate request clearly represents the final user goal.",
+    "Use browser_result_url when the final URL query appears to carry the result state.",
+    "Use browser_replay when the workflow depends on visible UI interactions and no reusable endpoint is clear.",
+    "Write input questions as a user would see them on the website. Avoid raw JSON paths or UUIDs.",
+    "Never recommend bypassing CAPTCHA, login, payment, access control, bot protection, or website security.",
+    "Do not include private user-entered values in your answer.",
+  ].join(" ");
+}
+
 function parseOutputText(response) {
   const direct = response.output_text;
   if (typeof direct === "string" && direct.trim()) return JSON.parse(direct);
@@ -474,6 +555,25 @@ function parseOutputText(response) {
     }
   }
   throw new Error("OpenAI analysis response did not contain output_text JSON.");
+}
+
+function parseChatCompletionJson(response) {
+  const content = response.choices?.[0]?.message?.content;
+  if (typeof content !== "string" || !content.trim()) {
+    throw new Error("NVIDIA analysis response did not contain message content JSON.");
+  }
+  return JSON.parse(extractJsonObjectText(content));
+}
+
+function extractJsonObjectText(content) {
+  const trimmed = content.trim();
+  const fenced = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenced) return fenced[1].trim();
+
+  const start = trimmed.indexOf("{");
+  const end = trimmed.lastIndexOf("}");
+  if (start >= 0 && end > start) return trimmed.slice(start, end + 1);
+  return trimmed;
 }
 
 function normalizeAnalysis(analysis, evidence) {
@@ -695,6 +795,28 @@ function normalizeVolatileHandling(handling) {
 function normalizeOutputSource(source) {
   const allowed = new Set(["json", "text", "html", "browser", "unknown"]);
   return allowed.has(source) ? source : "unknown";
+}
+
+function resolveLlmProvider(env) {
+  const configured = String(env.SKILL_BUILDER_LLM_PROVIDER || "").trim().toLowerCase();
+  if (["nvidia", "nemotron"].includes(configured)) return "nvidia";
+  if (["openai", "responses"].includes(configured)) return "openai";
+  if (env.NVIDIA_API_KEY) return "nvidia";
+  return "openai";
+}
+
+function modelForProvider(provider, env) {
+  if (provider === "nvidia") return env.NVIDIA_MODEL || DEFAULT_NVIDIA_MODEL;
+  return env.OPENAI_MODEL || DEFAULT_MODEL;
+}
+
+function apiKeyNameForProvider(provider) {
+  return provider === "nvidia" ? "NVIDIA_API_KEY" : "OPENAI_API_KEY";
+}
+
+function numberFromEnv(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function valuePreview(value) {
