@@ -521,6 +521,45 @@ async function printDraftLearningSummary(file) {
   if (draft.learning.strategy?.kind) console.log(`- Strategy: ${draft.learning.strategy.kind}`);
   if (draft.learning.strategy?.rationale) console.log(`- Rationale: ${draft.learning.strategy.rationale}`);
   if (draft.learning.confidence !== undefined) console.log(`- Confidence: ${draft.learning.confidence}`);
+  const endpoint = draft.learning.endpointEngineering;
+  if (endpoint?.selectedEndpointUrl) {
+    console.log(`- Selected endpoint: ${endpoint.method || "GET"} ${endpoint.selectedEndpointUrl}`);
+  }
+  if (endpoint?.payloadType) {
+    console.log(`- Payload type: ${endpoint.payloadType}`);
+  }
+  if (endpoint?.endpointPurpose) {
+    console.log(`- Endpoint purpose: ${endpoint.endpointPurpose}`);
+  }
+  if (endpoint?.userInputMappings?.length) {
+    console.log("- Input mappings:");
+    endpoint.userInputMappings.slice(0, 8).forEach((mapping) => {
+      const targets = (mapping.mapsTo || []).join(", ");
+      console.log(`  - ${mapping.question || mapping.inputId} -> ${targets || "(not mapped)"}`);
+    });
+    if (endpoint.userInputMappings.length > 8) {
+      console.log(`  - ...${endpoint.userInputMappings.length - 8} more`);
+    }
+  }
+  if (endpoint?.volatileFields?.length) {
+    console.log("- Volatile fields:");
+    endpoint.volatileFields.slice(0, 8).forEach((field) => {
+      console.log(`  - ${field.path}: ${field.handling}`);
+    });
+    if (endpoint.volatileFields.length > 8) {
+      console.log(`  - ...${endpoint.volatileFields.length - 8} more`);
+    }
+  }
+  if (endpoint?.requiredPreflightSteps?.length) {
+    console.log("- Preflight needed:");
+    endpoint.requiredPreflightSteps.slice(0, 5).forEach((step) => {
+      console.log(`  - ${step.purpose || step.url || step.candidateId}`);
+    });
+  }
+  if (endpoint?.replayWarnings?.length) {
+    console.log("- Replay warnings:");
+    endpoint.replayWarnings.slice(0, 5).forEach((warning) => console.log(`  - ${warning}`));
+  }
 }
 
 function progress(step, label) {

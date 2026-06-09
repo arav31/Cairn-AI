@@ -4,7 +4,7 @@ const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const ANALYSIS_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "goal", "confidence", "strategy", "inputs", "actions", "outputs", "risks"],
+  required: ["summary", "goal", "confidence", "strategy", "endpointEngineering", "inputs", "actions", "outputs", "risks"],
   properties: {
     summary: { type: "string" },
     goal: { type: "string" },
@@ -21,6 +21,125 @@ const ANALYSIS_SCHEMA = {
         candidateId: { type: "string" },
         rationale: { type: "string" },
         finalUrlUseful: { type: "boolean" },
+      },
+    },
+    endpointEngineering: {
+      type: "object",
+      additionalProperties: false,
+      required: [
+        "selectedRequestId",
+        "selectedEndpointUrl",
+        "method",
+        "endpointPurpose",
+        "payloadType",
+        "userInputMappings",
+        "constantsToKeep",
+        "volatileFields",
+        "requiredPreflightSteps",
+        "outputExtraction",
+        "implementationNotes",
+        "replayWarnings",
+        "confidence",
+      ],
+      properties: {
+        selectedRequestId: { type: "string" },
+        selectedEndpointUrl: { type: "string" },
+        method: { type: "string" },
+        endpointPurpose: { type: "string" },
+        payloadType: {
+          type: "string",
+          enum: ["json", "query", "form", "multipart", "browser", "none", "unknown"],
+        },
+        userInputMappings: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["inputId", "question", "type", "mapsTo", "transform", "required", "evidence"],
+            properties: {
+              inputId: { type: "string" },
+              question: { type: "string" },
+              type: {
+                type: "string",
+                enum: ["string", "number", "email", "url", "choice", "multi-choice", "file", "json", "boolean"],
+              },
+              mapsTo: {
+                type: "array",
+                items: { type: "string" },
+              },
+              transform: { type: "string" },
+              required: { type: "boolean" },
+              evidence: { type: "string" },
+            },
+          },
+        },
+        constantsToKeep: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["path", "reason", "evidence"],
+            properties: {
+              path: { type: "string" },
+              reason: { type: "string" },
+              evidence: { type: "string" },
+            },
+          },
+        },
+        volatileFields: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["path", "handling", "reason", "evidence"],
+            properties: {
+              path: { type: "string" },
+              handling: {
+                type: "string",
+                enum: ["omit", "regenerate_uuid", "fetch_from_preflight", "keep_recorded", "ask_user", "unknown"],
+              },
+              reason: { type: "string" },
+              evidence: { type: "string" },
+            },
+          },
+        },
+        requiredPreflightSteps: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["purpose", "candidateId", "url", "reason"],
+            properties: {
+              purpose: { type: "string" },
+              candidateId: { type: "string" },
+              url: { type: "string" },
+              reason: { type: "string" },
+            },
+          },
+        },
+        outputExtraction: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["label", "source", "path", "evidence"],
+            properties: {
+              label: { type: "string" },
+              source: { type: "string", enum: ["json", "text", "html", "browser", "unknown"] },
+              path: { type: "string" },
+              evidence: { type: "string" },
+            },
+          },
+        },
+        implementationNotes: {
+          type: "array",
+          items: { type: "string" },
+        },
+        replayWarnings: {
+          type: "array",
+          items: { type: "string" },
+        },
+        confidence: { type: "number" },
       },
     },
     inputs: {
@@ -147,6 +266,7 @@ export function applyLlmAnalysisToSkill(skill, analysis) {
     inferredGoal: cleanText(analysis.goal),
     confidence: clampConfidence(analysis.confidence),
     strategy: analysis.strategy,
+    endpointEngineering: analysis.endpointEngineering,
     outputs: analysis.outputs,
     risks: analysis.risks,
   };
@@ -155,18 +275,15 @@ export function applyLlmAnalysisToSkill(skill, analysis) {
     improved.inputs = improved.inputs.map((input) => improveInput(input, analysis.inputs || []));
   }
 
-  if (Array.isArray(improved.outputs) && analysis.outputs?.length) {
-    improved.outputs = improved.outputs.map((output, index) => ({
-      ...output,
-      label: analysis.outputs[index]?.label || analysis.outputs[0]?.label || output.label,
-    }));
+  if (Array.isArray(improved.outputs)) {
+    improved.outputs = improveOutputs(improved, analysis);
   }
 
   return improved;
 }
 
 export function orderCandidatesByAnalysis(candidates, analysis) {
-  const candidateId = analysis?.strategy?.candidateId;
+  const candidateId = analysis?.strategy?.candidateId || analysis?.endpointEngineering?.selectedRequestId;
   if (!candidateId) return candidates;
   return [
     ...candidates.filter((candidate) => candidate.id === candidateId),
@@ -228,6 +345,7 @@ function summarizeCandidates(candidates) {
     mimeType: candidate.mimeType || "",
     hasPostData: Boolean(candidate.hasPostData),
     postDataPreview: redactSensitiveText(candidate.postDataPreview || "").slice(0, 300),
+    responseBodyPreview: redactSensitiveText(candidate.responseBodyPreview || "").slice(0, 500),
   }));
 }
 
@@ -240,10 +358,26 @@ function summarizeRequestShapes(requests, candidates) {
       id: request.id || "",
       method: request.method || "",
       url: request.url || "",
+      query: queryShape(request.url),
       postDataShape: postDataShape(request.postData),
+      postDataPreview: redactSensitiveText(request.postData || "").slice(0, 1200),
+      responseBodyShape: postDataShape(request.responseBodyPreview),
+      responseBodyPreview: redactSensitiveText(request.responseBodyPreview || "").slice(0, 1200),
       requestHeaderNames: Object.keys(request.requestHeaders || {}).filter(isSafeHeaderName).slice(0, 30),
       responseHeaderNames: Object.keys(request.responseHeaders || {}).filter(isSafeHeaderName).slice(0, 30),
     }));
+}
+
+function queryShape(url) {
+  try {
+    const parsed = new URL(url);
+    return [...parsed.searchParams.entries()].slice(0, 80).map(([key, value]) => ({
+      key,
+      value: valuePreview(value),
+    }));
+  } catch {
+    return [];
+  }
 }
 
 function postDataShape(postData) {
@@ -274,15 +408,18 @@ async function callOpenAiStructured({ apiKey, baseUrl, model, evidence, timeoutM
       model,
       store: false,
       temperature: 0.1,
-      max_output_tokens: 1800,
+      max_output_tokens: 3200,
       instructions: [
-        "You analyze one recorded website workflow and return JSON only.",
+        "You are an endpoint reverse-engineering assistant for one recorded website workflow and return JSON only.",
         "Use only the evidence supplied. Do not invent endpoints, selectors, fields, buttons, prices, or outputs.",
-        "Infer the website's purpose from page text, visible fields, clicks, final URL, and network request shapes.",
+        "Infer the website's purpose from page text, visible fields, clicks, final URL, candidate requests, request payload shapes, and response previews.",
+        "Identify which captured request actually completes the user goal, which request fields are user-controlled, which are constants, and which are volatile session/generated fields.",
+        "For payload paths, use JSONPath-like strings such as $.tripType, $.travellers[0].age, or query.region.",
         "Prefer direct_api or query_api only when a candidate request clearly represents the final user goal.",
         "Use browser_result_url when the final URL query appears to carry the result state.",
         "Use browser_replay when the workflow depends on visible UI interactions and no reusable endpoint is clear.",
         "Write input questions as a user would see them on the website. Avoid raw JSON paths or UUIDs.",
+        "Never recommend bypassing CAPTCHA, login, payment, access control, bot protection, or website security.",
         "Do not include private user-entered values in your answer.",
       ].join(" "),
       input: [
@@ -347,10 +484,11 @@ function normalizeAnalysis(analysis, evidence) {
     confidence: clampConfidence(analysis.confidence),
     strategy: {
       kind: analysis.strategy?.kind || "manual_review",
-      candidateId: analysis.strategy?.candidateId || "",
+      candidateId: analysis.strategy?.candidateId || analysis.endpointEngineering?.selectedRequestId || "",
       rationale: cleanText(analysis.strategy?.rationale || ""),
       finalUrlUseful: Boolean(analysis.strategy?.finalUrlUseful),
     },
+    endpointEngineering: normalizeEndpointEngineering(analysis.endpointEngineering || {}),
     inputs: Array.isArray(analysis.inputs) ? analysis.inputs.map(normalizeInputAnalysis) : [],
     actions: Array.isArray(analysis.actions) ? analysis.actions.map(normalizeActionAnalysis) : [],
     outputs: Array.isArray(analysis.outputs) ? analysis.outputs.map(normalizeOutputAnalysis) : [],
@@ -367,6 +505,71 @@ function normalizeInputAnalysis(input) {
     mapsTo: Array.isArray(input.mapsTo) ? input.mapsTo.map(String).filter(Boolean) : [],
     helpText: cleanText(input.helpText || ""),
     evidence: cleanText(input.evidence || ""),
+  };
+}
+
+function normalizeEndpointEngineering(plan) {
+  return {
+    selectedRequestId: String(plan.selectedRequestId || ""),
+    selectedEndpointUrl: String(plan.selectedEndpointUrl || ""),
+    method: String(plan.method || ""),
+    endpointPurpose: cleanText(plan.endpointPurpose || ""),
+    payloadType: normalizePayloadType(plan.payloadType),
+    userInputMappings: Array.isArray(plan.userInputMappings) ? plan.userInputMappings.map(normalizeInputMapping) : [],
+    constantsToKeep: Array.isArray(plan.constantsToKeep) ? plan.constantsToKeep.map(normalizeConstant) : [],
+    volatileFields: Array.isArray(plan.volatileFields) ? plan.volatileFields.map(normalizeVolatileField) : [],
+    requiredPreflightSteps: Array.isArray(plan.requiredPreflightSteps) ? plan.requiredPreflightSteps.map(normalizePreflightStep) : [],
+    outputExtraction: Array.isArray(plan.outputExtraction) ? plan.outputExtraction.map(normalizeOutputExtraction) : [],
+    implementationNotes: Array.isArray(plan.implementationNotes) ? plan.implementationNotes.map(cleanText).filter(Boolean) : [],
+    replayWarnings: Array.isArray(plan.replayWarnings) ? plan.replayWarnings.map(cleanText).filter(Boolean) : [],
+    confidence: clampConfidence(plan.confidence),
+  };
+}
+
+function normalizeInputMapping(mapping) {
+  return {
+    inputId: slugLike(mapping.inputId || mapping.question || "input"),
+    question: cleanText(mapping.question || mapping.inputId || "Input"),
+    type: normalizeInputType(mapping.type),
+    mapsTo: Array.isArray(mapping.mapsTo) ? mapping.mapsTo.map(String).filter(Boolean) : [],
+    transform: cleanText(mapping.transform || ""),
+    required: Boolean(mapping.required),
+    evidence: cleanText(mapping.evidence || ""),
+  };
+}
+
+function normalizeConstant(constant) {
+  return {
+    path: String(constant.path || ""),
+    reason: cleanText(constant.reason || ""),
+    evidence: cleanText(constant.evidence || ""),
+  };
+}
+
+function normalizeVolatileField(field) {
+  return {
+    path: String(field.path || ""),
+    handling: normalizeVolatileHandling(field.handling),
+    reason: cleanText(field.reason || ""),
+    evidence: cleanText(field.evidence || ""),
+  };
+}
+
+function normalizePreflightStep(step) {
+  return {
+    purpose: cleanText(step.purpose || ""),
+    candidateId: String(step.candidateId || ""),
+    url: String(step.url || ""),
+    reason: cleanText(step.reason || ""),
+  };
+}
+
+function normalizeOutputExtraction(output) {
+  return {
+    label: cleanText(output.label || "Result"),
+    source: normalizeOutputSource(output.source),
+    path: String(output.path || ""),
+    evidence: cleanText(output.evidence || ""),
   };
 }
 
@@ -399,6 +602,28 @@ function improveInput(input, analyzedInputs) {
   }
   if (typeof match.required === "boolean") improved.optional = !match.required;
   return improved;
+}
+
+function improveOutputs(skill, analysis) {
+  const existing = skill.outputs || [];
+  const engineered = analysis.endpointEngineering?.outputExtraction || [];
+  const usableExtractions = engineered.filter((output) => output.path && output.path !== "unknown");
+  if (usableExtractions.length) {
+    const defaultFrom = existing[0]?.from || skill.steps?.at(-1)?.id || "goal";
+    return usableExtractions.map((output, index) => ({
+      label: output.label || analysis.outputs?.[index]?.label || existing[index]?.label || "Result",
+      from: existing[index]?.from || defaultFrom,
+      path: output.path || existing[index]?.path || "$",
+    }));
+  }
+
+  if (analysis.outputs?.length) {
+    return existing.map((output, index) => ({
+      ...output,
+      label: analysis.outputs[index]?.label || analysis.outputs[0]?.label || output.label,
+    }));
+  }
+  return existing;
 }
 
 function bestInputMatch(input, analyzedInputs) {
@@ -435,6 +660,9 @@ function enhancedDescription(existing, analysis) {
   const parts = [cleanText(existing || "")].filter(Boolean);
   if (analysis.summary) parts.push(`LLM context: ${analysis.summary}`);
   if (analysis.strategy?.rationale) parts.push(`Strategy rationale: ${analysis.strategy.rationale}`);
+  if (analysis.endpointEngineering?.endpointPurpose) {
+    parts.push(`Endpoint purpose: ${analysis.endpointEngineering.endpointPurpose}`);
+  }
   return parts.join(" ");
 }
 
@@ -453,6 +681,21 @@ function canSafelyUseType(input, analyzedType) {
 function normalizeInputType(type) {
   const allowed = new Set(["string", "number", "email", "url", "choice", "multi-choice", "file", "json", "boolean"]);
   return allowed.has(type) ? type : "string";
+}
+
+function normalizePayloadType(type) {
+  const allowed = new Set(["json", "query", "form", "multipart", "browser", "none", "unknown"]);
+  return allowed.has(type) ? type : "unknown";
+}
+
+function normalizeVolatileHandling(handling) {
+  const allowed = new Set(["omit", "regenerate_uuid", "fetch_from_preflight", "keep_recorded", "ask_user", "unknown"]);
+  return allowed.has(handling) ? handling : "unknown";
+}
+
+function normalizeOutputSource(source) {
+  const allowed = new Set(["json", "text", "html", "browser", "unknown"]);
+  return allowed.has(source) ? source : "unknown";
 }
 
 function valuePreview(value) {

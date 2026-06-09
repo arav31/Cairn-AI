@@ -13,7 +13,7 @@ Given a website link, the CLI can:
 3. If no skill exists, open Chrome and record the user completing the workflow.
 4. Capture network requests, page fields, selected options, typed values, clicks, and final URL state.
 5. Rank useful endpoint candidates while ignoring static files, analytics, telemetry, fonts, CSS, images, and Cloudflare RUM noise.
-6. Optionally run an LLM contextual analysis pass over the recording evidence.
+6. Optionally run a GPT endpoint-engineering pass over the recording evidence.
 7. Generate a draft skill from the best available strategy.
 8. Promote the draft into `skills/*.json` for future runs.
 
@@ -45,7 +45,7 @@ This project bridges the two:
 
 No npm dependencies are currently required beyond Node built-ins.
 
-## Optional LLM Contextual Analysis
+## Optional GPT Endpoint Engineering
 
 The project works without an API key. In that mode it uses deterministic evidence:
 
@@ -54,14 +54,30 @@ The project works without an API key. In that mode it uses deterministic evidenc
 - final URL query parameters
 - recorded input/change/click events
 
-For better skill learning, set `OPENAI_API_KEY`. The learner will then call the OpenAI Responses API with Structured Outputs and ask the model to infer:
+For better skill learning, set `OPENAI_API_KEY`. The learner will then call the OpenAI Responses API with Structured Outputs and ask the model to behave like an endpoint engineer reviewing the browser recording.
+
+The GPT pass receives a compact, redacted evidence packet from the recording:
+
+- visible website text, labels, fields, options, typed interactions, and clicked buttons
+- ranked candidate requests from Chrome DevTools Protocol traffic
+- request methods, URLs, query parameters, request body shapes, and safe header names
+- short response body previews for top candidate requests when Chrome exposes them
+
+It then infers:
 
 - what the website workflow is trying to do
 - which fields are true user inputs
 - which button/action completes the workflow
 - which endpoint or replay strategy best matches the result
+- which payload or query paths map to each user-facing website question
+- which recorded values are constants that should stay fixed
+- which values are volatile, such as UUIDs or session-specific fields, and how to handle them
+- whether a CSRF/session/bootstrap preflight appears necessary
+- where the quote/result/output should be extracted from the response
 - what output the user is likely expecting
 - what risks require manual review
+
+This is the part that is meant to approximate the manual Codex workflow of watching browser traffic, narrowing the useful request, inspecting payloads/responses, and turning that into a reusable API call.
 
 The LLM pass is optional and gated by environment variables. The CLI auto-loads `skills_pk/.env` on startup.
 
@@ -88,7 +104,7 @@ Useful environment variables:
 | `OPENAI_MODEL` | `gpt-5.4-mini` | Model used for recording analysis |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for OpenAI-compatible endpoints |
 | `SKILL_BUILDER_LLM` | unset | Set to `off` or `0` to force-disable LLM analysis |
-| `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if LLM analysis fails |
+| `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if GPT endpoint engineering fails |
 | `SKILL_BUILDER_LLM_TIMEOUT_MS` | `30000` | LLM analysis timeout |
 
 The LLM request uses `store: false` and sends a compact evidence packet, not the full raw recording. The packet includes redacted page text, field metadata, selected options, click/input summaries, ranked request candidates, and JSON request shapes. Raw recordings can still contain sensitive data and should remain local.
@@ -152,12 +168,12 @@ After recording, the learner:
 
 - Filters out static and telemetry traffic.
 - Builds a compact evidence packet from page text, fields, options, clicks, final URL, and endpoint candidates.
-- Uses optional LLM contextual analysis when `OPENAI_API_KEY` is set.
+- Uses optional GPT endpoint engineering when `OPENAI_API_KEY` is set.
 - Looks for real form/search/quote endpoints.
 - Falls back to final URL query parameters when the site computes client-side.
 - Falls back to recorded browser replay when no endpoint exists.
 - Extracts visible labels/options from the website where possible.
-- Improves draft descriptions, strategy metadata, input questions, and output labels from contextual evidence.
+- Improves draft descriptions, strategy metadata, endpoint selection, payload mappings, input questions, volatile fields, and output labels from contextual evidence.
 - Generates a draft file under `skills/*.draft.json`.
 
 ### 4. Promote The Draft
@@ -310,11 +326,11 @@ Requests are filtered or penalized when they look like:
 
 The CLI no longer asks the user to pick a random candidate during the normal menu flow. It auto-drafts from the best usable strategy.
 
-## How LLM Analysis Works
+## How GPT Endpoint Engineering Works
 
-The optional LLM layer lives in `src/llm-analyzer.js`.
+The optional GPT layer lives in `src/llm-analyzer.js`.
 
-It does not drive the browser and does not execute requests. It only interprets the recording evidence and returns structured JSON. The deterministic generator still creates the actual skill.
+It does not drive the browser and does not execute requests. Browser recording is still handled by Chrome/CDP. GPT interprets the recording evidence and returns strict structured JSON. The deterministic generator then compiles that JSON into the actual skill.
 
 The evidence packet includes:
 
@@ -324,7 +340,9 @@ The evidence packet includes:
 - selected options and field values after redaction
 - recent input/change/click events
 - ranked endpoint candidates
+- query parameter previews
 - request body shapes with keys and value types instead of full raw values
+- short response body previews for top candidates, when available
 - safe header names, excluding cookies/authorization/token-like headers
 
 The model returns:
@@ -334,6 +352,7 @@ The model returns:
 - confidence
 - preferred strategy: `direct_api`, `query_api`, `browser_result_url`, `browser_replay`, or `manual_review`
 - preferred candidate request id when relevant
+- `endpointEngineering`, including selected endpoint, method, payload type, endpoint purpose, user input mappings, constants, volatile fields, preflight hints, output extraction, implementation notes, warnings, and confidence
 - cleaned website-like input questions
 - important actions/buttons
 - expected outputs
@@ -343,11 +362,22 @@ The generator uses that result to:
 
 - reorder candidate endpoints when the model identifies a better goal request
 - prefer result URL or browser replay when the model sees a client-side workflow
+- map JSON body fields and query parameters to website-style questions
+- regenerate UUID-like payload fields when the model marks them volatile
+- omit volatile fields when the model says they should not be replayed
+- keep recorded constants that are part of the product/workflow rather than user input
+- use output extraction paths from the model when they are available
 - rewrite bad questions like raw JSON paths into human website-style prompts
 - attach a `learning` metadata block to the draft skill
-- print a learning summary in the CLI
+- print a learning summary in the CLI, including selected endpoint, payload type, input mappings, volatile fields, preflight hints, and warnings
 
 If the LLM call fails and `SKILL_BUILDER_LLM_REQUIRED` is not set, the tool logs the failure and falls back to deterministic drafting.
+
+If you want new skills to require GPT assistance instead of falling back silently, add this to `.env`:
+
+```env
+SKILL_BUILDER_LLM_REQUIRED=1
+```
 
 ## How Draft Generation Works
 
@@ -391,9 +421,12 @@ At runtime, the template engine materializes the final URL.
 For JSON POST/PUT/PATCH endpoints, the generator:
 
 - Parses the recorded JSON body.
-- Flattens scalar fields.
-- Creates input prompts.
-- Replaces scalar values with template placeholders.
+- If GPT endpoint engineering is available, applies the model's payload mapping plan first.
+- Replaces only mapped user-controlled fields with template placeholders when possible.
+- Regenerates UUID-like volatile fields when the model marks them as generated values.
+- Omits volatile fields when the model says they should not be replayed.
+- Keeps unmapped constants from the recorded body for review.
+- Falls back to flattening scalar fields when GPT is unavailable or no mapping plan exists.
 
 This is the fallback for reusable API endpoints that do not have a custom provider parser.
 

@@ -171,7 +171,9 @@ export async function recordWorkflow({ url, name, goal, headless = false, waitFo
       ? Math.round((request.cdpFinishedAt - request.cdpStartedAt) * 1000)
       : undefined,
   }));
-  const candidates = rankCandidates(allRequests, goal);
+  let candidates = rankCandidates(allRequests, goal);
+  await attachCandidateResponseBodies(client, allRequests, candidates).catch(() => {});
+  candidates = rankCandidates(allRequests, goal);
   const recording = {
     url,
     name,
@@ -243,10 +245,23 @@ export function rankCandidates(requests, goal = "") {
         mimeType: request.mimeType,
         hasPostData: Boolean(request.postData),
         postDataPreview: request.postData?.slice(0, 500),
+        responseBodyPreview: request.responseBodyPreview?.slice(0, 1000),
       };
     })
     .sort((a, b) => b.score - a.score)
     .slice(0, 25);
+}
+
+async function attachCandidateResponseBodies(client, requests, candidates) {
+  const byId = new Map(requests.map((request) => [request.id, request]));
+  for (const candidate of candidates.slice(0, 12)) {
+    const request = byId.get(candidate.id);
+    if (!request || request.failed) continue;
+    if (!["XHR", "Fetch", "Document"].includes(request.resourceType)) continue;
+    const body = await client.send("Network.getResponseBody", { requestId: candidate.id }).catch(() => null);
+    if (!body || body.base64Encoded) continue;
+    request.responseBodyPreview = String(body.body || "").slice(0, 5000);
+  }
 }
 
 export async function inspectRecording(file) {
@@ -280,7 +295,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
     const request = recording.requests.find((item) => item.id === candidate.id);
     if (!request || !isDraftWorthyRequest(request)) continue;
 
-    const skill = await createSkillForRequest({ recording, request, recordingFile, name });
+    const skill = await createSkillForRequest({ recording, request, recordingFile, name, analysis });
     if (skill) {
       return writeDraftSkill(finalizeSkill(skill, { analysis, recordingFile }));
     }
@@ -352,25 +367,33 @@ function inferSkillStrategy(skill) {
   return "direct_api";
 }
 
-async function createSkillForRequest({ recording, request, recordingFile, name }) {
+async function createSkillForRequest({ recording, request, recordingFile, name, analysis }) {
   return (
     await maybeCreateTallySkill({ recording, request, recordingFile, name }) ||
-    await maybeCreateQuerySkill({ recording, request, recordingFile, name }) ||
-    await createGenericRequestSkill({ recording, request, recordingFile, name })
+    await maybeCreateQuerySkill({ recording, request, recordingFile, name, analysis }) ||
+    await createGenericRequestSkill({ recording, request, recordingFile, name, analysis })
   );
 }
 
-async function createGenericRequestSkill({ recording, request, recordingFile, name }) {
+async function createGenericRequestSkill({ recording, request, recordingFile, name, analysis }) {
   let body = null;
   let inputs = [];
+  let computed = {};
   if (request.postData) {
     try {
       body = JSON.parse(request.postData);
       const fields = await getPageFieldCatalog(recording);
-      inputs = flattenScalars(body)
-        .filter((row) => row.value !== "" && row.value !== null && row.value !== undefined)
-        .map((row) => toBodyInputSpec(row, fields));
-      body = templateScalars(body);
+      const engineered = buildEngineeredBodyTemplate(body, fields, analysis);
+      if (engineered) {
+        body = engineered.body;
+        inputs = engineered.inputs;
+        computed = engineered.computed;
+      } else {
+        inputs = flattenScalars(body)
+          .filter((row) => row.value !== "" && row.value !== null && row.value !== undefined)
+          .map((row) => toBodyInputSpec(row, fields));
+        body = templateScalars(body);
+      }
     } catch {
       body = request.postData;
     }
@@ -381,6 +404,7 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
     name: name || recording.name || "Draft skill",
     sourceUrl: recording.url,
     description: `Draft generated from ${recordingFile}. Review before using.`,
+    ...(Object.keys(computed).length ? { computed } : {}),
     inputs,
     steps: [
       {
@@ -581,6 +605,167 @@ function latestInputEvents(events) {
   return [...bySelector.values()];
 }
 
+function buildEngineeredBodyTemplate(body, fields, analysis) {
+  const plan = analysis?.endpointEngineering;
+  if (!plan || plan.payloadType !== "json") return null;
+  const mappings = [...(plan.userInputMappings || []), ...(analysis.inputs || [])].filter((mapping) => mapping.mapsTo?.length);
+  if (!mappings.length && !plan.volatileFields?.length) return null;
+
+  const rows = flattenScalars(body).filter((row) => row.value !== "" && row.value !== null && row.value !== undefined);
+  const template = structuredClone(body);
+  const inputs = [];
+  const computed = {};
+  const usedInputIds = new Set();
+  const usedComputedIds = new Set();
+  const inputIdByMapping = new Map();
+
+  for (const row of rows) {
+    const volatile = findPathPlan(row.path, plan.volatileFields || []);
+    if (volatile) {
+      if (volatile.handling === "omit") {
+        deletePathValue(template, row.path);
+        continue;
+      }
+      if (volatile.handling === "regenerate_uuid") {
+        const computedId = uniqueInputId(slugify(baseParamName(row.path).replace(/^\$/, "") || "uuid"), usedComputedIds);
+        computed[computedId] = { fn: "uuid" };
+        setPathValue(template, row.path, `{{${computedId}}}`);
+        continue;
+      }
+      if (volatile.handling === "ask_user") {
+        const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
+        inputs.push(input);
+        setPathValue(template, row.path, `{{${input.id}}}`);
+        continue;
+      }
+    }
+
+    const mapping = findPathPlan(row.path, mappings);
+    if (mapping) {
+      const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
+      let inputId = inputIdByMapping.get(mappingKey);
+      if (!inputId) {
+        const input = inputFromMappingOrRow(mapping, row, fields, usedInputIds);
+        inputs.push(input);
+        inputId = input.id;
+        inputIdByMapping.set(mappingKey, inputId);
+      }
+      setPathValue(template, row.path, `{{${inputId}}}`);
+    }
+  }
+
+  return { body: template, inputs, computed };
+}
+
+function inputFromMappingOrRow(mapping, row, fields, usedInputIds) {
+  const field = findFieldForMapping(fields, mapping, row);
+  const choices = cleanChoices(field?.options || []);
+  const inputId = uniqueInputId(slugify(mapping?.inputId || mapping?.id || mapping?.question || inputIdFromPath(row.path)), usedInputIds);
+  const spec = {
+    id: inputId,
+    question: questionForEngineeredInput(mapping, row, field),
+    type: mapping?.type && mapping.type !== "boolean"
+      ? mapping.type
+      : typeof row.value === "number"
+        ? "number"
+        : choices.length
+          ? "choice"
+          : "string",
+    optional: mapping?.required === false,
+  };
+  if (choices.length && ["choice", "multi-choice", "string"].includes(spec.type)) {
+    spec.type = spec.type === "multi-choice" ? "multi-choice" : "choice";
+    spec.choices = choices;
+  }
+  if (mapping?.transform) spec.description = `Transform: ${mapping.transform}`;
+  return spec;
+}
+
+function findFieldForMapping(fields, mapping, row) {
+  const names = [
+    mapping?.inputId,
+    mapping?.id,
+    ...(mapping?.mapsTo || []),
+    inputIdFromPath(row.path),
+    lastPathName(row.path),
+  ].filter(Boolean);
+  for (const name of names) {
+    const field = findFieldForParam(fields, name);
+    if (field) return field;
+  }
+  return null;
+}
+
+function questionForEngineeredInput(mapping, row, field) {
+  const question = cleanText(mapping?.question || "");
+  if (question && !/^\$\.|uuid|value for/i.test(question)) return question;
+  return questionForField(inputIdFromPath(row.path), field);
+}
+
+function findPathPlan(pathExpression, items) {
+  const normalized = normalizePlanPath(pathExpression);
+  return items.find((item) => {
+    const paths = item.mapsTo || [item.path];
+    return paths.some((path) => {
+      const candidate = normalizePlanPath(path);
+      return candidate && (candidate === normalized || normalized.endsWith(candidate) || candidate.endsWith(normalized));
+    });
+  });
+}
+
+function normalizePlanPath(pathExpression) {
+  return String(pathExpression || "")
+    .replace(/^body\./i, "$.")
+    .replace(/^json\./i, "$.")
+    .replace(/^payload\./i, "$.")
+    .replace(/^requestBody\./i, "$.")
+    .replace(/^query\./i, "$.")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "");
+}
+
+function setPathValue(target, pathExpression, value) {
+  const segments = pathSegments(pathExpression);
+  if (!segments.length) return;
+  let current = target;
+  for (const segment of segments.slice(0, -1)) {
+    if (current?.[segment] === undefined) return;
+    current = current[segment];
+  }
+  current[segments.at(-1)] = value;
+}
+
+function deletePathValue(target, pathExpression) {
+  const segments = pathSegments(pathExpression);
+  if (!segments.length) return;
+  let current = target;
+  for (const segment of segments.slice(0, -1)) {
+    if (current?.[segment] === undefined) return;
+    current = current[segment];
+  }
+  if (Array.isArray(current)) {
+    current.splice(Number(segments.at(-1)), 1);
+  } else {
+    delete current[segments.at(-1)];
+  }
+}
+
+function pathSegments(pathExpression) {
+  return String(pathExpression)
+    .replace(/^\$\./, "")
+    .replace(/^\$/, "")
+    .replace(/\[(\d+)\]/g, ".$1")
+    .split(".")
+    .filter(Boolean)
+    .map((segment) => (/^\d+$/.test(segment) ? Number(segment) : segment));
+}
+
+function lastPathName(pathExpression) {
+  const segments = pathSegments(pathExpression);
+  const last = segments.at(-1);
+  return last === undefined ? "" : String(last);
+}
+
 function toBodyInputSpec(row, fields) {
   const inputName = inputIdFromPath(row.path);
   const field = findFieldForParam(fields, inputName);
@@ -594,13 +779,42 @@ function toBodyInputSpec(row, fields) {
   return spec;
 }
 
-async function maybeCreateQuerySkill({ recording, request, recordingFile, name }) {
+async function maybeCreateQuerySkill({ recording, request, recordingFile, name, analysis }) {
   if (!["GET", "HEAD"].includes(request.method) || !request.url) return null;
 
   const url = safeUrl(request.url);
   if (![...url.searchParams.keys()].length) return null;
 
   const fields = await getPageFieldCatalog(recording);
+  const engineered = buildEngineeredQueryTemplate(url, fields, analysis);
+  if (engineered) {
+    return {
+      id: slugify(name || recording.name || "query-skill"),
+      name: name || recording.name || "Query skill",
+      sourceUrl: recording.url,
+      description: `Draft generated from ${recordingFile}. Query parameters were mapped using the LLM endpoint engineering plan and visible website fields where possible.`,
+      inputs: engineered.inputs,
+      steps: [
+        {
+          id: "goal",
+          request: {
+            method: request.method,
+            url: `${url.origin}${url.pathname}`,
+            headers: stripVolatileHeaders(keepReplayHeaders(request.requestHeaders || {}), recording.url),
+            query: engineered.query,
+          },
+        },
+      ],
+      outputs: [
+        {
+          label: "Goal response",
+          from: "goal",
+          path: "$",
+        },
+      ],
+    };
+  }
+
   const groupedParams = groupSearchParams(url.searchParams);
   const usedInputIds = new Set();
   const inputs = [];
@@ -647,6 +861,53 @@ async function maybeCreateQuerySkill({ recording, request, recordingFile, name }
       },
     ],
   };
+}
+
+function buildEngineeredQueryTemplate(url, fields, analysis) {
+  const plan = analysis?.endpointEngineering;
+  if (!plan || plan.payloadType !== "query") return null;
+  const mappings = [...(plan.userInputMappings || []), ...(analysis.inputs || [])].filter((mapping) => mapping.mapsTo?.length);
+  if (!mappings.length && !plan.volatileFields?.length) return null;
+
+  const groupedParams = groupSearchParams(url.searchParams);
+  const inputs = [];
+  const query = {};
+  const usedInputIds = new Set();
+  const inputIdByMapping = new Map();
+
+  for (const [paramName, values] of groupedParams) {
+    const row = {
+      path: `query.${paramName}`,
+      value: values.length > 1 ? values : values[0],
+    };
+
+    const volatile = findPathPlan(row.path, plan.volatileFields || []);
+    if (volatile?.handling === "omit") continue;
+    if (volatile?.handling === "ask_user") {
+      const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
+      inputs.push(input);
+      query[paramName] = { $value: `{{${input.id}}}` };
+      continue;
+    }
+
+    const mapping = findPathPlan(row.path, mappings);
+    if (mapping) {
+      const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
+      let inputId = inputIdByMapping.get(mappingKey);
+      if (!inputId) {
+        const input = inputFromMappingOrRow(mapping, row, fields, usedInputIds);
+        inputs.push(input);
+        inputId = input.id;
+        inputIdByMapping.set(mappingKey, inputId);
+      }
+      query[paramName] = { $value: `{{${inputId}}}` };
+      continue;
+    }
+
+    query[paramName] = values.length > 1 ? values : values[0];
+  }
+
+  return inputs.length ? { inputs, query } : null;
 }
 
 function stripVolatileHeaders(headers, sourceUrl) {
