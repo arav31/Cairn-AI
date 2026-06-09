@@ -623,5 +623,5 @@ function printHelp() {
 main().catch((error) => {
   console.error(error.message);
   if (error.response?.text) console.error(error.response.text.slice(0, 1000));
-  process.exit(1);
+  process.exitCode = 1;
 });

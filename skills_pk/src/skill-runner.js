@@ -96,7 +96,9 @@ async function fetchStepRequest(step, request, cookieJar) {
     headers: request.headers,
     body: ["GET", "HEAD"].includes(method.toUpperCase()) || request.body === undefined
       ? undefined
-      : JSON.stringify(request.body),
+      : typeof request.body === "string"
+        ? request.body
+        : JSON.stringify(request.body),
   });
   const text = await response.text();
   const ms = Math.round(performance.now() - started);
@@ -409,23 +411,46 @@ function normalizeHeaderKeys(headers) {
 }
 
 function materializeRequest(request) {
-  if (!request.query) return request;
-
   const url = new URL(request.url);
-  for (const [key, value] of Object.entries(request.query)) {
-    appendQueryValue(url.searchParams, key, value);
+  const output = { ...request };
+
+  if (request.query) {
+    for (const [key, value] of Object.entries(request.query)) {
+      appendQueryValue(url.searchParams, key, value);
+    }
+    delete output.query;
   }
-  const { query: _query, ...rest } = request;
-  return {
-    ...rest,
-    url: url.toString(),
-  };
+
+  if (request.form) {
+    output.body = formBody(request.form);
+    delete output.form;
+  }
+
+  output.url = url.toString();
+  return output;
 }
 
 function appendQueryValue(searchParams, key, value) {
   if (value === undefined || value === null || value === "") return;
   if (Array.isArray(value)) {
     for (const item of value) appendQueryValue(searchParams, key, item);
+    return;
+  }
+  searchParams.append(key, String(value));
+}
+
+function formBody(form) {
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(form || {})) {
+    appendFormValue(params, key, value);
+  }
+  return params.toString();
+}
+
+function appendFormValue(searchParams, key, value) {
+  if (value === undefined || value === null) return;
+  if (Array.isArray(value)) {
+    for (const item of value) appendFormValue(searchParams, key, item);
     return;
   }
   searchParams.append(key, String(value));

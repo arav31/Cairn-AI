@@ -407,7 +407,6 @@ async function callOpenAiStructured({ apiKey, baseUrl, model, evidence, timeoutM
     const body = {
       model,
       store: false,
-      temperature: 0.1,
       max_output_tokens: 3200,
       instructions: [
         "You are an endpoint reverse-engineering assistant for one recorded website workflow and return JSON only.",

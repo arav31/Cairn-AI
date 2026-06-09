@@ -32,6 +32,7 @@ const ANALYTICS_HOST_PATTERNS = [
   "mixpanel",
   "fullstory",
   "logrocket",
+  "elfsight",
   "ads.linkedin",
   "adroll",
   "analytics.google",
@@ -73,6 +74,7 @@ const TELEMETRY_PATH_PATTERNS = [
   "/client_report",
   "/rum",
   "/challenge-platform",
+  "/p/boot/",
   "/wa/",
   "/i/v0/e",
   "/g/collect",
@@ -377,6 +379,7 @@ async function createSkillForRequest({ recording, request, recordingFile, name, 
 
 async function createGenericRequestSkill({ recording, request, recordingFile, name, analysis }) {
   let body = null;
+  let form = null;
   let inputs = [];
   let computed = {};
   if (request.postData) {
@@ -395,9 +398,25 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
         body = templateScalars(body);
       }
     } catch {
-      body = request.postData;
+      const fields = await getPageFieldCatalog(recording);
+      const formBody = buildFormBodyTemplate(request.postData, fields, analysis, request);
+      if (formBody) {
+        body = undefined;
+        form = formBody.form;
+        inputs = formBody.inputs;
+        computed = formBody.computed;
+      } else {
+        body = request.postData;
+      }
     }
   }
+
+  const requestSpec = {
+    method: request.method,
+    url: request.url,
+    headers: keepReplayHeaders(request.requestHeaders || {}),
+    ...(form ? { form } : { body }),
+  };
 
   const skill = {
     id: slugify(name || recording.name || "draft-skill"),
@@ -409,12 +428,7 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
     steps: [
       {
         id: "goal",
-        request: {
-          method: request.method,
-          url: request.url,
-          headers: keepReplayHeaders(request.requestHeaders || {}),
-          body,
-        },
+        request: requestSpec,
       },
     ],
     outputs: [
@@ -720,6 +734,7 @@ function normalizePlanPath(pathExpression) {
     .replace(/^payload\./i, "$.")
     .replace(/^requestBody\./i, "$.")
     .replace(/^query\./i, "$.")
+    .replace(/^form\./i, "$.")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "");
 }
@@ -764,6 +779,99 @@ function lastPathName(pathExpression) {
   const segments = pathSegments(pathExpression);
   const last = segments.at(-1);
   return last === undefined ? "" : String(last);
+}
+
+function buildFormBodyTemplate(postData, fields, analysis, request) {
+  if (!looksLikeFormBody(postData, request)) return null;
+
+  const plan = analysis?.endpointEngineering;
+  const usePlan = plan?.payloadType === "form";
+  const mappings = usePlan
+    ? [...(plan.userInputMappings || []), ...(analysis.inputs || [])].filter((mapping) => mapping.mapsTo?.length)
+    : [];
+  const params = new URLSearchParams(postData);
+  const inputs = [];
+  const form = {};
+  const computed = {};
+  const usedInputIds = new Set();
+  const inputIdByMapping = new Map();
+
+  for (const [paramName, value] of params.entries()) {
+    const row = { path: `form.${paramName}`, value };
+    const field = findFieldForParam(fields, paramName);
+    const volatile = usePlan ? findPathPlan(row.path, plan.volatileFields || []) : null;
+
+    if (volatile?.handling === "omit") continue;
+    if (volatile?.handling === "ask_user") {
+      const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
+      inputs.push(input);
+      appendFormTemplateValue(form, paramName, `{{${input.id}}}`);
+      continue;
+    }
+
+    const mapping = usePlan ? findPathPlan(row.path, mappings) : null;
+    if (mapping) {
+      const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
+      let inputId = inputIdByMapping.get(mappingKey);
+      if (!inputId) {
+        const input = inputFromMappingOrRow(mapping, row, fields, usedInputIds);
+        inputs.push(input);
+        inputId = input.id;
+        inputIdByMapping.set(mappingKey, inputId);
+      }
+      appendFormTemplateValue(form, paramName, `{{${inputId}}}`);
+      continue;
+    }
+
+    if (!usePlan && shouldAskQueryParam(paramName, [value], field)) {
+      const inputId = uniqueInputId(slugify(field?.label || field?.placeholder || baseParamName(paramName)), usedInputIds);
+      inputs.push(toFormInputSpec(inputId, paramName, [value], field));
+      appendFormTemplateValue(form, paramName, `{{${inputId}}}`);
+      continue;
+    }
+
+    appendFormTemplateValue(form, paramName, value);
+  }
+
+  if (!inputs.length) return null;
+  return {
+    form,
+    inputs,
+    computed,
+  };
+}
+
+function looksLikeFormBody(postData, request) {
+  if (!postData || typeof postData !== "string") return false;
+  const contentType = Object.entries(request.requestHeaders || {})
+    .find(([key]) => key.toLowerCase() === "content-type")?.[1] || "";
+  if (/application\/x-www-form-urlencoded/i.test(contentType)) return true;
+  if (/^[^=&\s]+=[\s\S]*(&[^=&\s]+=[\s\S]*)*$/.test(postData)) return true;
+  return false;
+}
+
+function toFormInputSpec(inputId, paramName, values, field) {
+  const choices = cleanChoices(field?.options || []);
+  const spec = {
+    id: inputId,
+    question: questionForField(paramName, field),
+    type: choices.length ? "choice" : inferInputTypeFromValues(values),
+    optional: false,
+  };
+  if (choices.length) spec.choices = choices;
+  return spec;
+}
+
+function appendFormTemplateValue(form, key, value) {
+  if (form[key] === undefined) {
+    form[key] = value;
+    return;
+  }
+  if (Array.isArray(form[key])) {
+    form[key].push(value);
+    return;
+  }
+  form[key] = [form[key], value];
 }
 
 function toBodyInputSpec(row, fields) {

@@ -107,6 +107,8 @@ Useful environment variables:
 | `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if GPT endpoint engineering fails |
 | `SKILL_BUILDER_LLM_TIMEOUT_MS` | `30000` | LLM analysis timeout |
 
+The OpenAI request intentionally does not send `temperature`. Some GPT models reject that parameter on the Responses API, so the learner lets the selected model use its default sampling behavior.
+
 The LLM request uses `store: false` and sends a compact evidence packet, not the full raw recording. The packet includes redacted page text, field metadata, selected options, click/input summaries, ranked request candidates, and JSON request shapes. Raw recordings can still contain sensitive data and should remain local.
 
 ## Install
@@ -430,6 +432,8 @@ For JSON POST/PUT/PATCH endpoints, the generator:
 
 This is the fallback for reusable API endpoints that do not have a custom provider parser.
 
+For `application/x-www-form-urlencoded` POST endpoints, the generator builds `request.form` instead of a raw string body. The runner URL-encodes those form fields at runtime, so user-entered values are submitted correctly.
+
 ### 4. Final URL Strategy
 
 Some sites calculate entirely in the browser but store the state in the final URL.
@@ -661,6 +665,14 @@ GET and HEAD requests are now executed without a body. If you see this again, in
 ### Cloudflare 403
 
 Some sites block direct local API calls. The runner can use browser fallback for GET requests, but POST endpoints may still be blocked if the site requires browser-only challenge tokens.
+
+### OpenAI says temperature is unsupported
+
+Update to a version that omits `temperature` from the Responses API request. The learner now sends `model`, `store`, `max_output_tokens`, `instructions`, `input`, and structured output settings, but does not send `temperature`.
+
+### OpenAI insufficient quota
+
+If `.env` contains `SKILL_BUILDER_LLM_REQUIRED=1`, quota or billing errors stop draft generation. Add quota/billing for the API project, switch to a key with quota, or temporarily set `SKILL_BUILDER_LLM=off` to use deterministic fallback.
 
 ### File upload fields
 
