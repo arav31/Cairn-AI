@@ -1,80 +1,259 @@
 # Cairn
 
-Cairn is a marketplace for verified workflow APIs. People record tasks they normally do in a browser, Cairn exposes those tasks as paid endpoints, and agents can discover, pay for, and invoke them.
+Cairn is a marketplace for workflow APIs that AI agents can discover, pay for, and call.
 
-This repo is intentionally dependency-light so it can run immediately:
+The idea is simple: if a useful task is trapped behind a long browser workflow, someone can record that workflow, Cairn can expose it as an API, and an agent can use the API later without clicking through the website every time.
+
+Current focus: a Smithery-style marketplace for agent-ready endpoints, prepaid Cairn tokens, Stripe-ready payments, and a contribution flow for new recorded workflows.
+
+## What You Can Do
+
+- Browse verified workflow APIs in a marketplace UI.
+- Connect ChatGPT, MCP clients, or other agent runtimes through discovery, OpenAPI, or MCP.
+- Pay a few cents per successful call, or buy Cairn tokens once and spend them across marketplace APIs.
+- Read an agent-facing README for each API.
+- Submit a workflow idea so the tooling team can turn it into a new API.
+- Keep the old sandbox targets available for recorder/compiler testing.
+
+## Quickstart
+
+This repo is intentionally dependency-light. It uses Node's built-in HTTP server and test runner.
 
 ```bash
 npm start
 ```
 
-Then open `http://localhost:3000`. Pricing is available at `http://localhost:3000/pricing`.
+Open:
 
-Run tests with:
+```text
+http://localhost:3000
+http://localhost:3000/pricing
+```
+
+If port `3000` is already taken:
+
+```bash
+PORT=3005 npm start
+```
+
+Run tests:
 
 ```bash
 npm test
 ```
 
-## What Is Implemented
+## Main Pages
 
-- Smithery-inspired marketplace UI with searchable API listings, health/usage stats, a separate pricing page, install snippets, README blocks, and agent connection endpoints.
-- Two starter marketplace APIs:
-  - `compareInsurancePrices` at `/api/tools/insurance/compare-insurance-prices/invoke`.
-  - `searchProperties` at `/api/tools/real-estate/search-properties/invoke`.
-- Agent-facing API catalog at `/api/catalog`, `/api/tools`, `/openapi.json`, `/.well-known/cairn.json`, and `/mcp`.
-- Paid invocation flow with quote, checkout, Stripe Checkout Session support, Billing Meter Event support, Stripe Shared Payment Token-ready stubs, and marketplace-wide Cairn token wallets.
-- Recording upload stub at `/api/workflows/recordings` for the teammate-owned recorder/compiler tooling.
-- Contributor form so anyone can submit a workflow idea for the marketplace.
-- Sandbox target systems remain available under `/meridian` and `/civic` for teammate tooling tests, but they are no longer marketplace seed listings.
-- Workflow synthesis into typed operation definitions with flow graphs, parameter classes, fresh-token extractors, OpenAPI 3.1 output, and skill manifests.
-- Policy-gated skill invocation with audit logs.
+- `/` - marketplace homepage with searchable API listings, wallet controls, API details, install snippets, and contribution form.
+- `/pricing` - separate pricing page with token packs and per-API prices.
+- `/.well-known/cairn.json` - discovery document for agents.
+- `/openapi.json` - OpenAPI document for marketplace tool invocation.
 
-## Agent Endpoints
+## Current Seed APIs
 
-- `GET /.well-known/cairn.json` - platform discovery for agents.
-- `GET /api/catalog` - marketplace listings.
-- `GET /api/tools` - compact tool list.
-- `GET /api/tools/:namespace/:slug` - tool detail.
-- `GET /api/tools/:namespace/:slug/readme.md` - agent-facing README for one API.
-- `POST /api/tools/:namespace/:slug/quote` - price a call.
-- `POST /api/tools/:namespace/:slug/checkout` - create a Stripe Checkout Session when configured, otherwise return a test authorization.
-- `POST /api/tools/:namespace/:slug/invoke` - call a paid workflow API with direct payment or `paymentMethod: "tokens"`.
-- `GET /api/payments/stripe-config` - required Stripe environment variables.
-- `POST /api/payments/usage` - record usage with Stripe Billing Meter Events when configured.
-- `GET /api/tokens/config` - available token packs.
-- `GET /api/tokens/wallet?accountId=demo-user` - wallet balance and ledger.
-- `POST /api/tokens/quote` - price a token pack.
-- `POST /api/tokens/checkout` - buy tokens through Stripe Checkout when configured, otherwise grant a test pack.
-- `POST /mcp` - minimal JSON-RPC surface for `initialize`, `tools/list`, and `tools/call`.
+| API | Endpoint | Price | Token price |
+| --- | --- | ---: | ---: |
+| Compare Insurance Prices | `/api/tools/insurance/compare-insurance-prices/invoke` | `$0.03` | `1 token` |
+| Search Properties | `/api/tools/real-estate/search-properties/invoke` | `$0.04` | `1 token` |
 
-## Token Payments
+These are synthetic demo workflows. They represent the shape of future recorded automations, such as price comparison, portal search, quote lookup, availability checks, and other tasks where a public API does not exist.
 
-Direct payment is useful for one-off calls. Tokens are useful when someone wants a balance that works across every API in the marketplace.
+## Pricing
 
-```json
-{
-  "input": {
-    "zipCode": "78701"
-  },
-  "paymentMethod": "tokens",
-  "tokenAccountId": "demo-user"
-}
-```
+Cairn supports two payment modes.
 
-Each listing declares a `pricing.tokenCost`. The starter demo wallet begins with 50 test tokens. Current seed APIs cost 1 token per successful call, or 3-4 cents through direct per-call payment.
+Direct per-call payment is best for one-off use. The current seed APIs cost `3-4 cents` per successful call.
+
+Tokens are best for agents and teams. Tokens are stored in a marketplace-wide wallet and can be spent across any API.
 
 Current token packs:
 
-```text
-Starter: 250 tokens for $0.99
-Builder: 1,500 tokens for $4.99
-Team: 7,500 tokens for $19.99
+| Pack | Tokens | Price | Approx. cost |
+| --- | ---: | ---: | ---: |
+| Starter | `250` | `$0.99` | `0.40 cents/token` |
+| Builder | `1,500` | `$4.99` | `0.33 cents/token` |
+| Team | `7,500` | `$19.99` | `0.27 cents/token` |
+
+The demo wallet account is `demo-user` and starts with `50` test tokens.
+
+## Agent Endpoints
+
+### Discovery
+
+```http
+GET /.well-known/cairn.json
+GET /api/catalog
+GET /api/tools
+GET /openapi.json
+POST /mcp
 ```
 
-## Stripe Setup
+### Tool Details
 
-Set these for real payments:
+```http
+GET /api/tools/:namespace/:slug
+GET /api/tools/:namespace/:slug/readme.md
+GET /api/tools/:namespace/:slug/openapi.json
+```
+
+### Tool Payment And Invocation
+
+```http
+POST /api/tools/:namespace/:slug/quote
+POST /api/tools/:namespace/:slug/checkout
+POST /api/tools/:namespace/:slug/invoke
+```
+
+### Token Wallet
+
+```http
+GET /api/tokens/config
+GET /api/tokens/wallet?accountId=demo-user
+POST /api/tokens/quote
+POST /api/tokens/checkout
+```
+
+### Stripe Helpers
+
+```http
+GET /api/payments/stripe-config
+POST /api/payments/quote
+POST /api/payments/checkout
+POST /api/payments/usage
+POST /api/stripe/webhook
+```
+
+## Example Calls
+
+### Demo Mode
+
+Demo mode bypasses payment and is useful for local testing.
+
+```bash
+curl -X POST http://localhost:3000/api/tools/insurance/compare-insurance-prices/invoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "demo": true,
+    "input": {
+      "coverageType": "auto",
+      "zipCode": "78701",
+      "driverAge": 35,
+      "vehicleYear": 2021
+    }
+  }'
+```
+
+### Token Payment
+
+```bash
+curl -X POST http://localhost:3000/api/tools/insurance/compare-insurance-prices/invoke \
+  -H "Content-Type: application/json" \
+  -d '{
+    "paymentMethod": "tokens",
+    "tokenAccountId": "demo-user",
+    "input": {
+      "coverageType": "auto",
+      "zipCode": "78701",
+      "driverAge": 35,
+      "vehicleYear": 2021
+    }
+  }'
+```
+
+Tokens are checked before invocation and debited only after a successful result.
+
+### Buy Tokens
+
+Without `STRIPE_SECRET_KEY`, this grants a local test pack immediately. With Stripe configured, it creates a Stripe Checkout Session.
+
+```bash
+curl -X POST http://localhost:3000/api/tokens/checkout \
+  -H "Content-Type: application/json" \
+  -d '{
+    "packId": "starter",
+    "accountId": "demo-user"
+  }'
+```
+
+### Direct Payment
+
+```bash
+curl -X POST http://localhost:3000/api/tools/real-estate/search-properties/quote \
+  -H "Content-Type: application/json" \
+  -d '{
+    "input": {
+      "location": "Austin",
+      "maxPrice": 700000,
+      "bedrooms": 2
+    }
+  }'
+```
+
+Then call `/checkout`, and pass the returned `payment` object to `/invoke`. Agents can also pass a Stripe Shared Payment Token through `sharedPaymentToken`.
+
+## MCP Usage
+
+Cairn exposes a minimal JSON-RPC MCP surface.
+
+List tools:
+
+```bash
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "tools",
+    "method": "tools/list"
+  }'
+```
+
+Call a tool with tokens:
+
+```bash
+curl -X POST http://localhost:3000/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": "call-1",
+    "method": "tools/call",
+    "params": {
+      "name": "compareInsurancePrices",
+      "paymentMethod": "tokens",
+      "tokenAccountId": "demo-user",
+      "arguments": {
+        "coverageType": "auto",
+        "zipCode": "78701",
+        "driverAge": 35,
+        "vehicleYear": 2021
+      }
+    }
+  }'
+```
+
+## Submit A Workflow
+
+The homepage has a contribution form for workflow ideas. It posts to:
+
+```http
+POST /api/workflows/recordings
+```
+
+Example payload:
+
+```json
+{
+  "title": "Compare flight refund options",
+  "targetUrl": "https://example.com/account/trips",
+  "goal": "Return refund eligibility, policy notes, and next available action.",
+  "artifacts": []
+}
+```
+
+This is currently an upload stub for the teammate-owned recorder/compiler tooling. The marketplace side is ready to accept the request and return an accepted status.
+
+## Stripe Configuration
+
+Set these for real Stripe payments:
 
 ```bash
 STRIPE_SECRET_KEY=sk_test_...
@@ -82,11 +261,19 @@ STRIPE_WEBHOOK_SECRET=whsec_...
 CAIRN_PUBLIC_URL=https://your-domain.example
 ```
 
-Optional per-listing price IDs:
+Optional per-listing Stripe Price IDs:
 
 ```bash
 STRIPE_PRICE_INSURANCE_COMPARE=price_...
 STRIPE_PRICE_PROPERTY_SEARCH=price_...
+```
+
+Optional token pack Price IDs:
+
+```bash
+STRIPE_PRICE_TOKENS_STARTER=price_...
+STRIPE_PRICE_TOKENS_BUILDER=price_...
+STRIPE_PRICE_TOKENS_TEAM=price_...
 ```
 
 Optional usage billing:
@@ -95,29 +282,84 @@ Optional usage billing:
 STRIPE_METER_EVENT_NAME=cairn_api_call
 ```
 
-Optional token pack price IDs:
+If no Stripe secret key is present, Cairn runs in stub mode:
 
-```bash
-STRIPE_PRICE_TOKENS_STARTER=price_...
-STRIPE_PRICE_TOKENS_BUILDER=price_...
-STRIPE_PRICE_TOKENS_TEAM=price_...
+- API checkout returns a test authorization.
+- Token checkout grants a test token pack.
+- Usage billing returns a stub response instead of sending a Stripe meter event.
+
+## Project Map
+
+```text
+public/index.html          Marketplace UI
+public/app.js              Marketplace UI behavior
+public/pricing.html        Pricing page
+public/pricing.js          Pricing page behavior
+public/styles.css          Shared marketplace styling
+
+src/server.js              HTTP server, routes, static pages, MCP surface
+src/cairn/marketplace.js   Seed listings, OpenAPI, checkout, usage billing
+src/cairn/tokens.js        Token packs, wallets, ledger, token checkout
+src/cairn/pipeline.js      Recording/synthesis/verification state and invocation
+src/cairn/executor.js      Deterministic workflow execution
+src/cairn/policy.js        Skill permissions and invocation logs
+src/cairn/synthesizer.js   Recording-to-operation compiler demo
+src/cairn/repair.js        Drift classification and repair proposal demo
+src/data/seed.js           Synthetic CRM, civic, insurance, and property data
+
+tests/*.test.js            Node test runner coverage
 ```
 
-## Adapter Boundaries
+## Sandbox Targets
 
-The pilot uses built-in instrumentation instead of launching Playwright or mitmproxy directly. The code keeps the boundaries explicit:
+These are still available for recorder/compiler testing, but they are not shown as marketplace seed listings.
 
-- `src/cairn/pipeline.js` is where a real Playwright recorder and mitmproxy capture stream would be attached.
-- `src/cairn/repair.js` exposes the repair-agent seam for OpenAI Computer Use or Browser Use.
-- `src/cairn/executor.js` is the deterministic operation runner.
-- `src/cairn/policy.js` is the OPA/Rego replacement point.
+- `/meridian` - modern JSON REST style CRM sandbox.
+- `/civic` - legacy server-rendered records portal with CSRF and ViewState-style hidden state.
+
+Demo repair endpoints remain available:
+
+```http
+POST /api/demo/record
+POST /api/demo/reverify
+POST /api/demo/repair
+POST /api/demo/drift-civic
+POST /api/demo/reset-drift
+```
+
+## Tests
+
+```bash
+npm test
+```
+
+The current tests cover:
+
+- Marketplace bootstrap and OpenAPI generation.
+- Token wallet purchase and spend flow.
+- Payment authorization gates.
+- Policy allow/block decisions.
+- Civic fresh-token lifting and repair.
+- Meridian dependency graph synthesis.
 
 ## Deployment Direction
 
+The intended production split is:
+
+- Marketplace UI: Vercel.
 - Browser/proxy/execution workers: AWS ECS Fargate.
 - Workflow orchestration: AWS Step Functions.
-- Queues/events: SQS/EventBridge.
+- Queues/events: SQS or EventBridge.
 - Artifacts: S3 with KMS.
 - Data plane: RDS Postgres.
 - Secrets: AWS Secrets Manager.
-- Marketplace UI: Vercel.
+
+For the current demo, everything runs in-memory inside one Node process.
+
+## Current Limitations
+
+- The marketplace uses synthetic seed APIs, not live third-party websites.
+- Wallets, listings, invocation logs, and ledgers are in-memory for the demo.
+- Stripe webhooks are acknowledged but not signature-verified yet.
+- Token checkout in stub mode grants tokens immediately.
+- The recorder/compiler tooling is represented by boundaries and stubs; teammates can wire real capture artifacts into those seams.
