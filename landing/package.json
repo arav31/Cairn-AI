@@ -1,0 +1,21 @@
+{
+  "name": "cairn",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.33.0",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "pnpm -r --filter=./packages/* build",
+    "dev:lib": "pnpm --filter @cairn/wavefield dev",
+    "dev:demo": "pnpm --filter cairn-landing dev",
+    "dev": "pnpm --filter @cairn/wavefield build && pnpm --filter cairn-landing dev",
+    "demo:build": "pnpm --filter @cairn/wavefield build && pnpm --filter cairn-landing build",
+    "size": "pnpm --filter @cairn/wavefield size"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

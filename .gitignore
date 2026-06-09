@@ -4,7 +4,10 @@
 
 node_modules/
 npm-debug.log*
+*.log
 
 .DS_Store
 dist/
+.next/
 coverage/
+*.local
