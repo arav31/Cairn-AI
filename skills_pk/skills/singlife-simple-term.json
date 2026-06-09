@@ -1,0 +1,200 @@
+{
+  "id": "singlife-simple-term",
+  "name": "Singlife Simple Term Quote",
+  "sourceUrl": "https://directsales.singlife.com/QuoteBuy/directsales/#/sio/coverage",
+  "description": "Gets Singlife Simple Term premium quotes. Uses Singlife's CSRF token and cookies before computePremium.",
+  "inputs": [
+    {
+      "id": "dob",
+      "question": "Date of birth (YYYY-MM-DD)",
+      "type": "date",
+      "default": "1990-01-01"
+    },
+    {
+      "id": "gender",
+      "question": "Gender",
+      "type": "choice",
+      "choices": ["M", "F"],
+      "default": "M"
+    },
+    {
+      "id": "smoker",
+      "question": "Smoker",
+      "type": "choice",
+      "choices": ["Y", "N"],
+      "default": "N"
+    },
+    {
+      "id": "occupationName",
+      "question": "Occupation name",
+      "type": "string",
+      "default": "Accountant / Accounts Staff"
+    },
+    {
+      "id": "nationalityCode",
+      "question": "Nationality code",
+      "type": "string",
+      "default": "SG"
+    },
+    {
+      "id": "sumAssured",
+      "question": "Basic sum assured",
+      "type": "number",
+      "default": 150000
+    },
+    {
+      "id": "planPremiumMode",
+      "question": "Payment frequency",
+      "type": "choice",
+      "choices": ["AP", "HP", "QP", "MP"],
+      "default": "AP"
+    },
+    {
+      "id": "illnessCover",
+      "question": "Critical illness cover amount",
+      "type": "number",
+      "optional": true
+    },
+    {
+      "id": "accidentCover",
+      "question": "Personal accident cover amount",
+      "type": "number",
+      "optional": true
+    },
+    {
+      "id": "promoCodeSummary",
+      "question": "Promo code",
+      "type": "string",
+      "default": "",
+      "optional": true
+    }
+  ],
+  "computed": {
+    "dobCompact": {
+      "fn": "dateFormat",
+      "input": "dob",
+      "format": "DDMMYYYY"
+    },
+    "ageNextBirthday": {
+      "fn": "ageNextBirthday",
+      "input": "dob"
+    },
+    "transactionId": {
+      "fn": "uuid"
+    }
+  },
+  "steps": [
+    {
+      "id": "csrf",
+      "request": {
+        "method": "GET",
+        "url": "https://directsales.singlife.com/QuoteBuy/directsales/security/csrf-token",
+        "headers": {
+          "accept": "application/json, text/plain, */*",
+          "referer": "https://directsales.singlife.com/QuoteBuy/directsales/"
+        }
+      },
+      "save": {
+        "bodyText": "csrfToken"
+      }
+    },
+    {
+      "id": "occupationList",
+      "request": {
+        "method": "GET",
+        "url": "https://directsales.singlife.com/QuoteBuy/directsales/occupation/sio",
+        "headers": {
+          "accept": "application/json, text/plain, */*",
+          "referer": "https://directsales.singlife.com/QuoteBuy/directsales/",
+          "x-xsrf-token": "{{csrfToken}}"
+        }
+      },
+      "useCookieJar": true,
+      "failOnError": false
+    },
+    {
+      "id": "computePremium",
+      "request": {
+        "method": "POST",
+        "url": "https://directsales.singlife.com/QuoteBuy/directsales/computePremium",
+        "headers": {
+          "accept": "application/json, text/plain, */*",
+          "content-type": "application/json",
+          "origin": "https://directsales.singlife.com",
+          "referer": "https://directsales.singlife.com/QuoteBuy/directsales/#/sio/coverage",
+          "x-xsrf-token": "{{csrfToken}}"
+        },
+        "body": {
+          "proposalType": "LA",
+          "lifeprofiles": [
+            {
+              "name": "",
+              "gender": "{{gender}}",
+              "smoker": "{{smoker}}",
+              "dob": "{{dobCompact}}",
+              "age": {
+                "$value": "{{ageNextBirthday}}"
+              },
+              "occupationName": "{{occupationName}}",
+              "relationshipName": "",
+              "relationshipId": "",
+              "type": "life-assured"
+            }
+          ],
+          "isBIStacking": false,
+          "coverages": [
+            {
+              "id": "simpleTermPlan",
+              "type": "P",
+              "attributes": {
+                "sumAssured": {
+                  "$value": "{{sumAssured}}"
+                },
+                "planPremiumMode": "{{planPremiumMode}}",
+                "nationalityCode": "{{nationalityCode}}",
+                "residencyCodeLifeAssured": "SG",
+                "assuredNationalityCode": "{{nationalityCode}}",
+                "isLifeAssuredPR": "No",
+                "residencyCodeAssured": "SG",
+                "sourceOfFunds": "Cash",
+                "currency": "SGD",
+                "isAssuredPR": "No",
+                "promoCodeSummary": "{{promoCodeSummary}}"
+              }
+            },
+            {
+              "$when": "illnessCover",
+              "id": "lateStageAddCICover",
+              "type": "R",
+              "attributes": {
+                "sumAssured": {
+                  "$value": "{{illnessCover}}"
+                }
+              }
+            },
+            {
+              "$when": "accidentCover",
+              "id": "personalAccidentRider",
+              "type": "R",
+              "attributes": {
+                "sumAssured": {
+                  "$value": "{{accidentCover}}"
+                }
+              }
+            }
+          ],
+          "document": [],
+          "backdate": "",
+          "psqsversion": "",
+          "deviceos": "",
+          "firmClntnum": "",
+          "sourceOfBusiness": "",
+          "loginId": "QnB",
+          "transactionId": "{{transactionId}}"
+        }
+      },
+      "useCookieJar": true
+    }
+  ],
+  "postProcess": "singlifeSimpleTerm"
+}

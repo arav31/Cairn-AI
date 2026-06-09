@@ -1,0 +1,3819 @@
+{
+  "id": "weworkremotely-com",
+  "name": "weworkremotely.com",
+  "sourceUrl": "https://weworkremotely.com/",
+  "description": "Draft generated from recordings\\weworkremotely-com-2026-06-09T12-56-11-926Z.json. Questions are based on visible form labels/options where available.",
+  "inputs": [
+    {
+      "id": "search",
+      "question": "Search",
+      "type": "string",
+      "optional": true
+    },
+    {
+      "id": "job-categories",
+      "question": "Job Categories",
+      "type": "multi-choice",
+      "optional": true,
+      "choices": [
+        {
+          "label": "Design",
+          "value": "1"
+        },
+        {
+          "label": "Full-Stack Programming",
+          "value": "2"
+        },
+        {
+          "label": "Front-End Programming",
+          "value": "17"
+        },
+        {
+          "label": "Back-End Programming",
+          "value": "18"
+        },
+        {
+          "label": "Customer Support",
+          "value": "7"
+        },
+        {
+          "label": "DevOps and Sysadmin",
+          "value": "6"
+        },
+        {
+          "label": "Sales and Marketing",
+          "value": "9"
+        },
+        {
+          "label": "Management and Finance",
+          "value": "3"
+        },
+        {
+          "label": "Product",
+          "value": "11"
+        },
+        {
+          "label": "All Other Remote",
+          "value": "4"
+        }
+      ]
+    },
+    {
+      "id": "countries",
+      "question": "Countries",
+      "type": "multi-choice",
+      "optional": true,
+      "choices": [
+        {
+          "label": "Andorra",
+          "value": "AD"
+        },
+        {
+          "label": "United Arab Emirates",
+          "value": "AE"
+        },
+        {
+          "label": "Afghanistan",
+          "value": "AF"
+        },
+        {
+          "label": "Antigua and Barbuda",
+          "value": "AG"
+        },
+        {
+          "label": "Anguilla",
+          "value": "AI"
+        },
+        {
+          "label": "Albania",
+          "value": "AL"
+        },
+        {
+          "label": "Armenia",
+          "value": "AM"
+        },
+        {
+          "label": "Angola",
+          "value": "AO"
+        },
+        {
+          "label": "Antarctica",
+          "value": "AQ"
+        },
+        {
+          "label": "Argentina",
+          "value": "AR"
+        },
+        {
+          "label": "American Samoa",
+          "value": "AS"
+        },
+        {
+          "label": "Austria",
+          "value": "AT"
+        },
+        {
+          "label": "Australia",
+          "value": "AU"
+        },
+        {
+          "label": "Aruba",
+          "value": "AW"
+        },
+        {
+          "label": "land Islands",
+          "value": "AX"
+        },
+        {
+          "label": "Azerbaijan",
+          "value": "AZ"
+        },
+        {
+          "label": "Bosnia and Herzegovina",
+          "value": "BA"
+        },
+        {
+          "label": "Barbados",
+          "value": "BB"
+        },
+        {
+          "label": "Bangladesh",
+          "value": "BD"
+        },
+        {
+          "label": "Belgium",
+          "value": "BE"
+        },
+        {
+          "label": "Burkina Faso",
+          "value": "BF"
+        },
+        {
+          "label": "Bulgaria",
+          "value": "BG"
+        },
+        {
+          "label": "Bahrain",
+          "value": "BH"
+        },
+        {
+          "label": "Burundi",
+          "value": "BI"
+        },
+        {
+          "label": "Benin",
+          "value": "BJ"
+        },
+        {
+          "label": "Saint Barth lemy",
+          "value": "BL"
+        },
+        {
+          "label": "Bermuda",
+          "value": "BM"
+        },
+        {
+          "label": "Brunei Darussalam",
+          "value": "BN"
+        },
+        {
+          "label": "Bolivia (Plurinational State of)",
+          "value": "BO"
+        },
+        {
+          "label": "Bonaire, Sint Eustatius and Saba",
+          "value": "BQ"
+        },
+        {
+          "label": "Brazil",
+          "value": "BR"
+        },
+        {
+          "label": "Bahamas",
+          "value": "BS"
+        },
+        {
+          "label": "Bhutan",
+          "value": "BT"
+        },
+        {
+          "label": "Bouvet Island",
+          "value": "BV"
+        },
+        {
+          "label": "Botswana",
+          "value": "BW"
+        },
+        {
+          "label": "Belarus",
+          "value": "BY"
+        },
+        {
+          "label": "Belize",
+          "value": "BZ"
+        },
+        {
+          "label": "Canada",
+          "value": "CA"
+        },
+        {
+          "label": "Cocos (Keeling) Islands",
+          "value": "CC"
+        },
+        {
+          "label": "Congo (Democratic Republic of the)",
+          "value": "CD"
+        },
+        {
+          "label": "Central African Republic",
+          "value": "CF"
+        },
+        {
+          "label": "Congo",
+          "value": "CG"
+        },
+        {
+          "label": "Switzerland",
+          "value": "CH"
+        },
+        {
+          "label": "C te d'Ivoire",
+          "value": "CI"
+        },
+        {
+          "label": "Cook Islands",
+          "value": "CK"
+        },
+        {
+          "label": "Chile",
+          "value": "CL"
+        },
+        {
+          "label": "Cameroon",
+          "value": "CM"
+        },
+        {
+          "label": "China",
+          "value": "CN"
+        },
+        {
+          "label": "Colombia",
+          "value": "CO"
+        },
+        {
+          "label": "Costa Rica",
+          "value": "CR"
+        },
+        {
+          "label": "Cuba",
+          "value": "CU"
+        },
+        {
+          "label": "Cabo Verde",
+          "value": "CV"
+        },
+        {
+          "label": "Cura ao",
+          "value": "CW"
+        },
+        {
+          "label": "Christmas Island",
+          "value": "CX"
+        },
+        {
+          "label": "Cyprus",
+          "value": "CY"
+        },
+        {
+          "label": "Czechia",
+          "value": "CZ"
+        },
+        {
+          "label": "Germany",
+          "value": "DE"
+        },
+        {
+          "label": "Djibouti",
+          "value": "DJ"
+        },
+        {
+          "label": "Denmark",
+          "value": "DK"
+        },
+        {
+          "label": "Dominica",
+          "value": "DM"
+        },
+        {
+          "label": "Dominican Republic",
+          "value": "DO"
+        },
+        {
+          "label": "Algeria",
+          "value": "DZ"
+        },
+        {
+          "label": "Ecuador",
+          "value": "EC"
+        },
+        {
+          "label": "Estonia",
+          "value": "EE"
+        },
+        {
+          "label": "Egypt",
+          "value": "EG"
+        },
+        {
+          "label": "Western Sahara",
+          "value": "EH"
+        },
+        {
+          "label": "Eritrea",
+          "value": "ER"
+        },
+        {
+          "label": "Spain",
+          "value": "ES"
+        },
+        {
+          "label": "Ethiopia",
+          "value": "ET"
+        },
+        {
+          "label": "Finland",
+          "value": "FI"
+        },
+        {
+          "label": "Fiji",
+          "value": "FJ"
+        },
+        {
+          "label": "Falkland Islands (Malvinas)",
+          "value": "FK"
+        },
+        {
+          "label": "Micronesia (Federated States of)",
+          "value": "FM"
+        },
+        {
+          "label": "Faroe Islands",
+          "value": "FO"
+        },
+        {
+          "label": "France",
+          "value": "FR"
+        },
+        {
+          "label": "Gabon",
+          "value": "GA"
+        },
+        {
+          "label": "United Kingdom of Great Britain and Northern Ireland",
+          "value": "GB"
+        },
+        {
+          "label": "Grenada",
+          "value": "GD"
+        },
+        {
+          "label": "Georgia",
+          "value": "GE"
+        },
+        {
+          "label": "French Guiana",
+          "value": "GF"
+        },
+        {
+          "label": "Guernsey",
+          "value": "GG"
+        },
+        {
+          "label": "Ghana",
+          "value": "GH"
+        },
+        {
+          "label": "Gibraltar",
+          "value": "GI"
+        },
+        {
+          "label": "Greenland",
+          "value": "GL"
+        },
+        {
+          "label": "Gambia",
+          "value": "GM"
+        },
+        {
+          "label": "Guinea",
+          "value": "GN"
+        },
+        {
+          "label": "Guadeloupe",
+          "value": "GP"
+        },
+        {
+          "label": "Equatorial Guinea",
+          "value": "GQ"
+        },
+        {
+          "label": "Greece",
+          "value": "GR"
+        },
+        {
+          "label": "South Georgia and the South Sandwich Islands",
+          "value": "GS"
+        },
+        {
+          "label": "Guatemala",
+          "value": "GT"
+        },
+        {
+          "label": "Guam",
+          "value": "GU"
+        },
+        {
+          "label": "Guinea-Bissau",
+          "value": "GW"
+        },
+        {
+          "label": "Guyana",
+          "value": "GY"
+        },
+        {
+          "label": "Hong Kong",
+          "value": "HK"
+        },
+        {
+          "label": "Heard Island and McDonald Islands",
+          "value": "HM"
+        },
+        {
+          "label": "Honduras",
+          "value": "HN"
+        },
+        {
+          "label": "Croatia",
+          "value": "HR"
+        },
+        {
+          "label": "Haiti",
+          "value": "HT"
+        },
+        {
+          "label": "Hungary",
+          "value": "HU"
+        },
+        {
+          "label": "Indonesia",
+          "value": "ID"
+        },
+        {
+          "label": "Ireland",
+          "value": "IE"
+        },
+        {
+          "label": "Israel",
+          "value": "IL"
+        },
+        {
+          "label": "Isle of Man",
+          "value": "IM"
+        },
+        {
+          "label": "India",
+          "value": "IN"
+        },
+        {
+          "label": "British Indian Ocean Territory",
+          "value": "IO"
+        },
+        {
+          "label": "Iraq",
+          "value": "IQ"
+        },
+        {
+          "label": "Iran (Islamic Republic of)",
+          "value": "IR"
+        },
+        {
+          "label": "Iceland",
+          "value": "IS"
+        },
+        {
+          "label": "Italy",
+          "value": "IT"
+        },
+        {
+          "label": "Jersey",
+          "value": "JE"
+        },
+        {
+          "label": "Jamaica",
+          "value": "JM"
+        },
+        {
+          "label": "Jordan",
+          "value": "JO"
+        },
+        {
+          "label": "Japan",
+          "value": "JP"
+        },
+        {
+          "label": "Kenya",
+          "value": "KE"
+        },
+        {
+          "label": "Kyrgyzstan",
+          "value": "KG"
+        },
+        {
+          "label": "Cambodia",
+          "value": "KH"
+        },
+        {
+          "label": "Kiribati",
+          "value": "KI"
+        },
+        {
+          "label": "Comoros",
+          "value": "KM"
+        },
+        {
+          "label": "Saint Kitts and Nevis",
+          "value": "KN"
+        },
+        {
+          "label": "Korea (Democratic People's Republic of)",
+          "value": "KP"
+        },
+        {
+          "label": "Korea (Republic of)",
+          "value": "KR"
+        },
+        {
+          "label": "Kuwait",
+          "value": "KW"
+        },
+        {
+          "label": "Cayman Islands",
+          "value": "KY"
+        },
+        {
+          "label": "Kazakhstan",
+          "value": "KZ"
+        },
+        {
+          "label": "Lao People's Democratic Republic",
+          "value": "LA"
+        },
+        {
+          "label": "Lebanon",
+          "value": "LB"
+        },
+        {
+          "label": "Saint Lucia",
+          "value": "LC"
+        },
+        {
+          "label": "Liechtenstein",
+          "value": "LI"
+        },
+        {
+          "label": "Sri Lanka",
+          "value": "LK"
+        },
+        {
+          "label": "Liberia",
+          "value": "LR"
+        },
+        {
+          "label": "Lesotho",
+          "value": "LS"
+        },
+        {
+          "label": "Lithuania",
+          "value": "LT"
+        },
+        {
+          "label": "Luxembourg",
+          "value": "LU"
+        },
+        {
+          "label": "Latvia",
+          "value": "LV"
+        },
+        {
+          "label": "Libya",
+          "value": "LY"
+        },
+        {
+          "label": "Morocco",
+          "value": "MA"
+        },
+        {
+          "label": "Monaco",
+          "value": "MC"
+        },
+        {
+          "label": "Moldova (Republic of)",
+          "value": "MD"
+        },
+        {
+          "label": "Montenegro",
+          "value": "ME"
+        },
+        {
+          "label": "Saint Martin (French part)",
+          "value": "MF"
+        },
+        {
+          "label": "Madagascar",
+          "value": "MG"
+        },
+        {
+          "label": "Marshall Islands",
+          "value": "MH"
+        },
+        {
+          "label": "North Macedonia",
+          "value": "MK"
+        },
+        {
+          "label": "Mali",
+          "value": "ML"
+        },
+        {
+          "label": "Myanmar",
+          "value": "MM"
+        },
+        {
+          "label": "Mongolia",
+          "value": "MN"
+        },
+        {
+          "label": "Macao",
+          "value": "MO"
+        },
+        {
+          "label": "Northern Mariana Islands",
+          "value": "MP"
+        },
+        {
+          "label": "Martinique",
+          "value": "MQ"
+        },
+        {
+          "label": "Mauritania",
+          "value": "MR"
+        },
+        {
+          "label": "Montserrat",
+          "value": "MS"
+        },
+        {
+          "label": "Malta",
+          "value": "MT"
+        },
+        {
+          "label": "Mauritius",
+          "value": "MU"
+        },
+        {
+          "label": "Maldives",
+          "value": "MV"
+        },
+        {
+          "label": "Malawi",
+          "value": "MW"
+        },
+        {
+          "label": "Mexico",
+          "value": "MX"
+        },
+        {
+          "label": "Malaysia",
+          "value": "MY"
+        },
+        {
+          "label": "Mozambique",
+          "value": "MZ"
+        },
+        {
+          "label": "Namibia",
+          "value": "NA"
+        },
+        {
+          "label": "New Caledonia",
+          "value": "NC"
+        },
+        {
+          "label": "Niger",
+          "value": "NE"
+        },
+        {
+          "label": "Norfolk Island",
+          "value": "NF"
+        },
+        {
+          "label": "Nigeria",
+          "value": "NG"
+        },
+        {
+          "label": "Nicaragua",
+          "value": "NI"
+        },
+        {
+          "label": "Netherlands",
+          "value": "NL"
+        },
+        {
+          "label": "Norway",
+          "value": "NO"
+        },
+        {
+          "label": "Nepal",
+          "value": "NP"
+        },
+        {
+          "label": "Nauru",
+          "value": "NR"
+        },
+        {
+          "label": "Niue",
+          "value": "NU"
+        },
+        {
+          "label": "New Zealand",
+          "value": "NZ"
+        },
+        {
+          "label": "Oman",
+          "value": "OM"
+        },
+        {
+          "label": "Panama",
+          "value": "PA"
+        },
+        {
+          "label": "Peru",
+          "value": "PE"
+        },
+        {
+          "label": "French Polynesia",
+          "value": "PF"
+        },
+        {
+          "label": "Papua New Guinea",
+          "value": "PG"
+        },
+        {
+          "label": "Philippines",
+          "value": "PH"
+        },
+        {
+          "label": "Pakistan",
+          "value": "PK"
+        },
+        {
+          "label": "Poland",
+          "value": "PL"
+        },
+        {
+          "label": "Saint Pierre and Miquelon",
+          "value": "PM"
+        },
+        {
+          "label": "Pitcairn",
+          "value": "PN"
+        },
+        {
+          "label": "Puerto Rico",
+          "value": "PR"
+        },
+        {
+          "label": "Palestine, State of",
+          "value": "PS"
+        },
+        {
+          "label": "Portugal",
+          "value": "PT"
+        },
+        {
+          "label": "Palau",
+          "value": "PW"
+        },
+        {
+          "label": "Paraguay",
+          "value": "PY"
+        },
+        {
+          "label": "Qatar",
+          "value": "QA"
+        },
+        {
+          "label": "R union",
+          "value": "RE"
+        },
+        {
+          "label": "Romania",
+          "value": "RO"
+        },
+        {
+          "label": "Serbia",
+          "value": "RS"
+        },
+        {
+          "label": "Russian Federation",
+          "value": "RU"
+        },
+        {
+          "label": "Rwanda",
+          "value": "RW"
+        },
+        {
+          "label": "Saudi Arabia",
+          "value": "SA"
+        },
+        {
+          "label": "Solomon Islands",
+          "value": "SB"
+        },
+        {
+          "label": "Seychelles",
+          "value": "SC"
+        },
+        {
+          "label": "Sudan",
+          "value": "SD"
+        },
+        {
+          "label": "Sweden",
+          "value": "SE"
+        },
+        {
+          "label": "Singapore",
+          "value": "SG"
+        },
+        {
+          "label": "Saint Helena, Ascension and Tristan da Cunha",
+          "value": "SH"
+        },
+        {
+          "label": "Slovenia",
+          "value": "SI"
+        },
+        {
+          "label": "Svalbard and Jan Mayen",
+          "value": "SJ"
+        },
+        {
+          "label": "Slovakia",
+          "value": "SK"
+        },
+        {
+          "label": "Sierra Leone",
+          "value": "SL"
+        },
+        {
+          "label": "San Marino",
+          "value": "SM"
+        },
+        {
+          "label": "Senegal",
+          "value": "SN"
+        },
+        {
+          "label": "Somalia",
+          "value": "SO"
+        },
+        {
+          "label": "Suriname",
+          "value": "SR"
+        },
+        {
+          "label": "South Sudan",
+          "value": "SS"
+        },
+        {
+          "label": "Sao Tome and Principe",
+          "value": "ST"
+        },
+        {
+          "label": "El Salvador",
+          "value": "SV"
+        },
+        {
+          "label": "Sint Maarten (Dutch part)",
+          "value": "SX"
+        },
+        {
+          "label": "Syrian Arab Republic",
+          "value": "SY"
+        },
+        {
+          "label": "Eswatini",
+          "value": "SZ"
+        },
+        {
+          "label": "Turks and Caicos Islands",
+          "value": "TC"
+        },
+        {
+          "label": "Chad",
+          "value": "TD"
+        },
+        {
+          "label": "French Southern Territories",
+          "value": "TF"
+        },
+        {
+          "label": "Togo",
+          "value": "TG"
+        },
+        {
+          "label": "Thailand",
+          "value": "TH"
+        },
+        {
+          "label": "Tajikistan",
+          "value": "TJ"
+        },
+        {
+          "label": "Tokelau",
+          "value": "TK"
+        },
+        {
+          "label": "Timor-Leste",
+          "value": "TL"
+        },
+        {
+          "label": "Turkmenistan",
+          "value": "TM"
+        },
+        {
+          "label": "Tunisia",
+          "value": "TN"
+        },
+        {
+          "label": "Tonga",
+          "value": "TO"
+        },
+        {
+          "label": "T rkiye",
+          "value": "TR"
+        },
+        {
+          "label": "Trinidad and Tobago",
+          "value": "TT"
+        },
+        {
+          "label": "Tuvalu",
+          "value": "TV"
+        },
+        {
+          "label": "Taiwan, Province of China",
+          "value": "TW"
+        },
+        {
+          "label": "Tanzania, United Republic of",
+          "value": "TZ"
+        },
+        {
+          "label": "Ukraine",
+          "value": "UA"
+        },
+        {
+          "label": "Uganda",
+          "value": "UG"
+        },
+        {
+          "label": "United States Minor Outlying Islands",
+          "value": "UM"
+        },
+        {
+          "label": "United States of America",
+          "value": "US"
+        },
+        {
+          "label": "Uruguay",
+          "value": "UY"
+        },
+        {
+          "label": "Uzbekistan",
+          "value": "UZ"
+        },
+        {
+          "label": "Holy See",
+          "value": "VA"
+        },
+        {
+          "label": "Saint Vincent and the Grenadines",
+          "value": "VC"
+        },
+        {
+          "label": "Venezuela (Bolivarian Republic of)",
+          "value": "VE"
+        },
+        {
+          "label": "Virgin Islands (British)",
+          "value": "VG"
+        },
+        {
+          "label": "Virgin Islands (U.S.)",
+          "value": "VI"
+        },
+        {
+          "label": "Viet Nam",
+          "value": "VN"
+        },
+        {
+          "label": "Vanuatu",
+          "value": "VU"
+        },
+        {
+          "label": "Wallis and Futuna",
+          "value": "WF"
+        },
+        {
+          "label": "Samoa",
+          "value": "WS"
+        },
+        {
+          "label": "Yemen",
+          "value": "YE"
+        },
+        {
+          "label": "Mayotte",
+          "value": "YT"
+        },
+        {
+          "label": "South Africa",
+          "value": "ZA"
+        },
+        {
+          "label": "Zambia",
+          "value": "ZM"
+        },
+        {
+          "label": "Zimbabwe",
+          "value": "ZW"
+        }
+      ],
+      "description": "Type one or more countries names or values, separated by commas. Examples: Andorra, United Arab Emirates, Afghanistan, Antigua and Barbuda, Anguilla."
+    },
+    {
+      "id": "salary-range",
+      "question": "Salary Range",
+      "type": "multi-choice",
+      "optional": true,
+      "choices": [
+        {
+          "label": "$10,000 - $25,000 USD",
+          "value": "$10,000 - $25,000 USD"
+        },
+        {
+          "label": "$25,000 - $48,999 USD",
+          "value": "$25,000 - $48,999 USD"
+        },
+        {
+          "label": "$50,000 - $74,999 USD",
+          "value": "$50,000 - $74,999 USD"
+        },
+        {
+          "label": "$75,000 - $99,999 USD",
+          "value": "$75,000 - $99,999 USD"
+        },
+        {
+          "label": "$100,000 or more USD",
+          "value": "$100,000 or more USD"
+        }
+      ]
+    },
+    {
+      "id": "skills",
+      "question": "Skills",
+      "type": "multi-choice",
+      "optional": true,
+      "choices": [
+        {
+          "label": "ADP",
+          "value": "518"
+        },
+        {
+          "label": "Amazon Seller Central",
+          "value": "549"
+        },
+        {
+          "label": "BambooHR",
+          "value": "516"
+        },
+        {
+          "label": "Client Relationship Management",
+          "value": "423"
+        },
+        {
+          "label": "Data Visualization",
+          "value": "523"
+        },
+        {
+          "label": "Data Warehousing",
+          "value": "524"
+        },
+        {
+          "label": "Editing",
+          "value": "526"
+        },
+        {
+          "label": "Email Campaigns",
+          "value": "450"
+        },
+        {
+          "label": "Excel Modeling",
+          "value": "517"
+        },
+        {
+          "label": "Financial Advisory",
+          "value": "519"
+        },
+        {
+          "label": "Looker",
+          "value": "504"
+        },
+        {
+          "label": "Market Research",
+          "value": "498"
+        },
+        {
+          "label": "Prototyping",
+          "value": "522"
+        },
+        {
+          "label": "Relationship Building",
+          "value": "515"
+        },
+        {
+          "label": "Risk Management",
+          "value": "454"
+        },
+        {
+          "label": "SEO",
+          "value": "433"
+        },
+        {
+          "label": "Stakeholder Communication",
+          "value": "521"
+        },
+        {
+          "label": "Wealth Management",
+          "value": "520"
+        },
+        {
+          "label": "3D Animation",
+          "value": "366"
+        },
+        {
+          "label": "3D Modeling",
+          "value": "381"
+        },
+        {
+          "label": "A/B Testing",
+          "value": "1"
+        },
+        {
+          "label": "Accounting",
+          "value": "283"
+        },
+        {
+          "label": "Accounts Payable / Accounts Receivable",
+          "value": "637"
+        },
+        {
+          "label": "Ad Design",
+          "value": "2"
+        },
+        {
+          "label": "Admin",
+          "value": "284"
+        },
+        {
+          "label": "Adobe After Affects",
+          "value": "364"
+        },
+        {
+          "label": "Adobe Creative Suite",
+          "value": "3"
+        },
+        {
+          "label": "Adobe Illustrator",
+          "value": "4"
+        },
+        {
+          "label": "Adobe InDesign",
+          "value": "5"
+        },
+        {
+          "label": "Adobe Lightroom",
+          "value": "533"
+        },
+        {
+          "label": "Adobe Photoshop",
+          "value": "6"
+        },
+        {
+          "label": "Adobe Premiere",
+          "value": "7"
+        },
+        {
+          "label": "Adobe XD",
+          "value": "8"
+        },
+        {
+          "label": "ADP",
+          "value": "484"
+        },
+        {
+          "label": "AdWords",
+          "value": "9"
+        },
+        {
+          "label": "Agentic AI",
+          "value": "641"
+        },
+        {
+          "label": "Agile",
+          "value": "314"
+        },
+        {
+          "label": "Agile Methodologies",
+          "value": "459"
+        },
+        {
+          "label": "Agile/Scrum",
+          "value": "452"
+        },
+        {
+          "label": "Ahrefs",
+          "value": "444"
+        },
+        {
+          "label": "AI Agents",
+          "value": "639"
+        },
+        {
+          "label": "AI Chatbots",
+          "value": "640"
+        },
+        {
+          "label": "AI Consulting",
+          "value": "236"
+        },
+        {
+          "label": "AI Content Creation",
+          "value": "243"
+        },
+        {
+          "label": "AI Ethics and Responsible AI",
+          "value": "231"
+        },
+        {
+          "label": "AI Governance",
+          "value": "235"
+        },
+        {
+          "label": "AI HW/SW",
+          "value": "597"
+        },
+        {
+          "label": "AI Model Development",
+          "value": "600"
+        },
+        {
+          "label": "AI Product Development",
+          "value": "234"
+        },
+        {
+          "label": "AI Research",
+          "value": "232"
+        },
+        {
+          "label": "AI Strategy",
+          "value": "233"
+        },
+        {
+          "label": "AI Text-to-Speech",
+          "value": "252"
+        },
+        {
+          "label": "AI/RPA Development",
+          "value": "595"
+        },
+        {
+          "label": "AJAX",
+          "value": "10"
+        },
+        {
+          "label": "Alpine.js",
+          "value": "11"
+        },
+        {
+          "label": "Amazon",
+          "value": "286"
+        },
+        {
+          "label": "Amazon ECS",
+          "value": "324"
+        },
+        {
+          "label": "Analytics",
+          "value": "12"
+        },
+        {
+          "label": "Analytics Tools",
+          "value": "449"
+        },
+        {
+          "label": "Android",
+          "value": "282"
+        },
+        {
+          "label": "Android SDK",
+          "value": "664"
+        },
+        {
+          "label": "AngularJS",
+          "value": "13"
+        },
+        {
+          "label": "Animation",
+          "value": "357"
+        },
+        {
+          "label": "Apache",
+          "value": "298"
+        },
+        {
+          "label": "Apache Tomcat",
+          "value": "659"
+        },
+        {
+          "label": "API",
+          "value": "271"
+        },
+        {
+          "label": "API Design",
+          "value": "644"
+        },
+        {
+          "label": "API Development",
+          "value": "373"
+        },
+        {
+          "label": "API Integration",
+          "value": "369"
+        },
+        {
+          "label": "APIs",
+          "value": "645"
+        },
+        {
+          "label": "App Store Optimization",
+          "value": "378"
+        },
+        {
+          "label": "Application Installations",
+          "value": "14"
+        },
+        {
+          "label": "Architect",
+          "value": "302"
+        },
+        {
+          "label": "Architecture",
+          "value": "303"
+        },
+        {
+          "label": "Artificial Intelligence",
+          "value": "598"
+        },
+        {
+          "label": "Artificial Intelligence (AI)",
+          "value": "211"
+        },
+        {
+          "label": "Asana",
+          "value": "629"
+        },
+        {
+          "label": "Audio Editing",
+          "value": "539"
+        },
+        {
+          "label": "Automation Scripting",
+          "value": "414"
+        },
+        {
+          "label": "AWS",
+          "value": "15"
+        },
+        {
+          "label": "Azure",
+          "value": "16"
+        },
+        {
+          "label": "Azure OpenAI",
+          "value": "245"
+        },
+        {
+          "label": "Babel",
+          "value": "17"
+        },
+        {
+          "label": "Back-End Dev",
+          "value": "260"
+        },
+        {
+          "label": "Backbone.js",
+          "value": "18"
+        },
+        {
+          "label": "Backlink Strategy",
+          "value": "441"
+        },
+        {
+          "label": "Bamboo",
+          "value": "19"
+        },
+        {
+          "label": "BambooHR",
+          "value": "472"
+        },
+        {
+          "label": "Bard",
+          "value": "242"
+        },
+        {
+          "label": "Bash",
+          "value": "20"
+        },
+        {
+          "label": "Behavior Change Coaching",
+          "value": "588"
+        },
+        {
+          "label": "BERT (Bidirectional Encoder Representations from Transformers)",
+          "value": "238"
+        },
+        {
+          "label": "BigQuery",
+          "value": "322"
+        },
+        {
+          "label": "Blockchain",
+          "value": "299"
+        },
+        {
+          "label": "Blog Writing",
+          "value": "437"
+        },
+        {
+          "label": "Bookkeeping",
+          "value": "307"
+        },
+        {
+          "label": "Bootstrap",
+          "value": "21"
+        },
+        {
+          "label": "Brand Identity Design",
+          "value": "623"
+        },
+        {
+          "label": "Branding",
+          "value": "350"
+        },
+        {
+          "label": "Budget Management",
+          "value": "456"
+        },
+        {
+          "label": "Budgeting",
+          "value": "477"
+        },
+        {
+          "label": "Buffer",
+          "value": "22"
+        },
+        {
+          "label": "Bug Tracking",
+          "value": "385"
+        },
+        {
+          "label": "Bulma",
+          "value": "23"
+        },
+        {
+          "label": "Business Analysis & Strategy",
+          "value": "610"
+        },
+        {
+          "label": "Business Valuation",
+          "value": "482"
+        },
+        {
+          "label": "BuzzSumo",
+          "value": "24"
+        },
+        {
+          "label": "C",
+          "value": "25"
+        },
+        {
+          "label": "C#",
+          "value": "305"
+        },
+        {
+          "label": "C++",
+          "value": "26"
+        },
+        {
+          "label": "Cache",
+          "value": "27"
+        },
+        {
+          "label": "Campaign Management",
+          "value": "602"
+        },
+        {
+          "label": "Canva",
+          "value": "28"
+        },
+        {
+          "label": "Cartoons & Comics",
+          "value": "622"
+        },
+        {
+          "label": "Case Management",
+          "value": "560"
+        },
+        {
+          "label": "Cassandra",
+          "value": "325"
+        },
+        {
+          "label": "Celery",
+          "value": "326"
+        },
+        {
+          "label": "Chai",
+          "value": "318"
+        },
+        {
+          "label": "Character Design",
+          "value": "363"
+        },
+        {
+          "label": "Chatbots",
+          "value": "230"
+        },
+        {
+          "label": "ChatGPT",
+          "value": "237"
+        },
+        {
+          "label": "ChatGPT AI Integration",
+          "value": "599"
+        },
+        {
+          "label": "CI/CD Pipelines",
+          "value": "415"
+        },
+        {
+          "label": "Cisco Systems",
+          "value": "408"
+        },
+        {
+          "label": "Claude.ai",
+          "value": "668"
+        },
+        {
+          "label": "Client Relations",
+          "value": "491"
+        },
+        {
+          "label": "Client Retention",
+          "value": "393"
+        },
+        {
+          "label": "Client Retention Strategies",
+          "value": "469"
+        },
+        {
+          "label": "Clojure",
+          "value": "327"
+        },
+        {
+          "label": "Cloud",
+          "value": "261"
+        },
+        {
+          "label": "Cloud Forensics",
+          "value": "320"
+        },
+        {
+          "label": "CMS Development",
+          "value": "29"
+        },
+        {
+          "label": "Cold Calling",
+          "value": "418"
+        },
+        {
+          "label": "Color Theory",
+          "value": "352"
+        },
+        {
+          "label": "Communication Skills",
+          "value": "468"
+        },
+        {
+          "label": "Community Growth",
+          "value": "30"
+        },
+        {
+          "label": "Competitor Analysis",
+          "value": "31"
+        },
+        {
+          "label": "Compliance",
+          "value": "32"
+        },
+        {
+          "label": "Composition",
+          "value": "535"
+        },
+        {
+          "label": "Computer Vision",
+          "value": "213"
+        },
+        {
+          "label": "Configuration Management",
+          "value": "33"
+        },
+        {
+          "label": "Conflict Resolution",
+          "value": "400"
+        },
+        {
+          "label": "Construction & Engineering Project Management",
+          "value": "606"
+        },
+        {
+          "label": "Consumer Behavior",
+          "value": "34"
+        },
+        {
+          "label": "Containers",
+          "value": "35"
+        },
+        {
+          "label": "Content Creation",
+          "value": "402"
+        },
+        {
+          "label": "Content Planning",
+          "value": "528"
+        },
+        {
+          "label": "Content Strategy",
+          "value": "439"
+        },
+        {
+          "label": "Content Writing",
+          "value": "268"
+        },
+        {
+          "label": "Continuous Integration",
+          "value": "386"
+        },
+        {
+          "label": "Continuous Integration Servers",
+          "value": "36"
+        },
+        {
+          "label": "Contract Drafting",
+          "value": "566"
+        },
+        {
+          "label": "Contract Negotiation",
+          "value": "426"
+        },
+        {
+          "label": "Conversation Designer",
+          "value": "626"
+        },
+        {
+          "label": "Convolutional Neural Network (CNN)",
+          "value": "246"
+        },
+        {
+          "label": "Copywriting",
+          "value": "37"
+        },
+        {
+          "label": "Coroutines",
+          "value": "663"
+        },
+        {
+          "label": "Corporate Law",
+          "value": "565"
+        },
+        {
+          "label": "Corporate Tax",
+          "value": "311"
+        },
+        {
+          "label": "Corporate Wellness Programs",
+          "value": "590"
+        },
+        {
+          "label": "CPA",
+          "value": "636"
+        },
+        {
+          "label": "CRM",
+          "value": "38"
+        },
+        {
+          "label": "CRM Integration",
+          "value": "451"
+        },
+        {
+          "label": "CRM Systems",
+          "value": "420"
+        },
+        {
+          "label": "Cross-Browser Development",
+          "value": "39"
+        },
+        {
+          "label": "Cross-Selling",
+          "value": "424"
+        },
+        {
+          "label": "Cryptocurrency",
+          "value": "279"
+        },
+        {
+          "label": "CSS",
+          "value": "370"
+        },
+        {
+          "label": "CSS Preprocessors",
+          "value": "40"
+        },
+        {
+          "label": "Customer Relationship Management",
+          "value": "41"
+        },
+        {
+          "label": "Customer Service",
+          "value": "547"
+        },
+        {
+          "label": "Customer Support",
+          "value": "253"
+        },
+        {
+          "label": "Cyber Security",
+          "value": "312"
+        },
+        {
+          "label": "Cypress",
+          "value": "315"
+        },
+        {
+          "label": "Dart",
+          "value": "332"
+        },
+        {
+          "label": "Dashboard Creation",
+          "value": "506"
+        },
+        {
+          "label": "Data",
+          "value": "42"
+        },
+        {
+          "label": "Data Analysis",
+          "value": "43"
+        },
+        {
+          "label": "Data Annotation",
+          "value": "666"
+        },
+        {
+          "label": "Data Cleaning",
+          "value": "502"
+        },
+        {
+          "label": "Data Engineering",
+          "value": "511"
+        },
+        {
+          "label": "Data Entry",
+          "value": "557"
+        },
+        {
+          "label": "Data Extraction",
+          "value": "619"
+        },
+        {
+          "label": "Data Labeling",
+          "value": "665"
+        },
+        {
+          "label": "Data Mapping",
+          "value": "649"
+        },
+        {
+          "label": "Data Mining",
+          "value": "219"
+        },
+        {
+          "label": "Data Preprocessing",
+          "value": "223"
+        },
+        {
+          "label": "Data Science",
+          "value": "218"
+        },
+        {
+          "label": "Data Structures and Algorithms",
+          "value": "44"
+        },
+        {
+          "label": "Data Visualization",
+          "value": "45"
+        },
+        {
+          "label": "Data Warehousing",
+          "value": "513"
+        },
+        {
+          "label": "Data-Driven Decision Making",
+          "value": "495"
+        },
+        {
+          "label": "Database",
+          "value": "46"
+        },
+        {
+          "label": "Databox",
+          "value": "47"
+        },
+        {
+          "label": "Deal Closure",
+          "value": "430"
+        },
+        {
+          "label": "Debugging",
+          "value": "48"
+        },
+        {
+          "label": "Decision Frameworks",
+          "value": "49"
+        },
+        {
+          "label": "Deep Learning",
+          "value": "214"
+        },
+        {
+          "label": "Deployment Automation",
+          "value": "50"
+        },
+        {
+          "label": "Design",
+          "value": "265"
+        },
+        {
+          "label": "Design Principles",
+          "value": "51"
+        },
+        {
+          "label": "Design Thinking",
+          "value": "497"
+        },
+        {
+          "label": "Developer",
+          "value": "257"
+        },
+        {
+          "label": "DevOps",
+          "value": "275"
+        },
+        {
+          "label": "Dialogflow",
+          "value": "627"
+        },
+        {
+          "label": "Digital Ad Design",
+          "value": "52"
+        },
+        {
+          "label": "Digital Illustration",
+          "value": "360"
+        },
+        {
+          "label": "Digital Marketing",
+          "value": "53"
+        },
+        {
+          "label": "Digital Ocean",
+          "value": "54"
+        },
+        {
+          "label": "Digital Photography",
+          "value": "534"
+        },
+        {
+          "label": "Digital Printing",
+          "value": "55"
+        },
+        {
+          "label": "Disk/memory Forensics",
+          "value": "321"
+        },
+        {
+          "label": "Display Advertising",
+          "value": "604"
+        },
+        {
+          "label": "Distributed Systems",
+          "value": "658"
+        },
+        {
+          "label": "Diversity Initiatives",
+          "value": "581"
+        },
+        {
+          "label": "Django",
+          "value": "56"
+        },
+        {
+          "label": "Docker",
+          "value": "57"
+        },
+        {
+          "label": "Document Review",
+          "value": "568"
+        },
+        {
+          "label": "Documentation",
+          "value": "58"
+        },
+        {
+          "label": "DOM Manipulation",
+          "value": "59"
+        },
+        {
+          "label": "Drafting Documents",
+          "value": "559"
+        },
+        {
+          "label": "Drift",
+          "value": "631"
+        },
+        {
+          "label": "Drupal",
+          "value": "301"
+        },
+        {
+          "label": "DynamoDB",
+          "value": "328"
+        },
+        {
+          "label": "eBay",
+          "value": "550"
+        },
+        {
+          "label": "eClinicalWorks",
+          "value": "650"
+        },
+        {
+          "label": "Ecommerce Management",
+          "value": "616"
+        },
+        {
+          "label": "Ecommerce Web Development",
+          "value": "613"
+        },
+        {
+          "label": "Education",
+          "value": "274"
+        },
+        {
+          "label": "EHR Systems",
+          "value": "585"
+        },
+        {
+          "label": "Elasticsearch",
+          "value": "60"
+        },
+        {
+          "label": "Elixir",
+          "value": "338"
+        },
+        {
+          "label": "Email / Chat Support",
+          "value": "295"
+        },
+        {
+          "label": "Email Campaigns",
+          "value": "431"
+        },
+        {
+          "label": "Email Handling",
+          "value": "296"
+        },
+        {
+          "label": "Email Marketing and Automation",
+          "value": "61"
+        },
+        {
+          "label": "Ember.js",
+          "value": "62"
+        },
+        {
+          "label": "Employee Benefits",
+          "value": "487"
+        },
+        {
+          "label": "Employee Engagement",
+          "value": "471"
+        },
+        {
+          "label": "Employee Engagement,",
+          "value": "574"
+        },
+        {
+          "label": "Employee Feedback",
+          "value": "579"
+        },
+        {
+          "label": "Employer Branding",
+          "value": "573"
+        },
+        {
+          "label": "Employment Law Awareness",
+          "value": "63"
+        },
+        {
+          "label": "End User Support",
+          "value": "64"
+        },
+        {
+          "label": "Endpoint Security",
+          "value": "412"
+        },
+        {
+          "label": "Engagement Tactics",
+          "value": "448"
+        },
+        {
+          "label": "Engineer",
+          "value": "254"
+        },
+        {
+          "label": "English",
+          "value": "277"
+        },
+        {
+          "label": "Enterprise Systems",
+          "value": "65"
+        },
+        {
+          "label": "Error Logs",
+          "value": "66"
+        },
+        {
+          "label": "ES6",
+          "value": "67"
+        },
+        {
+          "label": "ES7",
+          "value": "68"
+        },
+        {
+          "label": "Estimating and Cost Forecasting",
+          "value": "69"
+        },
+        {
+          "label": "ETL Processes",
+          "value": "512"
+        },
+        {
+          "label": "Event Planning",
+          "value": "401"
+        },
+        {
+          "label": "Excel",
+          "value": "285"
+        },
+        {
+          "label": "Excel Modeling",
+          "value": "479"
+        },
+        {
+          "label": "Executive",
+          "value": "255"
+        },
+        {
+          "label": "Executive Assistant",
+          "value": "293"
+        },
+        {
+          "label": "Executive Virtual Assistance",
+          "value": "618"
+        },
+        {
+          "label": "Expense Management",
+          "value": "70"
+        },
+        {
+          "label": "Express.js",
+          "value": "341"
+        },
+        {
+          "label": "Facebook Paid Ads",
+          "value": "71"
+        },
+        {
+          "label": "Fast Healthcare Interoperability Resources (FHIR)",
+          "value": "651"
+        },
+        {
+          "label": "Feature Engineering",
+          "value": "224"
+        },
+        {
+          "label": "Figma",
+          "value": "72"
+        },
+        {
+          "label": "Finance",
+          "value": "258"
+        },
+        {
+          "label": "Financial Analysis & Modeling",
+          "value": "488"
+        },
+        {
+          "label": "Financial Management",
+          "value": "73"
+        },
+        {
+          "label": "Financial Management/CFO",
+          "value": "611"
+        },
+        {
+          "label": "Financial Planning",
+          "value": "310"
+        },
+        {
+          "label": "Financial Reporting",
+          "value": "475"
+        },
+        {
+          "label": "Firebase",
+          "value": "334"
+        },
+        {
+          "label": "Firewall Configuration",
+          "value": "405"
+        },
+        {
+          "label": "Fitness Training",
+          "value": "592"
+        },
+        {
+          "label": "Flask",
+          "value": "74"
+        },
+        {
+          "label": "Flutter",
+          "value": "377"
+        },
+        {
+          "label": "Forecasting",
+          "value": "480"
+        },
+        {
+          "label": "Fractional",
+          "value": "309"
+        },
+        {
+          "label": "Freshdesk",
+          "value": "388"
+        },
+        {
+          "label": "Front-End Dev",
+          "value": "263"
+        },
+        {
+          "label": "Full Stack Dev",
+          "value": "264"
+        },
+        {
+          "label": "Full Time",
+          "value": "270"
+        },
+        {
+          "label": "Funnel Management",
+          "value": "75"
+        },
+        {
+          "label": "GAAP",
+          "value": "638"
+        },
+        {
+          "label": "Game Physics",
+          "value": "382"
+        },
+        {
+          "label": "GCP",
+          "value": "336"
+        },
+        {
+          "label": "Generative Adversarial Networks (GANs)",
+          "value": "222"
+        },
+        {
+          "label": "Generative AI",
+          "value": "240"
+        },
+        {
+          "label": "GetResponse",
+          "value": "76"
+        },
+        {
+          "label": "Git",
+          "value": "77"
+        },
+        {
+          "label": "GitHub",
+          "value": "646"
+        },
+        {
+          "label": "Go",
+          "value": "342"
+        },
+        {
+          "label": "Go-to-Market Strategy",
+          "value": "499"
+        },
+        {
+          "label": "GoLang",
+          "value": "78"
+        },
+        {
+          "label": "Google Ads",
+          "value": "434"
+        },
+        {
+          "label": "Google AI Studio",
+          "value": "670"
+        },
+        {
+          "label": "Google Analytics",
+          "value": "79"
+        },
+        {
+          "label": "Google Cloud",
+          "value": "80"
+        },
+        {
+          "label": "Google Search Console",
+          "value": "81"
+        },
+        {
+          "label": "Google Trends",
+          "value": "82"
+        },
+        {
+          "label": "Gradio",
+          "value": "244"
+        },
+        {
+          "label": "Graphic Design",
+          "value": "83"
+        },
+        {
+          "label": "GraphQL",
+          "value": "84"
+        },
+        {
+          "label": "Gusto",
+          "value": "485"
+        },
+        {
+          "label": "Hadoop",
+          "value": "514"
+        },
+        {
+          "label": "Hardware",
+          "value": "85"
+        },
+        {
+          "label": "Hardware/Software Support",
+          "value": "409"
+        },
+        {
+          "label": "Help Desk Reporting Systems",
+          "value": "86"
+        },
+        {
+          "label": "Heroku",
+          "value": "87"
+        },
+        {
+          "label": "HeyGen",
+          "value": "667"
+        },
+        {
+          "label": "HL7 FHIR Standard",
+          "value": "652"
+        },
+        {
+          "label": "Hootsuite",
+          "value": "88"
+        },
+        {
+          "label": "HR Administration",
+          "value": "91"
+        },
+        {
+          "label": "HR Software",
+          "value": "575"
+        },
+        {
+          "label": "HTML/CSS",
+          "value": "89"
+        },
+        {
+          "label": "HubSpot",
+          "value": "90"
+        },
+        {
+          "label": "Illustration",
+          "value": "92"
+        },
+        {
+          "label": "Image Editing",
+          "value": "621"
+        },
+        {
+          "label": "Image Processing",
+          "value": "241"
+        },
+        {
+          "label": "Image Recognition",
+          "value": "228"
+        },
+        {
+          "label": "Inbound Marketing",
+          "value": "93"
+        },
+        {
+          "label": "Incident Management",
+          "value": "416"
+        },
+        {
+          "label": "InDesign",
+          "value": "349"
+        },
+        {
+          "label": "Influencer Marketing",
+          "value": "94"
+        },
+        {
+          "label": "Information Analysis",
+          "value": "95"
+        },
+        {
+          "label": "InfoSec",
+          "value": "266"
+        },
+        {
+          "label": "Infrastructure Orchestration",
+          "value": "96"
+        },
+        {
+          "label": "Instagram",
+          "value": "445"
+        },
+        {
+          "label": "Installing Systems",
+          "value": "97"
+        },
+        {
+          "label": "Instructional Design",
+          "value": "609"
+        },
+        {
+          "label": "Interaction Design",
+          "value": "355"
+        },
+        {
+          "label": "Intercom",
+          "value": "632"
+        },
+        {
+          "label": "Interviewing",
+          "value": "570"
+        },
+        {
+          "label": "Inventory Management",
+          "value": "542"
+        },
+        {
+          "label": "Inventory Tracking",
+          "value": "548"
+        },
+        {
+          "label": "Investment Analysis",
+          "value": "481"
+        },
+        {
+          "label": "iOS",
+          "value": "288"
+        },
+        {
+          "label": "Java",
+          "value": "98"
+        },
+        {
+          "label": "JavaScript",
+          "value": "99"
+        },
+        {
+          "label": "Jenkins",
+          "value": "100"
+        },
+        {
+          "label": "Jest",
+          "value": "317"
+        },
+        {
+          "label": "Jetpack Compose",
+          "value": "661"
+        },
+        {
+          "label": "Jira",
+          "value": "306"
+        },
+        {
+          "label": "jQuery",
+          "value": "101"
+        },
+        {
+          "label": "JSON",
+          "value": "102"
+        },
+        {
+          "label": "Junior",
+          "value": "280"
+        },
+        {
+          "label": "Kafka",
+          "value": "347"
+        },
+        {
+          "label": "Keras",
+          "value": "345"
+        },
+        {
+          "label": "Keyword Research",
+          "value": "438"
+        },
+        {
+          "label": "Keyword Research and Planning",
+          "value": "103"
+        },
+        {
+          "label": "Knowledge Base Management",
+          "value": "397"
+        },
+        {
+          "label": "Knowledge Management",
+          "value": "104"
+        },
+        {
+          "label": "Kotlin",
+          "value": "313"
+        },
+        {
+          "label": "KPI Analysis",
+          "value": "508"
+        },
+        {
+          "label": "KPI Tracking",
+          "value": "462"
+        },
+        {
+          "label": "Kubernetes",
+          "value": "308"
+        },
+        {
+          "label": "Laravel",
+          "value": "300"
+        },
+        {
+          "label": "Large Language Models (LLMs)",
+          "value": "247"
+        },
+        {
+          "label": "Large-scale Distributed Systems",
+          "value": "657"
+        },
+        {
+          "label": "Layout Design",
+          "value": "351"
+        },
+        {
+          "label": "Lead Generation",
+          "value": "624"
+        },
+        {
+          "label": "Lead Qualification",
+          "value": "419"
+        },
+        {
+          "label": "Leadership",
+          "value": "464"
+        },
+        {
+          "label": "Legal",
+          "value": "281"
+        },
+        {
+          "label": "Legal Advisory",
+          "value": "564"
+        },
+        {
+          "label": "Legal Compliance",
+          "value": "563"
+        },
+        {
+          "label": "Legal Documentation",
+          "value": "569"
+        },
+        {
+          "label": "Legal Research",
+          "value": "558"
+        },
+        {
+          "label": "Lighting Techniques",
+          "value": "532"
+        },
+        {
+          "label": "Lightworks",
+          "value": "105"
+        },
+        {
+          "label": "Link Building",
+          "value": "106"
+        },
+        {
+          "label": "LinkedIn",
+          "value": "446"
+        },
+        {
+          "label": "LinkedIn Outreach",
+          "value": "432"
+        },
+        {
+          "label": "LinkedIn Recruiter",
+          "value": "571"
+        },
+        {
+          "label": "Linux",
+          "value": "107"
+        },
+        {
+          "label": "Listing Optimization",
+          "value": "553"
+        },
+        {
+          "label": "Lit.js",
+          "value": "108"
+        },
+        {
+          "label": "Litigation",
+          "value": "561"
+        },
+        {
+          "label": "Litigation Support",
+          "value": "562"
+        },
+        {
+          "label": "Live Chat Support",
+          "value": "390"
+        },
+        {
+          "label": "Logo Creation",
+          "value": "109"
+        },
+        {
+          "label": "Looker Studio",
+          "value": "323"
+        },
+        {
+          "label": "Machine Learning",
+          "value": "210"
+        },
+        {
+          "label": "Magento",
+          "value": "541"
+        },
+        {
+          "label": "MailChimp",
+          "value": "110"
+        },
+        {
+          "label": "Management Consulting",
+          "value": "608"
+        },
+        {
+          "label": "Manual Testing",
+          "value": "383"
+        },
+        {
+          "label": "Manual Transcription",
+          "value": "615"
+        },
+        {
+          "label": "MariaDB",
+          "value": "111"
+        },
+        {
+          "label": "Market Research",
+          "value": "112"
+        },
+        {
+          "label": "Marketing",
+          "value": "113"
+        },
+        {
+          "label": "Marketing Automation",
+          "value": "114"
+        },
+        {
+          "label": "Marketing Management",
+          "value": "115"
+        },
+        {
+          "label": "Marketo",
+          "value": "633"
+        },
+        {
+          "label": "Medical",
+          "value": "262"
+        },
+        {
+          "label": "Medical Documentation",
+          "value": "583"
+        },
+        {
+          "label": "Medical Virtual Assistance",
+          "value": "617"
+        },
+        {
+          "label": "MeteorJS",
+          "value": "116"
+        },
+        {
+          "label": "Microservices",
+          "value": "654"
+        },
+        {
+          "label": "Microsoft Project/Trello/Jira",
+          "value": "455"
+        },
+        {
+          "label": "Midjourney",
+          "value": "250"
+        },
+        {
+          "label": "Mindfulness",
+          "value": "593"
+        },
+        {
+          "label": "Mobile",
+          "value": "267"
+        },
+        {
+          "label": "Mobile App Dev",
+          "value": "612"
+        },
+        {
+          "label": "Mobile Development",
+          "value": "660"
+        },
+        {
+          "label": "Mobile Marketing",
+          "value": "117"
+        },
+        {
+          "label": "Mocha",
+          "value": "316"
+        },
+        {
+          "label": "Model Evaluation",
+          "value": "225"
+        },
+        {
+          "label": "Moderation",
+          "value": "399"
+        },
+        {
+          "label": "MongoDB",
+          "value": "118"
+        },
+        {
+          "label": "Monitoring and Analytics",
+          "value": "119"
+        },
+        {
+          "label": "Motivational Interviewing",
+          "value": "589"
+        },
+        {
+          "label": "Moz",
+          "value": "120"
+        },
+        {
+          "label": "Multitasking",
+          "value": "391"
+        },
+        {
+          "label": "MySQL",
+          "value": "121"
+        },
+        {
+          "label": "Natural Language Processing (NLP)",
+          "value": "212"
+        },
+        {
+          "label": "Negotiation",
+          "value": "567"
+        },
+        {
+          "label": "Nest.js",
+          "value": "339"
+        },
+        {
+          "label": "Netpeak Spider",
+          "value": "122"
+        },
+        {
+          "label": "NetSuite",
+          "value": "635"
+        },
+        {
+          "label": "Network Forensics",
+          "value": "319"
+        },
+        {
+          "label": "Network Monitoring",
+          "value": "404"
+        },
+        {
+          "label": "Network Protocols",
+          "value": "123"
+        },
+        {
+          "label": "Networking",
+          "value": "429"
+        },
+        {
+          "label": "Neural Networks",
+          "value": "215"
+        },
+        {
+          "label": "Node.js",
+          "value": "124"
+        },
+        {
+          "label": "NoSQL",
+          "value": "368"
+        },
+        {
+          "label": "Numpy",
+          "value": "344"
+        },
+        {
+          "label": "Nutrition Guidance",
+          "value": "594"
+        },
+        {
+          "label": "Nutrition Planning",
+          "value": "586"
+        },
+        {
+          "label": "Object Detection",
+          "value": "249"
+        },
+        {
+          "label": "Objection Handling",
+          "value": "422"
+        },
+        {
+          "label": "Objective C",
+          "value": "289"
+        },
+        {
+          "label": "Octopus Deploy",
+          "value": "125"
+        },
+        {
+          "label": "On-Page SEO",
+          "value": "442"
+        },
+        {
+          "label": "Onboarding",
+          "value": "394"
+        },
+        {
+          "label": "Open Source",
+          "value": "643"
+        },
+        {
+          "label": "OpenAI",
+          "value": "596"
+        },
+        {
+          "label": "OpenClaw",
+          "value": "669"
+        },
+        {
+          "label": "OpenCV",
+          "value": "329"
+        },
+        {
+          "label": "Openstack",
+          "value": "126"
+        },
+        {
+          "label": "Operational Planning",
+          "value": "463"
+        },
+        {
+          "label": "Operations Management",
+          "value": "127"
+        },
+        {
+          "label": "Oracle",
+          "value": "128"
+        },
+        {
+          "label": "Order Fulfillment",
+          "value": "546"
+        },
+        {
+          "label": "Organic Search",
+          "value": "129"
+        },
+        {
+          "label": "Outreach",
+          "value": "130"
+        },
+        {
+          "label": "Paid Social Media Advertising",
+          "value": "131"
+        },
+        {
+          "label": "Palantir Foundry",
+          "value": "653"
+        },
+        {
+          "label": "Pardot",
+          "value": "634"
+        },
+        {
+          "label": "Partnership Building",
+          "value": "428"
+        },
+        {
+          "label": "Patient Communication",
+          "value": "584"
+        },
+        {
+          "label": "Pattern Design",
+          "value": "601"
+        },
+        {
+          "label": "Payroll",
+          "value": "297"
+        },
+        {
+          "label": "Payroll Management",
+          "value": "478"
+        },
+        {
+          "label": "Performance Management",
+          "value": "577"
+        },
+        {
+          "label": "Performance Monitoring",
+          "value": "413"
+        },
+        {
+          "label": "Phone Support",
+          "value": "294"
+        },
+        {
+          "label": "Photo Editing",
+          "value": "132"
+        },
+        {
+          "label": "Photo Retouching",
+          "value": "537"
+        },
+        {
+          "label": "Photography",
+          "value": "133"
+        },
+        {
+          "label": "PHP",
+          "value": "134"
+        },
+        {
+          "label": "Policy Implementation",
+          "value": "576"
+        },
+        {
+          "label": "Portfolio Management",
+          "value": "490"
+        },
+        {
+          "label": "PostgreeSQL",
+          "value": "374"
+        },
+        {
+          "label": "PostgreSQL",
+          "value": "135"
+        },
+        {
+          "label": "Power BI",
+          "value": "505"
+        },
+        {
+          "label": "Power BI/Tableau",
+          "value": "501"
+        },
+        {
+          "label": "PPC",
+          "value": "136"
+        },
+        {
+          "label": "PPC Campaigns",
+          "value": "552"
+        },
+        {
+          "label": "PPC Management",
+          "value": "436"
+        },
+        {
+          "label": "PR Strategy",
+          "value": "137"
+        },
+        {
+          "label": "Preact.js",
+          "value": "138"
+        },
+        {
+          "label": "Predictive Analytics",
+          "value": "220"
+        },
+        {
+          "label": "Predictive Modeling",
+          "value": "510"
+        },
+        {
+          "label": "Presentation Design",
+          "value": "620"
+        },
+        {
+          "label": "Pricing Strategy",
+          "value": "545"
+        },
+        {
+          "label": "Problem Resolution",
+          "value": "395"
+        },
+        {
+          "label": "Problem Solving",
+          "value": "139"
+        },
+        {
+          "label": "Process Improvement",
+          "value": "461"
+        },
+        {
+          "label": "Product Descriptions",
+          "value": "555"
+        },
+        {
+          "label": "Product Designer",
+          "value": "304"
+        },
+        {
+          "label": "Product knowledge",
+          "value": "140"
+        },
+        {
+          "label": "Product Lifecycle Management",
+          "value": "492"
+        },
+        {
+          "label": "Product Listing",
+          "value": "544"
+        },
+        {
+          "label": "Product Marketing",
+          "value": "141"
+        },
+        {
+          "label": "Product Roadmapping",
+          "value": "457"
+        },
+        {
+          "label": "Productivity Software",
+          "value": "142"
+        },
+        {
+          "label": "Project Management",
+          "value": "143"
+        },
+        {
+          "label": "Project Planning",
+          "value": "453"
+        },
+        {
+          "label": "Prometheus",
+          "value": "348"
+        },
+        {
+          "label": "Prompt Engineering",
+          "value": "251"
+        },
+        {
+          "label": "Proofreading",
+          "value": "538"
+        },
+        {
+          "label": "Prototyping",
+          "value": "496"
+        },
+        {
+          "label": "Python",
+          "value": "144"
+        },
+        {
+          "label": "PyTorch",
+          "value": "217"
+        },
+        {
+          "label": "Qualitative Research",
+          "value": "605"
+        },
+        {
+          "label": "Quality Assurance",
+          "value": "145"
+        },
+        {
+          "label": "QuickBooks",
+          "value": "474"
+        },
+        {
+          "label": "R Programming",
+          "value": "509"
+        },
+        {
+          "label": "Rasa",
+          "value": "628"
+        },
+        {
+          "label": "React",
+          "value": "146"
+        },
+        {
+          "label": "React Native",
+          "value": "376"
+        },
+        {
+          "label": "Recognition Programs",
+          "value": "580"
+        },
+        {
+          "label": "Recruiting",
+          "value": "147"
+        },
+        {
+          "label": "Redis",
+          "value": "148"
+        },
+        {
+          "label": "Reinforcement Learning",
+          "value": "221"
+        },
+        {
+          "label": "Relationship Building",
+          "value": "466"
+        },
+        {
+          "label": "Relationship Management",
+          "value": "392"
+        },
+        {
+          "label": "Remote Support Tools",
+          "value": "396"
+        },
+        {
+          "label": "Report Automation",
+          "value": "507"
+        },
+        {
+          "label": "Reporting",
+          "value": "149"
+        },
+        {
+          "label": "Research and Analysis",
+          "value": "150"
+        },
+        {
+          "label": "Responsive Design",
+          "value": "151"
+        },
+        {
+          "label": "REST APIs",
+          "value": "656"
+        },
+        {
+          "label": "RESTful Services/APIs",
+          "value": "152"
+        },
+        {
+          "label": "Retargeting",
+          "value": "153"
+        },
+        {
+          "label": "Revenue Forecasting",
+          "value": "154"
+        },
+        {
+          "label": "Revenue Management",
+          "value": "155"
+        },
+        {
+          "label": "Risk Assessment",
+          "value": "483"
+        },
+        {
+          "label": "Risk Management",
+          "value": "156"
+        },
+        {
+          "label": "Roadmapping",
+          "value": "494"
+        },
+        {
+          "label": "Ruby",
+          "value": "157"
+        },
+        {
+          "label": "Ruby on Rails",
+          "value": "158"
+        },
+        {
+          "label": "Rust",
+          "value": "642"
+        },
+        {
+          "label": "RxJava",
+          "value": "662"
+        },
+        {
+          "label": "SaaS",
+          "value": "269"
+        },
+        {
+          "label": "Sales",
+          "value": "272"
+        },
+        {
+          "label": "Sales Analytics",
+          "value": "543"
+        },
+        {
+          "label": "Sales Enablement",
+          "value": "500"
+        },
+        {
+          "label": "Sales Management",
+          "value": "159"
+        },
+        {
+          "label": "Sales Pitching",
+          "value": "421"
+        },
+        {
+          "label": "Sales Reporting",
+          "value": "425"
+        },
+        {
+          "label": "Salesforce",
+          "value": "273"
+        },
+        {
+          "label": "SASS",
+          "value": "160"
+        },
+        {
+          "label": "Scala",
+          "value": "290"
+        },
+        {
+          "label": "Scipy",
+          "value": "330"
+        },
+        {
+          "label": "Screaming Frog",
+          "value": "161"
+        },
+        {
+          "label": "Scripting & Automation",
+          "value": "614"
+        },
+        {
+          "label": "Scrum",
+          "value": "493"
+        },
+        {
+          "label": "SCSS",
+          "value": "162"
+        },
+        {
+          "label": "Search Engine Optimization (SEO)",
+          "value": "163"
+        },
+        {
+          "label": "Security",
+          "value": "164"
+        },
+        {
+          "label": "Selenium",
+          "value": "343"
+        },
+        {
+          "label": "SEM",
+          "value": "165"
+        },
+        {
+          "label": "SEMRush",
+          "value": "166"
+        },
+        {
+          "label": "Senior",
+          "value": "256"
+        },
+        {
+          "label": "SEO",
+          "value": "167"
+        },
+        {
+          "label": "SEO for E-commerce",
+          "value": "554"
+        },
+        {
+          "label": "SEO Optimization",
+          "value": "440"
+        },
+        {
+          "label": "SEO Writing",
+          "value": "525"
+        },
+        {
+          "label": "Severless",
+          "value": "287"
+        },
+        {
+          "label": "Shell",
+          "value": "168"
+        },
+        {
+          "label": "Shopify",
+          "value": "291"
+        },
+        {
+          "label": "Site Maps",
+          "value": "169"
+        },
+        {
+          "label": "Sketch",
+          "value": "170"
+        },
+        {
+          "label": "Sketching",
+          "value": "361"
+        },
+        {
+          "label": "Slack",
+          "value": "630"
+        },
+        {
+          "label": "Social Media Ads",
+          "value": "435"
+        },
+        {
+          "label": "Social Media Content",
+          "value": "529"
+        },
+        {
+          "label": "Social Media Management",
+          "value": "398"
+        },
+        {
+          "label": "Social Media Marketing",
+          "value": "171"
+        },
+        {
+          "label": "Software Support",
+          "value": "172"
+        },
+        {
+          "label": "Software Upgrades",
+          "value": "173"
+        },
+        {
+          "label": "SolidJS",
+          "value": "174"
+        },
+        {
+          "label": "Spark",
+          "value": "346"
+        },
+        {
+          "label": "Speech Recognition",
+          "value": "229"
+        },
+        {
+          "label": "Spring",
+          "value": "175"
+        },
+        {
+          "label": "Spring Boot",
+          "value": "655"
+        },
+        {
+          "label": "SQL",
+          "value": "176"
+        },
+        {
+          "label": "SQS",
+          "value": "177"
+        },
+        {
+          "label": "Stable Diffusion",
+          "value": "239"
+        },
+        {
+          "label": "Stakeholder Communication",
+          "value": "460"
+        },
+        {
+          "label": "Statistical Analysis",
+          "value": "503"
+        },
+        {
+          "label": "Statistics",
+          "value": "276"
+        },
+        {
+          "label": "Stimulus",
+          "value": "178"
+        },
+        {
+          "label": "Storyboarding",
+          "value": "367"
+        },
+        {
+          "label": "Storytelling",
+          "value": "527"
+        },
+        {
+          "label": "Strategic Analysis",
+          "value": "179"
+        },
+        {
+          "label": "Strategic Planning",
+          "value": "427"
+        },
+        {
+          "label": "Strategic Thinking",
+          "value": "180"
+        },
+        {
+          "label": "Stress Management",
+          "value": "591"
+        },
+        {
+          "label": "Studio Setup",
+          "value": "536"
+        },
+        {
+          "label": "Supervised Learning",
+          "value": "226"
+        },
+        {
+          "label": "Supply Chain & Logistic Project Management",
+          "value": "607"
+        },
+        {
+          "label": "Support Systems",
+          "value": "181"
+        },
+        {
+          "label": "Svelte",
+          "value": "182"
+        },
+        {
+          "label": "Swift",
+          "value": "375"
+        },
+        {
+          "label": "Symfony",
+          "value": "331"
+        },
+        {
+          "label": "Sys Admin",
+          "value": "259"
+        },
+        {
+          "label": "System Architecture",
+          "value": "417"
+        },
+        {
+          "label": "System Design",
+          "value": "183"
+        },
+        {
+          "label": "System Monitoring",
+          "value": "411"
+        },
+        {
+          "label": "Tailwind",
+          "value": "372"
+        },
+        {
+          "label": "Tailwind CSS",
+          "value": "184"
+        },
+        {
+          "label": "Talent Acquisition",
+          "value": "470"
+        },
+        {
+          "label": "Talent Sourcing",
+          "value": "572"
+        },
+        {
+          "label": "Task Execution Schema",
+          "value": "648"
+        },
+        {
+          "label": "Tax Calculations",
+          "value": "486"
+        },
+        {
+          "label": "Tax Preparation",
+          "value": "476"
+        },
+        {
+          "label": "TCP/IP",
+          "value": "406"
+        },
+        {
+          "label": "Teaching",
+          "value": "278"
+        },
+        {
+          "label": "Team Building",
+          "value": "578"
+        },
+        {
+          "label": "Team Management",
+          "value": "465"
+        },
+        {
+          "label": "Technical Documentation",
+          "value": "389"
+        },
+        {
+          "label": "Technical SEO",
+          "value": "443"
+        },
+        {
+          "label": "Technical Support",
+          "value": "185"
+        },
+        {
+          "label": "Technical Writing",
+          "value": "186"
+        },
+        {
+          "label": "Technology Management",
+          "value": "187"
+        },
+        {
+          "label": "Telemarketing",
+          "value": "625"
+        },
+        {
+          "label": "TensorFlow",
+          "value": "216"
+        },
+        {
+          "label": "Terraform",
+          "value": "403"
+        },
+        {
+          "label": "Test Scripts",
+          "value": "384"
+        },
+        {
+          "label": "Testing",
+          "value": "188"
+        },
+        {
+          "label": "Testing and Cloud Quality Tools",
+          "value": "189"
+        },
+        {
+          "label": "Testing/Debugging",
+          "value": "190"
+        },
+        {
+          "label": "Ticketing Systems",
+          "value": "191"
+        },
+        {
+          "label": "Tracking and Attribution",
+          "value": "192"
+        },
+        {
+          "label": "Training & Development",
+          "value": "603"
+        },
+        {
+          "label": "Troubleshooting",
+          "value": "193"
+        },
+        {
+          "label": "Twitter",
+          "value": "447"
+        },
+        {
+          "label": "TypeScript",
+          "value": "337"
+        },
+        {
+          "label": "Typography",
+          "value": "194"
+        },
+        {
+          "label": "UI/UX",
+          "value": "195"
+        },
+        {
+          "label": "UI/UX Design",
+          "value": "196"
+        },
+        {
+          "label": "Unity",
+          "value": "379"
+        },
+        {
+          "label": "Unreal Engine",
+          "value": "380"
+        },
+        {
+          "label": "Unsupervised Learning",
+          "value": "227"
+        },
+        {
+          "label": "Upselling",
+          "value": "467"
+        },
+        {
+          "label": "Usability",
+          "value": "197"
+        },
+        {
+          "label": "Usability Testing",
+          "value": "356"
+        },
+        {
+          "label": "User Research",
+          "value": "354"
+        },
+        {
+          "label": "User Story Development",
+          "value": "458"
+        },
+        {
+          "label": "UX design",
+          "value": "198"
+        },
+        {
+          "label": "Vector Art",
+          "value": "362"
+        },
+        {
+          "label": "Version Control",
+          "value": "199"
+        },
+        {
+          "label": "Video Editing",
+          "value": "365"
+        },
+        {
+          "label": "Video Editing (Final Cut Pro, Adobe Premiere)",
+          "value": "531"
+        },
+        {
+          "label": "Video Production",
+          "value": "200"
+        },
+        {
+          "label": "Videography",
+          "value": "530"
+        },
+        {
+          "label": "Virtual Assistant",
+          "value": "292"
+        },
+        {
+          "label": "Virtual Consultations",
+          "value": "582"
+        },
+        {
+          "label": "Visual Hierarchy",
+          "value": "359"
+        },
+        {
+          "label": "Visual Merchandising",
+          "value": "556"
+        },
+        {
+          "label": "VPN Management",
+          "value": "407"
+        },
+        {
+          "label": "VSTS",
+          "value": "201"
+        },
+        {
+          "label": "Vue.js",
+          "value": "202"
+        },
+        {
+          "label": "Vue.js./Angular",
+          "value": "371"
+        },
+        {
+          "label": "Walmart Marketplace",
+          "value": "551"
+        },
+        {
+          "label": "Wealth Management",
+          "value": "489"
+        },
+        {
+          "label": "Web Design",
+          "value": "358"
+        },
+        {
+          "label": "Web Performance Optimization",
+          "value": "203"
+        },
+        {
+          "label": "Web Support",
+          "value": "204"
+        },
+        {
+          "label": "Web3.js",
+          "value": "333"
+        },
+        {
+          "label": "Webflow",
+          "value": "205"
+        },
+        {
+          "label": "Websockets",
+          "value": "340"
+        },
+        {
+          "label": "Weebly",
+          "value": "206"
+        },
+        {
+          "label": "Wellness Programs",
+          "value": "587"
+        },
+        {
+          "label": "Windows/Linux/MacOS",
+          "value": "410"
+        },
+        {
+          "label": "Wireframing",
+          "value": "353"
+        },
+        {
+          "label": "Wix",
+          "value": "207"
+        },
+        {
+          "label": "WooCommerce",
+          "value": "540"
+        },
+        {
+          "label": "WordPress",
+          "value": "208"
+        },
+        {
+          "label": "Workable",
+          "value": "473"
+        },
+        {
+          "label": "Workflow Description Language",
+          "value": "647"
+        },
+        {
+          "label": "Writing",
+          "value": "209"
+        },
+        {
+          "label": "Xcode",
+          "value": "335"
+        },
+        {
+          "label": "Zendesk",
+          "value": "387"
+        }
+      ],
+      "description": "Type one or more skills names or values, separated by commas. Examples: ADP, Amazon Seller Central, BambooHR, Client Relationship Management, Data Visualization."
+    }
+  ],
+  "steps": [
+    {
+      "id": "goal",
+      "request": {
+        "method": "GET",
+        "url": "https://weworkremotely.com/remote-jobs/search",
+        "headers": {
+          "Referer": "https://weworkremotely.com/",
+          "X-Requested-With": "XMLHttpRequest",
+          "Accept": "*/*;q=0.5, text/javascript, application/javascript, application/ecmascript, application/x-ecmascript"
+        },
+        "query": {
+          "sort": "",
+          "term": {
+            "$value": "{{search}}"
+          },
+          "categories[]": {
+            "$value": "{{job-categories}}"
+          },
+          "country[]": {
+            "$value": "{{countries}}"
+          },
+          "salary_range[]": {
+            "$value": "{{salary-range}}"
+          },
+          "skills[]": {
+            "$value": "{{skills}}"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "label": "Goal response",
+      "from": "goal",
+      "path": "$"
+    }
+  ]
+}

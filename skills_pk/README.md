@@ -1,0 +1,559 @@
+# API Skill Builder
+
+API Skill Builder is a local Node.js prototype that learns a website workflow once with browser automation, then turns the useful parts into a reusable "skill" that can be run from a simple terminal chatbot.
+
+The main goal is to avoid repeating slow browser automation for every quote/search/form workflow. The first run uses Chrome to observe the website. Later runs ask the same user-facing questions and call the saved API, result URL, or replay strategy directly.
+
+## What It Does
+
+Given a website link, the CLI can:
+
+1. Check if a skill already exists for that site.
+2. Run the saved skill in a chatbot-style prompt.
+3. If no skill exists, open Chrome and record the user completing the workflow.
+4. Capture network requests, page fields, selected options, typed values, clicks, and final URL state.
+5. Rank useful endpoint candidates while ignoring static files, analytics, telemetry, fonts, CSS, images, and Cloudflare RUM noise.
+6. Generate a draft skill from the best available strategy.
+7. Promote the draft into `skills/*.json` for future runs.
+
+The saved strategy can be one of three modes:
+
+| Strategy | When Used | Runtime Path |
+| --- | --- | --- |
+| Direct API request | The site submits a real reusable JSON/query endpoint | Node `fetch` |
+| Browser result URL | The site calculates in the browser but encodes inputs in the URL | Chrome CDP navigation |
+| Browser workflow replay | No reusable endpoint or result URL exists, but fields/clicks were recorded | Chrome CDP replay |
+
+## Why This Exists
+
+Browser automation is flexible but slow. Direct API calls are fast but hard to discover by hand.
+
+This project bridges the two:
+
+- Use browser automation once to observe the real workflow.
+- Convert the important request/inputs into a structured JSON skill.
+- Ask future users clean website-like questions instead of raw payload paths.
+- Use the fastest saved execution path that still produces the target result.
+
+## Requirements
+
+- Windows, macOS, or Linux with Node.js 20 or newer.
+- Google Chrome or Chromium installed.
+- Network access to the target websites.
+
+No npm dependencies are currently required beyond Node built-ins.
+
+## Install
+
+From this folder:
+
+```powershell
+npm install
+```
+
+There are no third-party packages right now, but running install is harmless and keeps the workflow familiar.
+
+## Run The Chat Menu
+
+```powershell
+node src/cli.js menu
+```
+
+or:
+
+```powershell
+node src/cli.js
+```
+
+The menu supports:
+
+1. Paste website link
+2. Run saved skill
+3. List saved skills
+4. Inspect recording
+5. Promote draft skill
+6. Exit
+
+## Normal Workflow
+
+### 1. Paste A Website Link
+
+```text
+Website link: https://example.com/quote
+```
+
+The CLI checks `skills/*.json`.
+
+If a matching skill exists, it offers to run it. If not, it starts learning.
+
+### 2. Learn A New Skill
+
+When learning starts, the tool launches Chrome with a temporary profile and Chrome DevTools Protocol enabled.
+
+Complete the website workflow manually in the opened Chrome window. Use realistic placeholder values if you are just testing.
+
+When the final quote/result/search output is visible, return to the terminal and press Enter.
+
+The recorder saves a JSON file under `recordings/`.
+
+### 3. Auto-Draft A Skill
+
+After recording, the learner:
+
+- Filters out static and telemetry traffic.
+- Looks for real form/search/quote endpoints.
+- Falls back to final URL query parameters when the site computes client-side.
+- Falls back to recorded browser replay when no endpoint exists.
+- Extracts visible labels/options from the website where possible.
+- Generates a draft file under `skills/*.draft.json`.
+
+### 4. Promote The Draft
+
+If the draft looks correct:
+
+```powershell
+node src/cli.js promote-draft skills/example.draft.json
+```
+
+After promotion, future users can run the skill without relearning the browser workflow.
+
+## Useful Commands
+
+List skills:
+
+```powershell
+node src/cli.js list
+```
+
+Check whether a URL has a matching skill:
+
+```powershell
+node src/cli.js check-url "https://www.fwd.com.sg/travel-insurance/"
+```
+
+Run a skill through prompts:
+
+```powershell
+node src/cli.js chat fwd-travel-quote
+```
+
+Run a skill with command-line inputs:
+
+```powershell
+node src/cli.js run ipppptt --set age=25 --set situpreps=33 --set pushupreps=20 --set runmins=12 --set runsecs=30
+```
+
+Record a workflow directly:
+
+```powershell
+node src/cli.js record "https://example.com/form" --name example-form --goal "get quote"
+```
+
+Inspect a recording:
+
+```powershell
+node src/cli.js inspect-recording recordings/example-form-2026-06-09T10-00-00-000Z.json
+```
+
+Create a draft from a recording:
+
+```powershell
+node src/cli.js draft recordings/example-form-2026-06-09T10-00-00-000Z.json --name example-form
+```
+
+## How Recording Works
+
+Recording is implemented in `src/recorder.js` and `src/cdp.js`.
+
+### Chrome Launch
+
+`src/cdp.js` launches Chrome with:
+
+- A temporary user data directory.
+- `--remote-debugging-port=0`, so Chrome chooses a free debug port.
+- `--remote-debugging-address=127.0.0.1`.
+- A normal visible browser by default, because the user needs to complete the workflow manually.
+
+The recorder then connects to the active page over Chrome DevTools Protocol.
+
+### CDP Domains Used
+
+The recorder enables:
+
+- `Network.enable`
+- `Page.enable`
+- `Runtime.enable`
+
+It listens to:
+
+- `Network.requestWillBeSent`
+- `Network.responseReceived`
+- `Network.loadingFinished`
+- `Network.loadingFailed`
+
+For each network request it stores:
+
+- Request method
+- URL
+- Request headers
+- POST body, when Chrome exposes it
+- Resource type, such as `XHR`, `Fetch`, `Document`, `Script`, `Image`
+- Response status
+- Response headers
+- MIME type
+- Timing information
+- Failure reason, if any
+
+### Page Field Capture
+
+At the end of recording, the tool evaluates JavaScript in the page to collect:
+
+- Current URL
+- Page title
+- Visible body text preview
+- All `input`, `select`, and `textarea` elements
+- Names, ids, labels, placeholders, values, checked state, options, and selected options
+
+This is how generated questions become `Age`, `Trip type`, `Destination`, or `Salary Range` instead of raw payload names.
+
+### Interaction Capture
+
+The recorder injects a small script into the page before the workflow begins. That script records:
+
+- `input` events
+- `change` events
+- `click` events
+- CSS selector for the interacted element
+- Label, placeholder, id, name, visible text, value, checked state, and URL at the time of the event
+
+This gives the learner a fallback when there is no useful API endpoint. For example, a pure client-side calculator may only need a result URL or a browser replay of typed fields and a final button click.
+
+## How Endpoint Ranking Works
+
+The ranking logic lives in `rankCandidates()` inside `src/recorder.js`.
+
+Requests receive positive score for:
+
+- `POST`, `PUT`, or `PATCH`
+- `XHR` or `Fetch`
+- JSON responses
+- POST body presence
+- Successful 2xx status
+- Fast response time
+- URL/path terms such as quote, price, premium, calculate, submit, search, apply
+
+Requests are filtered or penalized when they look like:
+
+- JavaScript, CSS, image, font, favicon, manifest, or media files
+- Google Analytics, DoubleClick, Sentry, PostHog, Segment, TikTok, Facebook, New Relic, Cloudflare RUM, and similar telemetry
+- Common telemetry paths such as `/collect`, `/track`, `/events`, `/rum`, `/client_report`
+- Failed requests
+
+The CLI no longer asks the user to pick a random candidate during the normal menu flow. It auto-drafts from the best usable strategy.
+
+## How Draft Generation Works
+
+The draft generator tries strategies in order.
+
+### 1. Tally Form Strategy
+
+For Tally forms, the generator reads Tally-specific form structure and maps response UUIDs back to visible questions.
+
+It supports:
+
+- Text fields
+- Email fields
+- URL fields
+- Numeric/rating fields
+- Dropdowns
+- Multiple choice
+- Checkboxes
+- File upload fields
+
+File uploads are handled by `src/skill-runner.js`. The runner can upload a local file to Tally's response asset endpoint before submitting the final form payload.
+
+### 2. Query Skill Strategy
+
+For GET search/filter pages, the generator maps URL query parameters to visible form fields.
+
+Example:
+
+```json
+{
+  "query": {
+    "age": { "$value": "{{age}}" }
+  }
+}
+```
+
+At runtime, the template engine materializes the final URL.
+
+### 3. Generic Request Strategy
+
+For JSON POST/PUT/PATCH endpoints, the generator:
+
+- Parses the recorded JSON body.
+- Flattens scalar fields.
+- Creates input prompts.
+- Replaces scalar values with template placeholders.
+
+This is the fallback for reusable API endpoints that do not have a custom provider parser.
+
+### 4. Final URL Strategy
+
+Some sites calculate entirely in the browser but store the state in the final URL.
+
+For those, the generator creates a `browserMode: "navigate"` skill. The runner opens Chrome to the materialized result URL and reads the rendered page text.
+
+This is how the IPPT example works.
+
+### 5. Browser Replay Strategy
+
+When no reusable endpoint and no useful final URL exists, the generator uses recorded interaction events.
+
+The generated skill contains:
+
+```json
+{
+  "browserWorkflow": {
+    "startUrl": "https://example.com",
+    "actions": [
+      { "type": "fill", "selector": "#age", "value": "{{age}}" },
+      { "type": "click", "selector": "#calculate" }
+    ]
+  }
+}
+```
+
+Runtime is slower than direct API calls because Chrome must open, fill fields, click buttons, and read the rendered page. It is still useful when the website has no stable API surface.
+
+## Skill File Format
+
+Skills live in `skills/*.json`.
+
+Minimal shape:
+
+```json
+{
+  "id": "example",
+  "name": "Example Skill",
+  "sourceUrl": "https://example.com",
+  "inputs": [
+    {
+      "id": "destination",
+      "question": "Destination",
+      "type": "string",
+      "optional": false
+    }
+  ],
+  "steps": [
+    {
+      "id": "goal",
+      "request": {
+        "method": "GET",
+        "url": "https://example.com/search",
+        "query": {
+          "q": { "$value": "{{destination}}" }
+        }
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "label": "Goal response",
+      "from": "goal",
+      "path": "$"
+    }
+  ]
+}
+```
+
+Input types supported by the CLI:
+
+- `string`
+- `number`
+- `email`
+- `url`
+- `choice`
+- `multi-choice`
+- `json`
+- `file`
+
+## How Runtime Execution Works
+
+Runtime execution is implemented in `src/skill-runner.js`.
+
+The runner:
+
+1. Normalizes raw inputs.
+2. Applies computed values such as UUIDs or formatted dates.
+3. Uploads provider-specific files if required.
+4. Renders template placeholders like `{{age}}`.
+5. Executes each step in order.
+6. Saves intermediate response values when configured.
+7. Extracts outputs from response JSON or text.
+
+### Direct HTTP Runtime
+
+Most API skills use Node's built-in `fetch`.
+
+The runner keeps an in-memory cookie jar for multi-step flows. This is used by flows that first fetch a CSRF token or session cookie, then call a compute/quote endpoint.
+
+### Browser Fallback Runtime
+
+If a GET request hits a browser challenge, such as Cloudflare's "Just a moment" page, the runner can retry inside Chrome.
+
+This path uses CDP to:
+
+- Navigate to the site.
+- Let the challenge settle.
+- Execute `fetch()` inside the browser context with site cookies.
+- Return response status, headers, and body back to Node.
+
+### Browser Navigate Runtime
+
+For client-side result URL skills, the runner:
+
+- Opens Chrome.
+- Navigates to the final URL.
+- Waits briefly for rendering.
+- Reads `document.body.innerText`.
+
+### Browser Workflow Runtime
+
+For replay skills, the runner:
+
+- Opens Chrome.
+- Navigates to `startUrl`.
+- Runs each recorded action.
+- Dispatches `input` and `change` events after fills.
+- Clicks recorded buttons/links.
+- Reads the rendered result text.
+
+## Important Files
+
+| File | Purpose |
+| --- | --- |
+| `src/cli.js` | Terminal menu, chat prompts, recording commands, draft promotion |
+| `src/recorder.js` | CDP network capture, field extraction, interaction recording, candidate ranking, draft generation |
+| `src/skill-runner.js` | Executes direct HTTP, browser fallback, browser navigation, browser replay, file uploads |
+| `src/cdp.js` | Launches Chrome and provides a small CDP WebSocket client |
+| `src/templates.js` | Renders `{{input}}` templates and computed fields |
+| `src/json-path.js` | Reads and flattens JSON paths for skill generation and output extraction |
+| `skills/*.json` | Registered skills |
+| `skills/*.draft.json` | Draft skills awaiting review |
+| `recordings/*.json` | Local raw recordings from learning runs |
+
+## Example Saved Skills
+
+This package currently includes examples for:
+
+- FWD travel insurance quote
+- Singlife simple term quote
+- WeWorkRemotely search
+- IPPT calculator result URL
+- Tally form submission with file upload handling
+
+Some websites apply bot protection or change APIs frequently. Saved skills may need refresh when the upstream website changes.
+
+## Speed Expectations
+
+Approximate runtime categories:
+
+| Mode | Typical Speed | Notes |
+| --- | --- | --- |
+| Direct API | Hundreds of ms to a few seconds | Fastest path, no browser |
+| Direct API with token/cookie bootstrap | 1-5 seconds | Multiple HTTP steps |
+| Browser result URL | 2-6 seconds | Opens Chrome and waits for rendering |
+| Browser workflow replay | 5-20+ seconds | Slowest, but works for no-API sites |
+| Full manual learning | Human-dependent | One-time setup path |
+
+The CLI prints endpoint timings after each run.
+
+## Privacy And Safety
+
+Raw recordings can contain:
+
+- Typed form values
+- Emails/names/addresses
+- Uploaded file metadata
+- Request headers
+- Session identifiers
+- Analytics identifiers
+- Full URLs and query strings
+
+Do not commit raw recordings unless they have been reviewed and sanitized.
+
+Recommended repository policy:
+
+- Commit `src/`, `skills/`, `package.json`, and this README.
+- Keep `recordings/` local by default.
+- Ignore `*.draft.json` unless intentionally sharing a draft for review.
+- Review generated skills before promotion.
+
+## Limitations
+
+This tool cannot guarantee automation for every website.
+
+Common blockers:
+
+- CAPTCHA
+- Payment steps
+- Login-only workflows
+- Strong bot protection
+- Request signing tied to device fingerprinting
+- Encrypted payloads generated in obfuscated JavaScript
+- Server-side sessions that expire immediately
+- Websites whose calculations only exist in front-end code
+
+When direct endpoint replay is not viable, the tool falls back to browser navigation or browser replay.
+
+## Troubleshooting
+
+### Chrome does not open
+
+Check that Chrome is installed. `src/cdp.js` searches common Chrome paths on Windows, macOS, and Linux.
+
+### The generated skill asks bad questions
+
+Record again and make sure you actually interact with the visible website form fields before pressing Enter. The recorder uses field labels, placeholders, selected options, and interaction events to infer questions.
+
+### The skill learned CSS, images, or analytics
+
+That should be filtered in the normal menu flow. If you use the low-level `draft` command manually, review the generated skill before promotion.
+
+### GET request crashes with body errors
+
+GET and HEAD requests are now executed without a body. If you see this again, inspect the generated skill and remove `body` from GET/HEAD steps.
+
+### Cloudflare 403
+
+Some sites block direct local API calls. The runner can use browser fallback for GET requests, but POST endpoints may still be blocked if the site requires browser-only challenge tokens.
+
+### File upload fields
+
+For Tally file uploads, enter a local file path when prompted. The runner uploads the file first and passes the uploaded asset object to the final response request.
+
+## Development Notes
+
+Syntax check:
+
+```powershell
+node --check src/cli.js
+node --check src/recorder.js
+node --check src/skill-runner.js
+```
+
+Run a known browser-navigation skill:
+
+```powershell
+node src/cli.js run ipppptt --set age=25 --set situpreps=33 --set pushupreps=20 --set runmins=12 --set runsecs=30
+```
+
+Inspect candidate filtering:
+
+```powershell
+node src/cli.js inspect-recording recordings/ipppptt-2026-06-09T13-30-10-482Z.json
+```
+
+For a pure client-side calculator, "No endpoint candidates found" can be correct. The generator may still create a result URL or browser replay skill.

@@ -1,0 +1,1272 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import readline from "node:readline/promises";
+import { stdin as input, stdout as output } from "node:process";
+import { CdpClient, getPageTarget, launchChrome, sleep } from "./cdp.js";
+import { flattenScalars } from "./json-path.js";
+
+const ANALYTICS_HOST_PATTERNS = [
+  "google",
+  "doubleclick",
+  "googletagmanager",
+  "adobedtm",
+  "demdex",
+  "smetrics",
+  "nr-data",
+  "newrelic",
+  "outbrain",
+  "facebook",
+  "hotjar",
+  "clarity",
+  "sentry",
+  "plausible",
+  "posthog",
+  "segment",
+  "amplitude",
+  "mixpanel",
+  "fullstory",
+  "logrocket",
+  "ads.linkedin",
+  "adroll",
+  "analytics.google",
+  "google-analytics",
+  "analytics.twitter",
+  "tiktok",
+  "snap",
+  "fontawesome",
+];
+
+const GOAL_WORDS = [
+  "submit",
+  "respond",
+  "response",
+  "apply",
+  "application",
+  "resume",
+  "quote",
+  "price",
+  "premium",
+  "compute",
+  "calculate",
+  "fare",
+  "search",
+  "route",
+  "availability",
+  "checkout",
+  "eligibility",
+  "validate",
+];
+
+const TELEMETRY_PATH_PATTERNS = [
+  "/envelope",
+  "/events",
+  "/event",
+  "/track",
+  "/collect",
+  "/analytics",
+  "/client_report",
+  "/rum",
+  "/challenge-platform",
+  "/wa/",
+  "/i/v0/e",
+  "/g/collect",
+  "/listing_ads/",
+  "/adsct",
+  "/onp/",
+  "/pex/",
+  "/attribution_trigger",
+  "/tr/",
+];
+
+const GOAL_PATH_PATTERNS = [
+  "/respond",
+  "/submit",
+  "/apply",
+  "/application",
+  "/quote",
+  "/compute",
+  "/calculate",
+  "/price",
+  "/premium",
+  "/search",
+  "/checkout",
+];
+
+export async function recordWorkflow({ url, name, goal, headless = false, waitForDone } = {}) {
+  const { child, port, profileDir } = launchChrome({ url, headless });
+  console.log(`Chrome launched on debug port ${port}.`);
+  console.log(`Profile: ${profileDir}`);
+
+  const page = await getPageTarget(port);
+  const client = new CdpClient(page.webSocketDebuggerUrl);
+  await client.connect();
+
+  const requests = new Map();
+  client.on("Network.requestWillBeSent", (params) => {
+    const request = params.request;
+    requests.set(params.requestId, {
+      id: params.requestId,
+      method: request.method,
+      url: request.url,
+      requestHeaders: request.headers,
+      postData: request.postData,
+      resourceType: params.type,
+      startedAt: params.wallTime,
+      cdpStartedAt: params.timestamp,
+      initiator: params.initiator,
+    });
+  });
+  client.on("Network.responseReceived", (params) => {
+    const item = requests.get(params.requestId) || { id: params.requestId };
+    item.status = params.response.status;
+    item.statusText = params.response.statusText;
+    item.mimeType = params.response.mimeType;
+    item.responseHeaders = params.response.headers;
+    item.cdpResponseAt = params.timestamp;
+    requests.set(params.requestId, item);
+  });
+  client.on("Network.loadingFinished", (params) => {
+    const item = requests.get(params.requestId);
+    if (!item) return;
+    item.cdpFinishedAt = params.timestamp;
+    item.encodedDataLength = params.encodedDataLength;
+  });
+  client.on("Network.loadingFailed", (params) => {
+    const item = requests.get(params.requestId) || { id: params.requestId };
+    item.failed = true;
+    item.errorText = params.errorText;
+    requests.set(params.requestId, item);
+  });
+
+  await client.send("Network.enable");
+  await client.send("Page.enable");
+  await client.send("Runtime.enable");
+  await installInteractionRecorder(client).catch(() => {});
+
+  console.log("");
+  console.log("Complete the target workflow in Chrome.");
+  console.log("When the final result/quote is visible, come back here and press Enter.");
+  if (waitForDone) {
+    await waitForDone();
+  } else {
+    const rl = readline.createInterface({ input, output });
+    await rl.question("Press Enter when done...");
+    rl.close();
+  }
+  await sleep(500);
+  const pageFields = await collectPageFields(client).catch((error) => ({
+    error: error.message,
+    fields: [],
+  }));
+
+  const allRequests = [...requests.values()].map((request) => ({
+    ...request,
+    durationMs: request.cdpFinishedAt && request.cdpStartedAt
+      ? Math.round((request.cdpFinishedAt - request.cdpStartedAt) * 1000)
+      : undefined,
+  }));
+  const candidates = rankCandidates(allRequests, goal);
+  const recording = {
+    url,
+    name,
+    goal,
+    recordedAt: new Date().toISOString(),
+    pageFields,
+    requests: allRequests,
+    candidates,
+  };
+
+  await fs.mkdir("recordings", { recursive: true });
+  const safeName = slugify(name || new URL(url).hostname);
+  const file = path.join("recordings", `${safeName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+  await fs.writeFile(file, JSON.stringify(recording, null, 2));
+
+  client.close();
+  child.kill();
+  return { file, recording };
+}
+
+export function rankCandidates(requests, goal = "") {
+  const goalTerms = `${goal} ${GOAL_WORDS.join(" ")}`.toLowerCase().split(/\s+/).filter(Boolean);
+  return requests
+    .filter((request) => {
+      if (!request?.method || !request.url) return false;
+      const url = safeUrl(request.url);
+      if (!["http:", "https:"].includes(url.protocol)) return false;
+      const haystack = `${url.hostname} ${url.pathname}`.toLowerCase();
+      if (ANALYTICS_HOST_PATTERNS.some((pattern) => url.hostname.includes(pattern))) return false;
+      if (TELEMETRY_PATH_PATTERNS.some((pattern) => haystack.includes(pattern))) return false;
+      if (["Script", "Image", "Stylesheet", "Font", "Manifest", "Media"].includes(request.resourceType)) return false;
+      if (/\.(js|css|png|jpg|jpeg|gif|svg|woff2?|ico|webmanifest)(\?|$)/i.test(url.pathname)) return false;
+      return true;
+    })
+    .map((request) => {
+      const url = safeUrl(request.url);
+      let score = 0;
+      if (["POST", "PUT", "PATCH"].includes(request.method)) score += 40;
+      if (["XHR", "Fetch"].includes(request.resourceType)) score += 35;
+      if (request.postData) score += 20;
+      if (request.method === "GET" && url.search && ["XHR", "Fetch", "Document"].includes(request.resourceType)) score += 25;
+      if ((request.mimeType || "").includes("json")) score += 20;
+      if (request.status >= 200 && request.status < 300) score += 10;
+      if (request.durationMs !== undefined && request.durationMs < 3000) score += 5;
+
+      const haystack = `${url.pathname} ${url.search}`.toLowerCase();
+      for (const term of goalTerms) {
+        if (term.length > 2 && haystack.includes(term)) score += 10;
+      }
+
+      const postData = request.postData || "";
+      if (ANALYTICS_HOST_PATTERNS.some((pattern) => url.hostname.includes(pattern))) score -= 100;
+      if (TELEMETRY_PATH_PATTERNS.some((pattern) => haystack.includes(pattern))) score -= 120;
+      if (GOAL_PATH_PATTERNS.some((pattern) => haystack.includes(pattern))) score += 35;
+      if (/form|responses?|answers?|application|resume/i.test(postData)) score += 15;
+      if (/sentry|client_report|FORM_VIEW|FORM_START|QUESTION_DROP_OFF|pageview/i.test(postData)) score -= 70;
+      if (["Script", "Image", "Stylesheet", "Font"].includes(request.resourceType)) score -= 40;
+      if (/\.(js|css|png|jpg|jpeg|gif|svg|woff2?|ico)(\?|$)/i.test(url.pathname)) score -= 40;
+      if (request.failed) score -= 20;
+
+      return {
+        id: request.id,
+        score,
+        method: request.method,
+        url: request.url,
+        status: request.status,
+        resourceType: request.resourceType,
+        durationMs: request.durationMs,
+        mimeType: request.mimeType,
+        hasPostData: Boolean(request.postData),
+        postDataPreview: request.postData?.slice(0, 500),
+      };
+    })
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 25);
+}
+
+export async function inspectRecording(file) {
+  const recording = JSON.parse(await fs.readFile(file, "utf8"));
+  return rankCandidates(recording.requests || [], recording.goal);
+}
+
+export async function createDraftSkillFromRecording({ recordingFile, candidateIndex, name }) {
+  const recording = JSON.parse(await fs.readFile(recordingFile, "utf8"));
+  const candidates = rankCandidates(recording.requests || [], recording.goal);
+  const requestedCandidate = Number.isInteger(candidateIndex) ? candidates[candidateIndex] : null;
+  const orderedCandidates = [
+    requestedCandidate,
+    ...candidates.filter((candidate) => candidate?.id !== requestedCandidate?.id),
+  ].filter(Boolean);
+
+  for (const candidate of orderedCandidates) {
+    const request = recording.requests.find((item) => item.id === candidate.id);
+    if (!request || !isDraftWorthyRequest(request)) continue;
+
+    const skill = await createSkillForRequest({ recording, request, recordingFile, name });
+    if (skill) {
+      await fs.mkdir("skills", { recursive: true });
+      const file = path.join("skills", `${skill.id}.draft.json`);
+      await fs.writeFile(file, JSON.stringify(skill, null, 2));
+      return file;
+    }
+  }
+
+  const fallbackSkill =
+    await maybeCreateFinalUrlQuerySkill({ recording, recordingFile, name }) ||
+    await maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
+
+  if (fallbackSkill) {
+    await fs.mkdir("skills", { recursive: true });
+    const file = path.join("skills", `${fallbackSkill.id}.draft.json`);
+    await fs.writeFile(file, JSON.stringify(fallbackSkill, null, 2));
+    return file;
+  }
+
+  throw new Error("No reusable API endpoint, result URL, or browser input workflow was detected. Record the workflow again after interacting with the actual form/result controls.");
+}
+
+async function createSkillForRequest({ recording, request, recordingFile, name }) {
+  return (
+    await maybeCreateTallySkill({ recording, request, recordingFile, name }) ||
+    await maybeCreateQuerySkill({ recording, request, recordingFile, name }) ||
+    await createGenericRequestSkill({ recording, request, recordingFile, name })
+  );
+}
+
+async function createGenericRequestSkill({ recording, request, recordingFile, name }) {
+  let body = null;
+  let inputs = [];
+  if (request.postData) {
+    try {
+      body = JSON.parse(request.postData);
+      const fields = await getPageFieldCatalog(recording);
+      inputs = flattenScalars(body)
+        .filter((row) => row.value !== "" && row.value !== null && row.value !== undefined)
+        .map((row) => toBodyInputSpec(row, fields));
+      body = templateScalars(body);
+    } catch {
+      body = request.postData;
+    }
+  }
+
+  const skill = {
+    id: slugify(name || recording.name || "draft-skill"),
+    name: name || recording.name || "Draft skill",
+    sourceUrl: recording.url,
+    description: `Draft generated from ${recordingFile}. Review before using.`,
+    inputs,
+    steps: [
+      {
+        id: "goal",
+        request: {
+          method: request.method,
+          url: request.url,
+          headers: keepReplayHeaders(request.requestHeaders || {}),
+          body,
+        },
+      },
+    ],
+    outputs: [
+      {
+        label: "Goal response",
+        from: "goal",
+        path: "$",
+      },
+    ],
+  };
+  return skill;
+}
+
+function isDraftWorthyRequest(request) {
+  if (!request?.method || !request.url) return false;
+  const url = safeUrl(request.url);
+  if (!["http:", "https:"].includes(url.protocol)) return false;
+
+  const haystack = `${url.hostname} ${url.pathname}`.toLowerCase();
+  if (ANALYTICS_HOST_PATTERNS.some((pattern) => url.hostname.includes(pattern))) return false;
+  if (TELEMETRY_PATH_PATTERNS.some((pattern) => haystack.includes(pattern))) return false;
+  if (["Script", "Image", "Stylesheet", "Font", "Manifest", "Media"].includes(request.resourceType)) return false;
+  if (/\.(js|css|png|jpg|jpeg|gif|svg|woff2?|ico|webmanifest|json)(\?|$)/i.test(url.pathname)) return false;
+
+  if (["POST", "PUT", "PATCH"].includes(request.method)) return Boolean(request.postData);
+  if (request.method === "GET") return Boolean(url.search);
+  return false;
+}
+
+async function maybeCreateFinalUrlQuerySkill({ recording, recordingFile, name }) {
+  const finalUrl = safeUrl(recording.pageFields?.url || recording.url);
+  const originalUrl = safeUrl(recording.url);
+  if (!["http:", "https:"].includes(finalUrl.protocol)) return null;
+  if (![...finalUrl.searchParams.keys()].length) return null;
+  if (finalUrl.origin !== originalUrl.origin) return null;
+
+  const fields = await getPageFieldCatalog(recording);
+  const groupedParams = groupSearchParams(finalUrl.searchParams);
+  const usedInputIds = new Set();
+  const inputs = [];
+  const query = {};
+  const availableFields = [...fields];
+
+  for (const [paramName, values] of groupedParams) {
+    if (shouldSkipQueryParam(paramName, values, null)) continue;
+    const field = findBestFieldForFinalParam(availableFields, paramName, values);
+    if (field) {
+      const index = availableFields.indexOf(field);
+      if (index >= 0) availableFields.splice(index, 1);
+    }
+    const inputId = uniqueInputId(slugify(field?.label || field?.placeholder || baseParamName(paramName)), usedInputIds);
+    inputs.push(toFinalUrlInputSpec(inputId, paramName, values, field));
+    query[paramName] = { $value: `{{${inputId}}}` };
+  }
+
+  if (!inputs.length) return null;
+
+  return {
+    id: slugify(name || recording.name || "client-side-skill"),
+    name: name || recording.name || "Client-side skill",
+    sourceUrl: recording.url,
+    description: `Draft generated from ${recordingFile}. This site appears to calculate in the browser, so the skill opens the result URL in Chrome and captures the rendered page.`,
+    inputs,
+    steps: [
+      {
+        id: "goal",
+        browserMode: "navigate",
+        request: {
+          method: "GET",
+          url: `${finalUrl.origin}${finalUrl.pathname}`,
+          headers: {
+            Referer: recording.url,
+            Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          },
+          query,
+        },
+      },
+    ],
+    outputs: [
+      {
+        label: "Rendered result",
+        from: "goal",
+        path: "$",
+      },
+    ],
+  };
+}
+
+function toFinalUrlInputSpec(inputId, paramName, values, field) {
+  const choices = cleanChoices(field?.options || []).map((choice) => ({
+    label: choice.label,
+    value: normalizeBrowserValue(choice.value),
+  }));
+  const uniqueChoices = cleanChoices(choices);
+  const isMulti = paramName.endsWith("[]") || values.length > 1 || Boolean(field?.multiple);
+  const spec = {
+    id: inputId,
+    question: questionForField(paramName, field),
+    type: uniqueChoices.length ? (isMulti ? "multi-choice" : "choice") : inferInputTypeFromValues(values),
+    optional: false,
+  };
+  if (uniqueChoices.length) spec.choices = uniqueChoices;
+  return spec;
+}
+
+function inferInputTypeFromValues(values) {
+  return values.every((value) => /^-?\d+(\.\d+)?$/.test(value)) ? "number" : "string";
+}
+
+function findBestFieldForFinalParam(fields, paramName, values) {
+  const byName = findFieldForParam(fields, paramName);
+  if (byName) return byName;
+
+  const normalizedValues = new Set(values.map(normalizeBrowserValue));
+  return fields.find((field) => {
+    if (!field.visible) return false;
+    if (!field.value) return false;
+    if (normalizedValues.has(normalizeBrowserValue(field.value))) return true;
+    return (field.options || []).some((option) => option.selected && normalizedValues.has(normalizeBrowserValue(option.value)));
+  });
+}
+
+function normalizeBrowserValue(value) {
+  return String(value ?? "").replace(/^(number|string|boolean):/, "");
+}
+
+async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name }) {
+  const events = recording.pageFields?.events || [];
+  const inputEvents = latestInputEvents(events);
+  const clickEvents = events.filter((event) => event.type === "click" && event.selector);
+  if (!inputEvents.length && !clickEvents.length) return null;
+
+  const usedInputIds = new Set();
+  const inputs = inputEvents.map((event) => {
+    const inputId = uniqueInputId(slugify(event.label || event.name || event.id || "input"), usedInputIds);
+    event.inputId = inputId;
+    return {
+      id: inputId,
+      question: cleanText(event.label || event.name || event.id || inputId),
+      type: inferInputTypeFromValues([event.value]),
+      optional: false,
+    };
+  });
+  const lastClick = [...events].reverse().find((event) => event.type === "click" && event.selector);
+  const actions = inputEvents.map((event) => ({
+    type: "fill",
+    selector: event.selector,
+    value: `{{${event.inputId}}}`,
+  }));
+  if (inputEvents.length && lastClick) {
+    actions.push({ type: "click", selector: lastClick.selector });
+  } else if (!inputEvents.length) {
+    actions.push(...clickEvents.map((event) => ({ type: "click", selector: event.selector })));
+  }
+
+  return {
+    id: slugify(name || recording.name || "browser-replay-skill"),
+    name: name || recording.name || "Browser replay skill",
+    sourceUrl: recording.url,
+    description: `Draft generated from ${recordingFile}. No reusable API endpoint was detected, so this skill replays the browser workflow.`,
+    inputs,
+    steps: [
+      {
+        id: "goal",
+        browserWorkflow: {
+          startUrl: recording.url,
+          actions,
+        },
+      },
+    ],
+    outputs: [
+      {
+        label: "Rendered result",
+        from: "goal",
+        path: "$",
+      },
+    ],
+  };
+}
+
+function latestInputEvents(events) {
+  const bySelector = new Map();
+  for (const event of events) {
+    if (!["input", "change"].includes(event.type)) continue;
+    if (!event.selector || event.value === undefined || event.value === "") continue;
+    bySelector.set(event.selector, event);
+  }
+  return [...bySelector.values()];
+}
+
+function toBodyInputSpec(row, fields) {
+  const inputName = inputIdFromPath(row.path);
+  const field = findFieldForParam(fields, inputName);
+  const choices = cleanChoices(field?.options || []);
+  const spec = {
+    id: inputName,
+    question: questionForField(inputName, field),
+    type: typeof row.value === "number" ? "number" : choices.length ? "choice" : "string",
+  };
+  if (choices.length) spec.choices = choices;
+  return spec;
+}
+
+async function maybeCreateQuerySkill({ recording, request, recordingFile, name }) {
+  if (!["GET", "HEAD"].includes(request.method) || !request.url) return null;
+
+  const url = safeUrl(request.url);
+  if (![...url.searchParams.keys()].length) return null;
+
+  const fields = await getPageFieldCatalog(recording);
+  const groupedParams = groupSearchParams(url.searchParams);
+  const usedInputIds = new Set();
+  const inputs = [];
+  const query = {};
+
+  for (const [paramName, values] of groupedParams) {
+    const field = findFieldForParam(fields, paramName);
+    if (shouldSkipQueryParam(paramName, values, field)) continue;
+
+    if (!shouldAskQueryParam(paramName, values, field)) {
+      query[paramName] = values.length > 1 ? values : values[0];
+      continue;
+    }
+
+    const inputId = uniqueInputId(slugify(field?.label || field?.placeholder || baseParamName(paramName)), usedInputIds);
+    inputs.push(toQueryInputSpec(inputId, paramName, values, field));
+    query[paramName] = { $value: `{{${inputId}}}` };
+  }
+
+  if (!inputs.length) return null;
+
+  return {
+    id: slugify(name || recording.name || "query-skill"),
+    name: name || recording.name || "Query skill",
+    sourceUrl: recording.url,
+    description: `Draft generated from ${recordingFile}. Questions are based on visible form labels/options where available.`,
+    inputs,
+    steps: [
+      {
+        id: "goal",
+        request: {
+          method: request.method,
+          url: `${url.origin}${url.pathname}`,
+          headers: stripVolatileHeaders(keepReplayHeaders(request.requestHeaders || {}), recording.url),
+          query,
+        },
+      },
+    ],
+    outputs: [
+      {
+        label: "Goal response",
+        from: "goal",
+        path: "$",
+      },
+    ],
+  };
+}
+
+function stripVolatileHeaders(headers, sourceUrl) {
+  const clean = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (["x-csrf-token", "x-xsrf-token"].includes(lower)) continue;
+    if (lower === "referer" && sourceUrl) {
+      clean[key] = sourceUrl;
+      continue;
+    }
+    clean[key] = value;
+  }
+  return clean;
+}
+
+function groupSearchParams(searchParams) {
+  const grouped = new Map();
+  for (const [name, value] of searchParams.entries()) {
+    if (!grouped.has(name)) grouped.set(name, []);
+    grouped.get(name).push(value);
+  }
+  return grouped;
+}
+
+function shouldSkipQueryParam(name, values, field) {
+  const normalized = baseParamName(name);
+  if (["commit", "utf8", "authenticity_token", "csrf_token", "search_uuid"].includes(normalized)) return true;
+  if (/_chosen$/.test(normalized) || /^chosen-/.test(normalized)) return true;
+  if (!field && values.every((value) => value === "") && ["sort", "page"].includes(normalized)) return true;
+  return false;
+}
+
+function shouldAskQueryParam(name, values, field) {
+  if (field && !isLikelyHiddenField(field)) return true;
+  if (values.some((value) => value !== "")) return true;
+  return baseParamName(name) === "term";
+}
+
+function toQueryInputSpec(inputId, paramName, values, field) {
+  const choices = cleanChoices(field?.options || []);
+  const isMulti = paramName.endsWith("[]") || values.length > 1 || Boolean(field?.multiple);
+  const spec = {
+    id: inputId,
+    question: questionForField(paramName, field),
+    type: isMulti ? "multi-choice" : choices.length ? "choice" : "string",
+    optional: true,
+  };
+
+  if (choices.length) spec.choices = choices;
+  if (choices.length > 25) {
+    spec.description = `Type one or more ${spec.question.toLowerCase()} names or values, separated by commas. Examples: ${choices.slice(0, 5).map((choice) => choice.label).join(", ")}.`;
+  }
+  return spec;
+}
+
+function questionForField(paramName, field) {
+  return cleanText(field?.label || field?.placeholder || humanizeName(baseParamName(paramName))) || humanizeName(baseParamName(paramName));
+}
+
+function cleanChoices(choices) {
+  const seen = new Set();
+  const clean = [];
+  for (const choice of choices) {
+    const label = cleanText(choice.label || choice.text || choice.value);
+    const value = choice.value ?? label;
+    if (!label || value === undefined || value === "") continue;
+    const key = `${label}\u0000${value}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    clean.push({ label, value });
+  }
+  return clean;
+}
+
+function findFieldForParam(fields, paramName) {
+  const normalized = normalizeFieldName(paramName);
+  return fields.find((field) => {
+    const names = [
+      field.name,
+      field.id,
+      field.dataInput,
+      field.dataSelect,
+    ].filter(Boolean).map(normalizeFieldName);
+    return names.includes(normalized);
+  });
+}
+
+async function getPageFieldCatalog(recording) {
+  const recordedFields = recording.pageFields?.fields || [];
+  if (recordedFields.length) return recordedFields.map(normalizeFieldRecord);
+
+  const htmlFields = await fetchPageFieldCatalog(recording.url).catch(() => []);
+  return htmlFields.map(normalizeFieldRecord);
+}
+
+async function fetchPageFieldCatalog(url) {
+  const response = await fetch(url, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+  if (!response.ok) throw new Error(`Could not fetch page for form labels: ${response.status}`);
+  return extractHtmlFormFields(await response.text());
+}
+
+function extractHtmlFormFields(html) {
+  const fields = [];
+  const selectRegex = /<select\b([^>]*)>([\s\S]*?)<\/select>/gi;
+  for (const match of html.matchAll(selectRegex)) {
+    const attrs = parseAttributes(match[1]);
+    fields.push({
+      tag: "select",
+      type: "select",
+      name: attrs.name,
+      id: attrs.id,
+      label: labelForHtmlField(html, attrs),
+      placeholder: attrs.placeholder,
+      multiple: Object.hasOwn(attrs, "multiple"),
+      dataInput: attrs["data-input"],
+      dataSelect: attrs["data-select"],
+      options: extractOptions(match[2]),
+    });
+  }
+
+  const inputRegex = /<input\b([^>]*)>/gi;
+  for (const match of html.matchAll(inputRegex)) {
+    const attrs = parseAttributes(match[1]);
+    fields.push({
+      tag: "input",
+      type: attrs.type || "text",
+      name: attrs.name,
+      id: attrs.id,
+      label: labelForHtmlField(html, attrs),
+      placeholder: attrs.placeholder,
+      value: attrs.value,
+      dataInput: attrs["data-input"],
+      dataSelect: attrs["data-select"],
+      options: [],
+    });
+  }
+
+  const textareaRegex = /<textarea\b([^>]*)>([\s\S]*?)<\/textarea>/gi;
+  for (const match of html.matchAll(textareaRegex)) {
+    const attrs = parseAttributes(match[1]);
+    fields.push({
+      tag: "textarea",
+      type: "textarea",
+      name: attrs.name,
+      id: attrs.id,
+      label: labelForHtmlField(html, attrs),
+      placeholder: attrs.placeholder,
+      value: cleanText(match[2]),
+      dataInput: attrs["data-input"],
+      dataSelect: attrs["data-select"],
+      options: [],
+    });
+  }
+
+  return fields;
+}
+
+function extractOptions(html) {
+  const options = [];
+  const optionRegex = /<option\b([^>]*)>([\s\S]*?)<\/option>/gi;
+  for (const match of html.matchAll(optionRegex)) {
+    const attrs = parseAttributes(match[1]);
+    options.push({
+      value: decodeHtml(attrs.value ?? cleanText(match[2])),
+      label: cleanText(match[2]),
+    });
+  }
+  return options;
+}
+
+function labelForHtmlField(html, attrs) {
+  if (!attrs.id) return "";
+  const escapedId = escapeRegExp(attrs.id);
+  const labelMatch = html.match(new RegExp(`<label\\b[^>]*for=["']${escapedId}["'][^>]*>([\\s\\S]*?)<\\/label>`, "i"));
+  return labelMatch ? cleanText(labelMatch[1]) : "";
+}
+
+function parseAttributes(source) {
+  const attrs = {};
+  const attrRegex = /([:\w-]+)(?:\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+)))?/g;
+  for (const match of source.matchAll(attrRegex)) {
+    attrs[match[1]] = decodeHtml(match[2] ?? match[3] ?? match[4] ?? "");
+  }
+  return attrs;
+}
+
+async function installInteractionRecorder(client) {
+  await client.send("Page.addScriptToEvaluateOnNewDocument", {
+    source: INTERACTION_RECORDER_SCRIPT,
+  });
+  await client.send("Runtime.evaluate", {
+    expression: INTERACTION_RECORDER_SCRIPT,
+  });
+}
+
+async function collectPageFields(client) {
+  const expression = String.raw`(() => {
+    const labelTextFor = (element) => {
+      if (element.labels && element.labels.length) {
+        return Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" ").trim();
+      }
+      if (element.id) {
+        const explicit = Array.from(document.querySelectorAll("label")).find((label) => label.htmlFor === element.id);
+        if (explicit) return (explicit.innerText || explicit.textContent || "").trim();
+      }
+      const wrapping = element.closest("label");
+      if (wrapping) return (wrapping.innerText || wrapping.textContent || "").trim();
+      return element.getAttribute("aria-label") || "";
+    };
+    const isVisible = (element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+    };
+    const fields = Array.from(document.querySelectorAll("input, select, textarea")).map((element) => ({
+      tag: element.tagName.toLowerCase(),
+      type: element.getAttribute("type") || element.tagName.toLowerCase(),
+      name: element.getAttribute("name") || "",
+      id: element.id || "",
+      label: labelTextFor(element),
+      placeholder: element.getAttribute("placeholder") || "",
+      value: element.value || "",
+      checked: Boolean(element.checked),
+      multiple: Boolean(element.multiple),
+      visible: isVisible(element),
+      dataInput: element.getAttribute("data-input") || "",
+      dataSelect: element.getAttribute("data-select") || "",
+      options: element.tagName.toLowerCase() === "select"
+        ? Array.from(element.options).map((option) => ({
+            label: option.textContent || "",
+            value: option.value || "",
+            selected: option.selected,
+          }))
+        : [],
+    }));
+    return {
+      url: location.href,
+      title: document.title,
+      text: document.body ? document.body.innerText.slice(0, 5000) : "",
+      fields,
+      events: window.__apiSkillBuilderEvents || []
+    };
+  })()`;
+  const result = await client.send("Runtime.evaluate", {
+    expression,
+    returnByValue: true,
+  });
+  return result.result?.result?.value || { fields: [] };
+}
+
+const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
+  if (window.__apiSkillBuilderRecorderInstalled) return;
+  window.__apiSkillBuilderRecorderInstalled = true;
+  window.__apiSkillBuilderEvents = window.__apiSkillBuilderEvents || [];
+
+  const cssEscape = (value) => {
+    if (window.CSS && CSS.escape) return CSS.escape(value);
+    return String(value).replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
+  };
+  const selectorFor = (element) => {
+    if (!element || !element.tagName) return "";
+    if (element.id) return "#" + cssEscape(element.id);
+    if (element.name) return element.tagName.toLowerCase() + "[name=\"" + String(element.name).replace(/"/g, "\\\"") + "\"]";
+    const parts = [];
+    let current = element;
+    while (current && current.nodeType === 1 && parts.length < 5) {
+      let part = current.tagName.toLowerCase();
+      const parent = current.parentElement;
+      if (parent) {
+        const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+        if (siblings.length > 1) part += ":nth-of-type(" + (siblings.indexOf(current) + 1) + ")";
+      }
+      parts.unshift(part);
+      current = parent;
+    }
+    return parts.join(" > ");
+  };
+  const labelFor = (element) => {
+    if (element.labels && element.labels.length) {
+      return Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" ").trim();
+    }
+    if (element.id) {
+      const explicit = Array.from(document.querySelectorAll("label")).find((label) => label.htmlFor === element.id);
+      if (explicit) return (explicit.innerText || explicit.textContent || "").trim();
+    }
+    const label = element.closest && element.closest("label");
+    if (label) return (label.innerText || label.textContent || "").trim();
+    return element.getAttribute && (element.getAttribute("aria-label") || element.getAttribute("placeholder") || "");
+  };
+  const record = (type, element) => {
+    if (!element || !element.tagName) return;
+    const tag = element.tagName.toLowerCase();
+    if (!["input", "select", "textarea", "button", "a"].includes(tag)) return;
+    window.__apiSkillBuilderEvents.push({
+      type,
+      ts: Date.now(),
+      selector: selectorFor(element),
+      tag,
+      inputType: element.getAttribute("type") || tag,
+      id: element.id || "",
+      name: element.getAttribute("name") || "",
+      label: labelFor(element),
+      text: (element.innerText || element.textContent || "").trim().slice(0, 200),
+      value: element.value || "",
+      checked: Boolean(element.checked),
+      url: location.href
+    });
+    if (window.__apiSkillBuilderEvents.length > 500) window.__apiSkillBuilderEvents.shift();
+  };
+  document.addEventListener("input", (event) => record("input", event.target), true);
+  document.addEventListener("change", (event) => record("change", event.target), true);
+  document.addEventListener("click", (event) => {
+    const target = event.target?.closest
+      ? event.target.closest("button,a,input,select,textarea") || event.target
+      : event.target?.parentElement;
+    record("click", target);
+  }, true);
+})()`;
+
+function normalizeFieldRecord(field) {
+  return {
+    ...field,
+    label: cleanText(field.label || ""),
+    placeholder: cleanText(field.placeholder || ""),
+    name: field.name || "",
+    id: field.id || "",
+    type: field.type || field.tag || "text",
+    options: cleanChoices(field.options || []),
+  };
+}
+
+function isLikelyHiddenField(field) {
+  if (field.visible === true) return false;
+  if (field.tag === "select" && field.options?.length) return false;
+  return ["hidden", "submit", "button", "image"].includes(String(field.type || "").toLowerCase());
+}
+
+function baseParamName(name) {
+  return String(name).replace(/\[\]$/, "");
+}
+
+function normalizeFieldName(name) {
+  return baseParamName(name)
+    .toLowerCase()
+    .replace(/[_-]+chosen$/, "")
+    .replace(/^chosen[_-]+/, "")
+    .replace(/[_-]+/g, "");
+}
+
+function humanizeName(name) {
+  return cleanText(String(name)
+    .replace(/\[\]$/, "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()));
+}
+
+function cleanText(value) {
+  return decodeHtml(String(value || "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/[^\x20-\x7E]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim());
+}
+
+function decodeHtml(value) {
+  const named = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+  return String(value || "").replace(/&(#x?[0-9a-f]+|\w+);/gi, (_, entity) => {
+    if (entity[0] === "#") {
+      const radix = entity[1]?.toLowerCase() === "x" ? 16 : 10;
+      const codePoint = Number.parseInt(radix === 16 ? entity.slice(2) : entity.slice(1), radix);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : "";
+    }
+    return named[entity.toLowerCase()] ?? "";
+  });
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+async function maybeCreateTallySkill({ recording, request, recordingFile, name }) {
+  const match = request.url?.match(/^https:\/\/api\.tally\.so\/forms\/([^/]+)\/respond/);
+  if (!match || request.method !== "POST" || !request.postData) return null;
+
+  let body;
+  try {
+    body = JSON.parse(request.postData);
+  } catch {
+    return null;
+  }
+  if (!body.responses || typeof body.responses !== "object") return null;
+
+  const formId = match[1];
+  const formSchema = await fetchTallySchema(recording.url).catch(() => null);
+  const fields = formSchema ? buildTallyFieldMap(formSchema.blocks || []) : new Map();
+  const usedInputIds = new Set();
+  const inputs = [];
+  const templatedResponses = {};
+
+  for (const [responseId, recordedValue] of Object.entries(body.responses)) {
+    const field = fields.get(responseId) || inferTallyField(responseId, recordedValue);
+    const inputId = uniqueInputId(slugify(field.label || responseId), usedInputIds);
+    inputs.push(toTallyInputSpec(inputId, field, recordedValue));
+    templatedResponses[responseId] = toTallyResponseTemplate(inputId, field, recordedValue);
+  }
+
+  return {
+    id: slugify(name || recording.name || `tally-${formId}`),
+    name: name || recording.name || `Tally form ${formId}`,
+    sourceUrl: recording.url,
+    description: `Draft generated from ${recordingFile}. Questions are extracted from the form where possible; review file-upload fields before production use.`,
+    provider: "tally",
+    providerConfig: {
+      formId,
+      origin: safeUrl(recording.url).origin,
+    },
+    computed: {
+      sessionUuid: { fn: "uuid" },
+      respondentUuid: { fn: "uuid" },
+    },
+    inputs,
+    steps: [
+      {
+        id: "submit",
+        request: {
+          method: "POST",
+          url: request.url,
+          headers: keepReplayHeaders(request.requestHeaders || {}),
+          body: {
+            sessionUuid: "{{sessionUuid}}",
+            respondentUuid: "{{respondentUuid}}",
+            responses: templatedResponses,
+            captchas: {},
+            isCompleted: true,
+            password: null,
+          },
+        },
+      },
+    ],
+    outputs: [
+      {
+        label: "Submit response",
+        from: "submit",
+        path: "$",
+      },
+    ],
+  };
+}
+
+async function fetchTallySchema(url) {
+  const response = await fetch(url, {
+    headers: {
+      "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome Safari/537.36",
+      accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+  if (!response.ok) throw new Error(`Could not fetch Tally page: ${response.status}`);
+  const html = await response.text();
+  const match = html.match(/<script id="__NEXT_DATA__" type="application\/json">(.*?)<\/script>/s);
+  if (!match) throw new Error("Could not find Tally __NEXT_DATA__");
+  const data = JSON.parse(match[1]);
+  return data.props?.pageProps || null;
+}
+
+function buildTallyFieldMap(blocks) {
+  const fields = new Map();
+  let currentTitle = "";
+
+  for (const block of blocks) {
+    const titleText = blockText(block);
+    if (block.type === "TITLE" && titleText) {
+      currentTitle = titleText;
+      continue;
+    }
+
+    const groupUuid = block.groupUuid;
+    if (!groupUuid) continue;
+
+    if (isTallyOptionBlock(block)) {
+      const field = ensureTallyField(fields, groupUuid, {
+        blockGroupUuid: groupUuid,
+        label: currentTitle || groupUuid,
+        tallyType: block.groupType,
+        required: Boolean(block.payload?.isRequired),
+        options: [],
+      });
+      field.options.push({
+        label: block.payload?.text || titleText || block.uuid,
+        value: block.uuid,
+      });
+      field.required ||= Boolean(block.payload?.isRequired);
+      continue;
+    }
+
+    if (isTallyInputBlock(block)) {
+      const label = block.payload?.name || currentTitle || block.payload?.placeholder || groupUuid;
+      const field = ensureTallyField(fields, groupUuid, {
+        blockGroupUuid: groupUuid,
+        label,
+        tallyType: block.groupType || block.type,
+        required: Boolean(block.payload?.isRequired),
+        options: [],
+      });
+      field.label = label;
+      field.tallyType = block.groupType || block.type;
+      field.required = Boolean(block.payload?.isRequired);
+      if (block.payload?.stars) {
+        field.choices = Array.from({ length: Number(block.payload.stars) }, (_, index) => String(index + 1));
+      }
+    }
+  }
+
+  return fields;
+}
+
+function ensureTallyField(fields, groupUuid, defaults) {
+  if (!fields.has(groupUuid)) fields.set(groupUuid, { ...defaults });
+  return fields.get(groupUuid);
+}
+
+function isTallyOptionBlock(block) {
+  return [
+    "DROPDOWN_OPTION",
+    "CHECKBOX",
+    "MULTIPLE_CHOICE_OPTION",
+  ].includes(block.type);
+}
+
+function isTallyInputBlock(block) {
+  return [
+    "INPUT_TEXT",
+    "INPUT_EMAIL",
+    "INPUT_LINK",
+    "TEXTAREA",
+    "FILE_UPLOAD",
+    "RATING",
+    "LINEAR_SCALE",
+    "DROPDOWN",
+    "CHECKBOXES",
+    "MULTIPLE_CHOICE",
+  ].includes(block.groupType || block.type);
+}
+
+function blockText(block) {
+  const safeHTMLSchema = block.payload?.safeHTMLSchema;
+  if (Array.isArray(safeHTMLSchema)) {
+    const text = safeHTMLSchema.flat(Infinity).filter((value) => typeof value === "string").join(" ");
+    if (text.trim()) return text.replace(/\s+/g, " ").trim();
+  }
+  return block.payload?.text || block.payload?.name || "";
+}
+
+function inferTallyField(responseId, value) {
+  return {
+    blockGroupUuid: responseId,
+    label: responseId,
+    tallyType: Array.isArray(value) ? "CHECKBOXES" : typeof value === "number" ? "NUMBER" : "INPUT_TEXT",
+    required: true,
+    options: [],
+  };
+}
+
+function toTallyInputSpec(inputId, field, recordedValue) {
+  const spec = {
+    id: inputId,
+    question: field.label,
+    type: "string",
+    optional: !field.required,
+  };
+
+  if (field.tallyType === "INPUT_EMAIL") spec.type = "email";
+  if (field.tallyType === "INPUT_LINK") spec.type = "url";
+  if (field.tallyType === "TEXTAREA") spec.type = "string";
+  if (field.tallyType === "RATING" || field.tallyType === "LINEAR_SCALE" || typeof recordedValue === "number") {
+    spec.type = "number";
+    if (field.choices?.length) spec.choices = field.choices;
+  }
+  if (field.tallyType === "DROPDOWN" || field.tallyType === "MULTIPLE_CHOICE") {
+    spec.type = "choice";
+    spec.choices = field.options || [];
+  }
+  if (field.tallyType === "CHECKBOXES") {
+    spec.type = "multi-choice";
+    spec.choices = field.options || [];
+  }
+  if (field.tallyType === "FILE_UPLOAD") {
+    spec.type = "file";
+    spec.question = field.label;
+    spec.description = "Paste a local file path, for example C:\\Users\\User\\Downloads\\Resume.pdf.";
+    spec.tally = {
+      blockGroupUuid: field.blockGroupUuid,
+    };
+  } else if (Array.isArray(recordedValue) && recordedValue[0] && typeof recordedValue[0] === "object") {
+    spec.type = "json";
+    spec.question = field.label;
+    spec.description = "File upload replay is not fully automated yet. Paste the Tally upload object array captured from a browser upload.";
+  }
+  return spec;
+}
+
+function toTallyResponseTemplate(inputId, field, recordedValue) {
+  if (field.tallyType === "FILE_UPLOAD") {
+    return { $value: `{{${inputId}}}` };
+  }
+  if (field.tallyType === "DROPDOWN" || field.tallyType === "MULTIPLE_CHOICE") {
+    return [`{{${inputId}}}`];
+  }
+  if (field.tallyType === "CHECKBOXES" || Array.isArray(recordedValue)) {
+    return { $value: `{{${inputId}}}` };
+  }
+  return `{{${inputId}}}`;
+}
+
+function uniqueInputId(base, used) {
+  let candidate = base || "input";
+  let suffix = 2;
+  while (used.has(candidate)) {
+    candidate = `${base}_${suffix}`;
+    suffix += 1;
+  }
+  used.add(candidate);
+  return candidate;
+}
+
+function templateScalars(value, prefix = "$") {
+  if (value === null || typeof value !== "object") {
+    return `{{${inputIdFromPath(prefix)}}}`;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item, index) => templateScalars(item, `${prefix}[${index}]`));
+  }
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    output[key] = templateScalars(child, `${prefix}.${key}`);
+  }
+  return output;
+}
+
+function keepReplayHeaders(headers) {
+  const keep = {};
+  for (const [key, value] of Object.entries(headers)) {
+    const lower = key.toLowerCase();
+    if (
+      ["accept", "content-type", "origin", "referer"].includes(lower) ||
+      lower.startsWith("x-")
+    ) {
+      keep[key] = value;
+    }
+  }
+  return keep;
+}
+
+function inputIdFromPath(pathExpression) {
+  return pathExpression
+    .replace(/^\$\./, "")
+    .replace(/^\$/, "value")
+    .replace(/\[(\d+)\]/g, "_$1")
+    .replace(/[^a-zA-Z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .replace(/_{2,}/g, "_");
+}
+
+function safeUrl(url) {
+  try {
+    return new URL(url);
+  } catch {
+    return new URL("https://invalid.local/");
+  }
+}
+
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "skill";
+}

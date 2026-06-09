@@ -1,0 +1,814 @@
+{
+  "id": "ipppptt",
+  "name": "ipppptt",
+  "sourceUrl": "https://ippt.yctay.com/",
+  "description": "Draft generated from recordings\\ipppptt-2026-06-09T13-30-10-482Z.json. This site appears to calculate in the browser, so the skill opens the result URL in Chrome and captures the rendered page.",
+  "inputs": [
+    {
+      "id": "age",
+      "question": "Age",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "18 years old",
+          "value": "18"
+        },
+        {
+          "label": "19 years old",
+          "value": "19"
+        },
+        {
+          "label": "20 years old",
+          "value": "20"
+        },
+        {
+          "label": "21 years old",
+          "value": "21"
+        },
+        {
+          "label": "22 years old",
+          "value": "22"
+        },
+        {
+          "label": "23 years old",
+          "value": "23"
+        },
+        {
+          "label": "24 years old",
+          "value": "24"
+        },
+        {
+          "label": "25 years old",
+          "value": "25"
+        },
+        {
+          "label": "26 years old",
+          "value": "26"
+        },
+        {
+          "label": "27 years old",
+          "value": "27"
+        },
+        {
+          "label": "28 years old",
+          "value": "28"
+        },
+        {
+          "label": "29 years old",
+          "value": "29"
+        },
+        {
+          "label": "30 years old",
+          "value": "30"
+        },
+        {
+          "label": "31 years old",
+          "value": "31"
+        },
+        {
+          "label": "32 years old",
+          "value": "32"
+        },
+        {
+          "label": "33 years old",
+          "value": "33"
+        },
+        {
+          "label": "34 years old",
+          "value": "34"
+        },
+        {
+          "label": "35 years old",
+          "value": "35"
+        },
+        {
+          "label": "36 years old",
+          "value": "36"
+        },
+        {
+          "label": "37 years old",
+          "value": "37"
+        },
+        {
+          "label": "38 years old",
+          "value": "38"
+        },
+        {
+          "label": "39 years old",
+          "value": "39"
+        },
+        {
+          "label": "40 years old",
+          "value": "40"
+        },
+        {
+          "label": "41 years old",
+          "value": "41"
+        },
+        {
+          "label": "42 years old",
+          "value": "42"
+        },
+        {
+          "label": "43 years old",
+          "value": "43"
+        },
+        {
+          "label": "44 years old",
+          "value": "44"
+        },
+        {
+          "label": "45 years old",
+          "value": "45"
+        },
+        {
+          "label": "46 years old",
+          "value": "46"
+        },
+        {
+          "label": "47 years old",
+          "value": "47"
+        },
+        {
+          "label": "48 years old",
+          "value": "48"
+        },
+        {
+          "label": "49 years old",
+          "value": "49"
+        },
+        {
+          "label": "50 years old",
+          "value": "50"
+        },
+        {
+          "label": "51 years old",
+          "value": "51"
+        },
+        {
+          "label": "52 years old",
+          "value": "52"
+        },
+        {
+          "label": "53 years old",
+          "value": "53"
+        },
+        {
+          "label": "54 years old",
+          "value": "54"
+        },
+        {
+          "label": "55 years old",
+          "value": "55"
+        },
+        {
+          "label": "56 years old",
+          "value": "56"
+        },
+        {
+          "label": "57 years old",
+          "value": "57"
+        },
+        {
+          "label": "58 years old",
+          "value": "58"
+        },
+        {
+          "label": "59 years old",
+          "value": "59"
+        },
+        {
+          "label": "60 years old",
+          "value": "60"
+        }
+      ]
+    },
+    {
+      "id": "situpreps",
+      "question": "Situp Reps",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "0 reps",
+          "value": "0"
+        },
+        {
+          "label": "1 reps",
+          "value": "1"
+        },
+        {
+          "label": "2 reps",
+          "value": "2"
+        },
+        {
+          "label": "3 reps",
+          "value": "3"
+        },
+        {
+          "label": "4 reps",
+          "value": "4"
+        },
+        {
+          "label": "5 reps",
+          "value": "5"
+        },
+        {
+          "label": "6 reps",
+          "value": "6"
+        },
+        {
+          "label": "7 reps",
+          "value": "7"
+        },
+        {
+          "label": "8 reps",
+          "value": "8"
+        },
+        {
+          "label": "9 reps",
+          "value": "9"
+        },
+        {
+          "label": "10 reps",
+          "value": "10"
+        },
+        {
+          "label": "11 reps",
+          "value": "11"
+        },
+        {
+          "label": "12 reps",
+          "value": "12"
+        },
+        {
+          "label": "13 reps",
+          "value": "13"
+        },
+        {
+          "label": "14 reps",
+          "value": "14"
+        },
+        {
+          "label": "15 reps",
+          "value": "15"
+        },
+        {
+          "label": "16 reps",
+          "value": "16"
+        },
+        {
+          "label": "17 reps",
+          "value": "17"
+        },
+        {
+          "label": "18 reps",
+          "value": "18"
+        },
+        {
+          "label": "19 reps",
+          "value": "19"
+        },
+        {
+          "label": "20 reps",
+          "value": "20"
+        },
+        {
+          "label": "21 reps",
+          "value": "21"
+        },
+        {
+          "label": "22 reps",
+          "value": "22"
+        },
+        {
+          "label": "23 reps",
+          "value": "23"
+        },
+        {
+          "label": "24 reps",
+          "value": "24"
+        },
+        {
+          "label": "25 reps",
+          "value": "25"
+        },
+        {
+          "label": "26 reps",
+          "value": "26"
+        },
+        {
+          "label": "27 reps",
+          "value": "27"
+        },
+        {
+          "label": "28 reps",
+          "value": "28"
+        },
+        {
+          "label": "29 reps",
+          "value": "29"
+        },
+        {
+          "label": "30 reps",
+          "value": "30"
+        },
+        {
+          "label": "31 reps",
+          "value": "31"
+        },
+        {
+          "label": "32 reps",
+          "value": "32"
+        },
+        {
+          "label": "33 reps",
+          "value": "33"
+        },
+        {
+          "label": "34 reps",
+          "value": "34"
+        },
+        {
+          "label": "35 reps",
+          "value": "35"
+        },
+        {
+          "label": "36 reps",
+          "value": "36"
+        },
+        {
+          "label": "37 reps",
+          "value": "37"
+        },
+        {
+          "label": "38 reps",
+          "value": "38"
+        },
+        {
+          "label": "39 reps",
+          "value": "39"
+        },
+        {
+          "label": "40 reps",
+          "value": "40"
+        },
+        {
+          "label": "41 reps",
+          "value": "41"
+        },
+        {
+          "label": "42 reps",
+          "value": "42"
+        },
+        {
+          "label": "43 reps",
+          "value": "43"
+        },
+        {
+          "label": "44 reps",
+          "value": "44"
+        },
+        {
+          "label": "45 reps",
+          "value": "45"
+        },
+        {
+          "label": "46 reps",
+          "value": "46"
+        },
+        {
+          "label": "47 reps",
+          "value": "47"
+        },
+        {
+          "label": "48 reps",
+          "value": "48"
+        },
+        {
+          "label": "49 reps",
+          "value": "49"
+        },
+        {
+          "label": "50 reps",
+          "value": "50"
+        },
+        {
+          "label": "51 reps",
+          "value": "51"
+        },
+        {
+          "label": "52 reps",
+          "value": "52"
+        },
+        {
+          "label": "53 reps",
+          "value": "53"
+        },
+        {
+          "label": "54 reps",
+          "value": "54"
+        },
+        {
+          "label": "55 reps",
+          "value": "55"
+        },
+        {
+          "label": "56 reps",
+          "value": "56"
+        },
+        {
+          "label": "57 reps",
+          "value": "57"
+        },
+        {
+          "label": "58 reps",
+          "value": "58"
+        },
+        {
+          "label": "59 reps",
+          "value": "59"
+        },
+        {
+          "label": "60 reps",
+          "value": "60"
+        }
+      ]
+    },
+    {
+      "id": "pushupreps",
+      "question": "Pushup Reps",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "0 reps",
+          "value": "0"
+        },
+        {
+          "label": "1 reps",
+          "value": "1"
+        },
+        {
+          "label": "2 reps",
+          "value": "2"
+        },
+        {
+          "label": "3 reps",
+          "value": "3"
+        },
+        {
+          "label": "4 reps",
+          "value": "4"
+        },
+        {
+          "label": "5 reps",
+          "value": "5"
+        },
+        {
+          "label": "6 reps",
+          "value": "6"
+        },
+        {
+          "label": "7 reps",
+          "value": "7"
+        },
+        {
+          "label": "8 reps",
+          "value": "8"
+        },
+        {
+          "label": "9 reps",
+          "value": "9"
+        },
+        {
+          "label": "10 reps",
+          "value": "10"
+        },
+        {
+          "label": "11 reps",
+          "value": "11"
+        },
+        {
+          "label": "12 reps",
+          "value": "12"
+        },
+        {
+          "label": "13 reps",
+          "value": "13"
+        },
+        {
+          "label": "14 reps",
+          "value": "14"
+        },
+        {
+          "label": "15 reps",
+          "value": "15"
+        },
+        {
+          "label": "16 reps",
+          "value": "16"
+        },
+        {
+          "label": "17 reps",
+          "value": "17"
+        },
+        {
+          "label": "18 reps",
+          "value": "18"
+        },
+        {
+          "label": "19 reps",
+          "value": "19"
+        },
+        {
+          "label": "20 reps",
+          "value": "20"
+        },
+        {
+          "label": "21 reps",
+          "value": "21"
+        },
+        {
+          "label": "22 reps",
+          "value": "22"
+        },
+        {
+          "label": "23 reps",
+          "value": "23"
+        },
+        {
+          "label": "24 reps",
+          "value": "24"
+        },
+        {
+          "label": "25 reps",
+          "value": "25"
+        },
+        {
+          "label": "26 reps",
+          "value": "26"
+        },
+        {
+          "label": "27 reps",
+          "value": "27"
+        },
+        {
+          "label": "28 reps",
+          "value": "28"
+        },
+        {
+          "label": "29 reps",
+          "value": "29"
+        },
+        {
+          "label": "30 reps",
+          "value": "30"
+        },
+        {
+          "label": "31 reps",
+          "value": "31"
+        },
+        {
+          "label": "32 reps",
+          "value": "32"
+        },
+        {
+          "label": "33 reps",
+          "value": "33"
+        },
+        {
+          "label": "34 reps",
+          "value": "34"
+        },
+        {
+          "label": "35 reps",
+          "value": "35"
+        },
+        {
+          "label": "36 reps",
+          "value": "36"
+        },
+        {
+          "label": "37 reps",
+          "value": "37"
+        },
+        {
+          "label": "38 reps",
+          "value": "38"
+        },
+        {
+          "label": "39 reps",
+          "value": "39"
+        },
+        {
+          "label": "40 reps",
+          "value": "40"
+        },
+        {
+          "label": "41 reps",
+          "value": "41"
+        },
+        {
+          "label": "42 reps",
+          "value": "42"
+        },
+        {
+          "label": "43 reps",
+          "value": "43"
+        },
+        {
+          "label": "44 reps",
+          "value": "44"
+        },
+        {
+          "label": "45 reps",
+          "value": "45"
+        },
+        {
+          "label": "46 reps",
+          "value": "46"
+        },
+        {
+          "label": "47 reps",
+          "value": "47"
+        },
+        {
+          "label": "48 reps",
+          "value": "48"
+        },
+        {
+          "label": "49 reps",
+          "value": "49"
+        },
+        {
+          "label": "50 reps",
+          "value": "50"
+        },
+        {
+          "label": "51 reps",
+          "value": "51"
+        },
+        {
+          "label": "52 reps",
+          "value": "52"
+        },
+        {
+          "label": "53 reps",
+          "value": "53"
+        },
+        {
+          "label": "54 reps",
+          "value": "54"
+        },
+        {
+          "label": "55 reps",
+          "value": "55"
+        },
+        {
+          "label": "56 reps",
+          "value": "56"
+        },
+        {
+          "label": "57 reps",
+          "value": "57"
+        },
+        {
+          "label": "58 reps",
+          "value": "58"
+        },
+        {
+          "label": "59 reps",
+          "value": "59"
+        },
+        {
+          "label": "60 reps",
+          "value": "60"
+        }
+      ]
+    },
+    {
+      "id": "runmins",
+      "question": "Run Mins",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "8 mins",
+          "value": "8"
+        },
+        {
+          "label": "9 mins",
+          "value": "9"
+        },
+        {
+          "label": "10 mins",
+          "value": "10"
+        },
+        {
+          "label": "11 mins",
+          "value": "11"
+        },
+        {
+          "label": "12 mins",
+          "value": "12"
+        },
+        {
+          "label": "13 mins",
+          "value": "13"
+        },
+        {
+          "label": "14 mins",
+          "value": "14"
+        },
+        {
+          "label": "15 mins",
+          "value": "15"
+        },
+        {
+          "label": "16 mins",
+          "value": "16"
+        },
+        {
+          "label": "17 mins",
+          "value": "17"
+        },
+        {
+          "label": "18 mins",
+          "value": "18"
+        }
+      ]
+    },
+    {
+      "id": "runsecs",
+      "question": "Run Secs",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "0 secs",
+          "value": "0"
+        },
+        {
+          "label": "10 secs",
+          "value": "10"
+        },
+        {
+          "label": "20 secs",
+          "value": "20"
+        },
+        {
+          "label": "30 secs",
+          "value": "30"
+        },
+        {
+          "label": "40 secs",
+          "value": "40"
+        },
+        {
+          "label": "50 secs",
+          "value": "50"
+        }
+      ]
+    }
+  ],
+  "steps": [
+    {
+      "id": "goal",
+      "browserMode": "navigate",
+      "request": {
+        "method": "GET",
+        "url": "https://ippt.yctay.com/",
+        "headers": {
+          "Referer": "https://ippt.yctay.com/",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+        },
+        "query": {
+          "age": {
+            "$value": "{{age}}"
+          },
+          "situpReps": {
+            "$value": "{{situpreps}}"
+          },
+          "pushupReps": {
+            "$value": "{{pushupreps}}"
+          },
+          "runMins": {
+            "$value": "{{runmins}}"
+          },
+          "runSecs": {
+            "$value": "{{runsecs}}"
+          }
+        }
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "label": "Rendered result",
+      "from": "goal",
+      "path": "$"
+    }
+  ]
+}

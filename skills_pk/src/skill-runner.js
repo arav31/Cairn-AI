@@ -1,0 +1,731 @@
+import fs from "node:fs/promises";
+import path from "node:path";
+import { CdpClient, getPageTarget, launchChrome, sleep } from "./cdp.js";
+import { getPath } from "./json-path.js";
+import { applyComputedInputs, renderTemplate } from "./templates.js";
+
+export async function loadSkills(skillsDir = "skills") {
+  const files = await fs.readdir(skillsDir).catch(() => []);
+  const skills = [];
+  for (const file of files.filter((name) => name.endsWith(".json") && !name.endsWith(".draft.json"))) {
+    const fullPath = path.join(skillsDir, file);
+    const skill = JSON.parse(await fs.readFile(fullPath, "utf8"));
+    skill.__path = fullPath;
+    skills.push(skill);
+  }
+  return skills.sort((a, b) => a.id.localeCompare(b.id));
+}
+
+export async function loadSkill(skillId, skillsDir = "skills") {
+  const skills = await loadSkills(skillsDir);
+  const skill = skills.find((candidate) => candidate.id === skillId);
+  if (!skill) throw new Error(`Skill not found: ${skillId}`);
+  return skill;
+}
+
+export async function runSkill(skill, rawInputs, options = {}) {
+  const context = applyComputedInputs(skill, normalizeInputs(skill, rawInputs), options.now || new Date());
+  await prepareProviderInputs(skill, context);
+  const cookieJar = new CookieJar();
+  const responses = {};
+  const saved = {};
+
+  for (const step of skill.steps || []) {
+    if (step.when && !context[step.when]) continue;
+
+    if (step.browserWorkflow) {
+      const workflow = renderTemplate(step.browserWorkflow, { ...context, ...saved });
+      const responseRecord = await runBrowserWorkflowStep(skill, step, workflow);
+      responses[step.id] = responseRecord;
+      if (!responseRecord.ok && step.failOnError !== false) {
+        const error = new Error(`Step ${step.id} failed: ${responseRecord.status} ${responseRecord.statusText || ""}`.trim());
+        error.response = responseRecord;
+        throw error;
+      }
+      continue;
+    }
+
+    const request = materializeRequest(renderTemplate(step.request, { ...context, ...saved }));
+    request.headers = request.headers || {};
+    if (step.useCookieJar) {
+      const cookieHeader = cookieJar.headerFor(request.url);
+      if (cookieHeader) request.headers.cookie = cookieHeader;
+    }
+
+    let responseRecord;
+    if (step.browserMode === "navigate") {
+      responseRecord = await fetchStepRequestInBrowser(skill, step, request);
+    } else {
+      responseRecord = await fetchStepRequest(step, request, cookieJar);
+      if (!responseRecord.ok && shouldUseBrowserFallback(skill, step, responseRecord)) {
+        responseRecord = await fetchStepRequestInBrowser(skill, step, request);
+      }
+    }
+
+    responses[step.id] = responseRecord;
+
+    if (!responseRecord.ok && step.failOnError !== false) {
+      const statusText = responseRecord.statusText || "";
+      const error = new Error(`Step ${step.id} failed: ${responseRecord.status} ${statusText}`.trim());
+      error.response = responses[step.id];
+      throw error;
+    }
+
+    if (step.save?.bodyText) {
+      saved[step.save.bodyText] = responseRecord.text;
+    }
+    for (const [name, sourcePath] of Object.entries(step.save?.json || {})) {
+      saved[name] = getPath(responseRecord.json, sourcePath);
+    }
+  }
+
+  return {
+    skillId: skill.id,
+    inputs: context,
+    responses,
+    saved,
+    summary: summarize(skill, responses),
+  };
+}
+
+async function fetchStepRequest(step, request, cookieJar) {
+  const method = request.method || "GET";
+  const started = performance.now();
+  const response = await fetch(request.url, {
+    method,
+    headers: request.headers,
+    body: ["GET", "HEAD"].includes(method.toUpperCase()) || request.body === undefined
+      ? undefined
+      : JSON.stringify(request.body),
+  });
+  const text = await response.text();
+  const ms = Math.round(performance.now() - started);
+
+  cookieJar.addFromResponse(request.url, response);
+
+  return makeResponseRecord({
+    id: step.id,
+    request,
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    ms,
+    headers: Object.fromEntries(response.headers.entries()),
+    text,
+  });
+}
+
+function makeResponseRecord({ id, request, status, statusText = "", ok, ms, headers = {}, text = "" }) {
+  let json = null;
+  const contentType = headers["content-type"] || headers["Content-Type"] || "";
+  if (contentType.includes("json")) {
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
+    }
+  }
+
+  return {
+    id,
+    request,
+    status,
+    statusText,
+    ok,
+    ms,
+    headers,
+    text,
+    json,
+  };
+}
+
+function shouldUseBrowserFallback(skill, step, responseRecord) {
+  if ((responseRecord.request.method || "GET").toUpperCase() !== "GET") return false;
+  if (step.browserFallback === false || skill.browserFallback === false) return false;
+  if (step.browserFallback || skill.browserFallback) return true;
+  return isBrowserChallenge(responseRecord);
+}
+
+function isBrowserChallenge(responseRecord) {
+  const headers = normalizeHeaderKeys(responseRecord.headers || {});
+  if (headers["cf-mitigated"] === "challenge") return true;
+  if (responseRecord.status === 403 && /Just a moment|challenges\.cloudflare\.com|cf_chl/i.test(responseRecord.text || "")) {
+    return true;
+  }
+  return false;
+}
+
+async function fetchStepRequestInBrowser(skill, step, request) {
+  const fallback = typeof step.browserFallback === "object"
+    ? step.browserFallback
+    : typeof skill.browserFallback === "object"
+      ? skill.browserFallback
+      : {};
+  const started = performance.now();
+  const startUrl = fallback.startUrl || skill.sourceUrl || originFromUrl(request.url) || request.url;
+  const { child, port } = launchChrome({
+    url: "about:blank",
+    headless: fallback.headless === true,
+  });
+
+  let client = null;
+  try {
+    const page = await getPageTarget(port);
+    client = new CdpClient(page.webSocketDebuggerUrl);
+    await client.connect();
+    await client.send("Network.enable");
+    await client.send("Page.enable");
+    await client.send("Runtime.enable");
+
+    await navigateAndWait(client, startUrl, fallback.loadTimeoutMs || 30000);
+    await waitForBrowserChallengeToSettle(client, fallback.challengeTimeoutMs || 30000);
+    if (step.browserMode === "navigate" || fallback.mode === "navigate") {
+      const rendered = await navigateRequestInBrowser(client, request, fallback.fetchTimeoutMs || 30000);
+      return makeResponseRecord({
+        id: step.id,
+        request: { ...request, execution: "browser-navigate" },
+        status: rendered.status,
+        statusText: rendered.statusText,
+        ok: rendered.ok,
+        ms: Math.round(performance.now() - started),
+        headers: rendered.headers,
+        text: rendered.text,
+      });
+    }
+    const browserResponse = await browserFetch(client, request, fallback.fetchTimeoutMs || 30000);
+
+    return makeResponseRecord({
+      id: step.id,
+      request: { ...request, execution: "browser-fallback" },
+      status: browserResponse.status,
+      statusText: browserResponse.statusText,
+      ok: browserResponse.ok,
+      ms: Math.round(performance.now() - started),
+      headers: browserResponse.headers,
+      text: browserResponse.text,
+    });
+  } finally {
+    client?.close();
+    child.kill();
+  }
+}
+
+async function navigateRequestInBrowser(client, request, timeoutMs) {
+  await navigateAndWait(client, request.url, timeoutMs);
+  await sleep(500);
+  const rendered = await evaluateInBrowser(client, `(() => ({
+    status: 200,
+    statusText: "OK",
+    ok: true,
+    headers: {"content-type": "text/plain; charset=utf-8"},
+    text: document.body ? document.body.innerText : document.documentElement.innerText,
+    url: location.href,
+    title: document.title
+  }))()`);
+  return rendered;
+}
+
+async function runBrowserWorkflowStep(skill, step, workflow) {
+  const started = performance.now();
+  const startUrl = workflow.startUrl || skill.sourceUrl;
+  const { child, port } = launchChrome({
+    url: "about:blank",
+    headless: workflow.headless === true,
+  });
+  let client = null;
+  try {
+    const page = await getPageTarget(port);
+    client = new CdpClient(page.webSocketDebuggerUrl);
+    await client.connect();
+    await client.send("Network.enable");
+    await client.send("Page.enable");
+    await client.send("Runtime.enable");
+
+    await navigateAndWait(client, startUrl, workflow.loadTimeoutMs || 30000);
+    await sleep(workflow.initialWaitMs || 500);
+    for (const action of workflow.actions || []) {
+      await runBrowserWorkflowAction(client, action);
+      await sleep(action.waitMs || workflow.actionWaitMs || 250);
+    }
+    await sleep(workflow.finalWaitMs || 750);
+    const rendered = await evaluateInBrowser(client, `(() => ({
+      text: document.body ? document.body.innerText : document.documentElement.innerText,
+      url: location.href,
+      title: document.title
+    }))()`);
+    return makeResponseRecord({
+      id: step.id,
+      request: {
+        method: "BROWSER",
+        url: rendered.url,
+        execution: "browser-workflow",
+      },
+      status: 200,
+      statusText: "OK",
+      ok: true,
+      ms: Math.round(performance.now() - started),
+      headers: { "content-type": "text/plain; charset=utf-8" },
+      text: rendered.text,
+    });
+  } finally {
+    client?.close();
+    child.kill();
+  }
+}
+
+async function runBrowserWorkflowAction(client, action) {
+  if (action.type === "fill") {
+    await evaluateInBrowser(client, `(() => {
+      const element = document.querySelector(${JSON.stringify(action.selector)});
+      if (!element) throw new Error("Element not found: " + ${JSON.stringify(action.selector)});
+      const value = ${JSON.stringify(action.value ?? "")};
+      element.focus();
+      element.value = value;
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return true;
+    })()`);
+    return;
+  }
+
+  if (action.type === "click") {
+    await evaluateInBrowser(client, `(() => {
+      const element = document.querySelector(${JSON.stringify(action.selector)});
+      if (!element) throw new Error("Element not found: " + ${JSON.stringify(action.selector)});
+      element.click();
+      return true;
+    })()`);
+  }
+}
+
+async function navigateAndWait(client, url, timeoutMs) {
+  const loaded = waitForCdpEvent(client, "Page.loadEventFired", timeoutMs);
+  await client.send("Page.navigate", { url });
+  await loaded;
+}
+
+function waitForCdpEvent(client, method, timeoutMs) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    client.on(method, () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
+async function waitForBrowserChallengeToSettle(client, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const pageState = await evaluateInBrowser(client, `(() => ({
+      title: document.title,
+      text: document.body ? document.body.innerText.slice(0, 500) : "",
+      hasChallengeScript: Boolean(document.querySelector('script[src*="challenge-platform"]'))
+    }))()`);
+    if (!/Just a moment/i.test(pageState.title || "") && !pageState.hasChallengeScript) return;
+    await sleep(750);
+  }
+}
+
+async function browserFetch(client, request, timeoutMs) {
+  const expression = `fetch(${JSON.stringify(request.url)}, {
+    method: ${JSON.stringify(request.method || "GET")},
+    headers: ${JSON.stringify(browserSafeHeaders(request.headers || {}))},
+    credentials: "include",
+    referrer: ${JSON.stringify(request.headers?.Referer || request.headers?.referer || "")}
+  }).then(async (response) => ({
+    status: response.status,
+    statusText: response.statusText,
+    ok: response.ok,
+    headers: Object.fromEntries(response.headers.entries()),
+    text: await response.text()
+  })).catch((error) => ({ error: String(error && error.message ? error.message : error) }))`;
+  const result = await Promise.race([
+    evaluateInBrowser(client, expression),
+    new Promise((_, reject) => setTimeout(() => reject(new Error("Browser fallback fetch timed out.")), timeoutMs)),
+  ]);
+  if (result?.error) throw new Error(`Browser fallback fetch failed: ${result.error}`);
+  return result;
+}
+
+async function evaluateInBrowser(client, expression) {
+  const result = await client.send("Runtime.evaluate", {
+    expression,
+    awaitPromise: true,
+    returnByValue: true,
+  });
+  if (result.result?.exceptionDetails) {
+    throw new Error(result.result.exceptionDetails.text || "Browser evaluation failed.");
+  }
+  return result.result?.result?.value;
+}
+
+function browserSafeHeaders(headers) {
+  const forbidden = new Set([
+    "connection",
+    "content-length",
+    "cookie",
+    "host",
+    "origin",
+    "referer",
+    "sec-fetch-dest",
+    "sec-fetch-mode",
+    "sec-fetch-site",
+    "sec-fetch-user",
+    "user-agent",
+  ]);
+  const safe = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (forbidden.has(key.toLowerCase())) continue;
+    safe[key] = value;
+  }
+  return safe;
+}
+
+function normalizeHeaderKeys(headers) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(headers)) {
+    normalized[key.toLowerCase()] = value;
+  }
+  return normalized;
+}
+
+function materializeRequest(request) {
+  if (!request.query) return request;
+
+  const url = new URL(request.url);
+  for (const [key, value] of Object.entries(request.query)) {
+    appendQueryValue(url.searchParams, key, value);
+  }
+  const { query: _query, ...rest } = request;
+  return {
+    ...rest,
+    url: url.toString(),
+  };
+}
+
+function appendQueryValue(searchParams, key, value) {
+  if (value === undefined || value === null || value === "") return;
+  if (Array.isArray(value)) {
+    for (const item of value) appendQueryValue(searchParams, key, item);
+    return;
+  }
+  searchParams.append(key, String(value));
+}
+
+async function prepareProviderInputs(skill, context) {
+  if (skill.provider === "tally") {
+    await prepareTallyFileInputs(skill, context);
+  }
+}
+
+async function prepareTallyFileInputs(skill, context) {
+  const fileInputs = (skill.inputs || []).filter((input) => input.type === "file" && context[input.id]);
+  if (!fileInputs.length) return;
+
+  const formId = resolveTallyFormId(skill);
+  if (!formId) throw new Error("Tally file upload needs providerConfig.formId or a forms/<id>/respond step URL.");
+
+  for (const input of fileInputs) {
+    context[input.id] = await uploadTallyAsset({
+      skill,
+      formId,
+      input,
+      value: context[input.id],
+      respondentUuid: context.respondentUuid,
+      submissionUuid: context.sessionUuid,
+    });
+  }
+}
+
+async function uploadTallyAsset({ skill, formId, input, value, respondentUuid, submissionUuid }) {
+  const existingUpload = coerceExistingUpload(value);
+  if (existingUpload) return existingUpload;
+
+  if (typeof value !== "string") {
+    throw new Error(`${input.question || input.id} must be a file path or a Tally upload object array.`);
+  }
+
+  const filePath = path.resolve(stripQuotes(value.trim()));
+  const stat = await fs.stat(filePath).catch(() => null);
+  if (!stat?.isFile()) throw new Error(`File not found for ${input.question || input.id}: ${filePath}`);
+
+  const fileName = path.basename(filePath);
+  const fileBytes = await fs.readFile(filePath);
+  const mimeType = mimeTypeForPath(filePath);
+  const uploadUrl = `https://api.tally.so/upload/${formId}/response-asset`;
+  const blockGroupUuid = input.tally?.blockGroupUuid || input.blockGroupUuid;
+  const metadata = { respondentUuid, submissionUuid, blockGroupUuid };
+
+  const asset = fileBytes.length < 0x2000000
+    ? await uploadSmallTallyAsset({ skill, uploadUrl, fileBytes, fileName, mimeType, metadata })
+    : await uploadLargeTallyAsset({ skill, uploadUrl, fileBytes, fileName, mimeType, metadata });
+
+  return Array.isArray(asset) ? asset : [asset];
+}
+
+async function uploadSmallTallyAsset({ skill, uploadUrl, fileBytes, fileName, mimeType, metadata }) {
+  const form = new FormData();
+  appendTallyUploadMetadata(form, metadata);
+  form.append("asset", new Blob([fileBytes], { type: mimeType }), fileName);
+
+  const response = await fetch(uploadUrl, {
+    method: "POST",
+    headers: tallyUploadHeaders(skill),
+    body: form,
+  });
+  return parseTallyUploadResponse(response);
+}
+
+async function uploadLargeTallyAsset({ skill, uploadUrl, fileBytes, fileName, mimeType, metadata }) {
+  const signedUrl = new URL(`${uploadUrl}/signed-url`);
+  signedUrl.searchParams.set("fileType", mimeType);
+  signedUrl.searchParams.set("fileName", fileName);
+  signedUrl.searchParams.set("fileSize", String(fileBytes.length));
+  if (metadata.blockGroupUuid) signedUrl.searchParams.set("blockGroupUuid", metadata.blockGroupUuid);
+
+  const signedResponse = await fetch(signedUrl, {
+    headers: tallyUploadHeaders(skill),
+  });
+  const signed = await parseTallyUploadResponse(signedResponse);
+
+  const putResponse = await fetch(signed.signedUploadUrl, {
+    method: "PUT",
+    headers: { "Content-Type": mimeType },
+    body: fileBytes,
+  });
+  if (!putResponse.ok) {
+    throw new Error(`Tally signed upload failed: ${putResponse.status} ${putResponse.statusText} ${await putResponse.text()}`);
+  }
+
+  const completeResponse = await fetch(`${uploadUrl}/signed-url`, {
+    method: "POST",
+    headers: {
+      ...tallyUploadHeaders(skill),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      fileId: signed.fileId,
+      fileType: mimeType,
+      fileName,
+      fileSize: fileBytes.length,
+      respondentUuid: metadata.respondentUuid,
+      submissionUuid: metadata.submissionUuid,
+      blockGroupUuid: metadata.blockGroupUuid,
+    }),
+  });
+  return parseTallyUploadResponse(completeResponse);
+}
+
+async function parseTallyUploadResponse(response) {
+  const text = await response.text();
+  let json = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = null;
+  }
+  if (!response.ok) {
+    throw new Error(`Tally file upload failed: ${response.status} ${response.statusText} ${text}`);
+  }
+  return json;
+}
+
+function appendTallyUploadMetadata(form, metadata) {
+  if (metadata.respondentUuid) form.append("respondentUuid", metadata.respondentUuid);
+  if (metadata.submissionUuid) form.append("submissionUuid", metadata.submissionUuid);
+  if (metadata.blockGroupUuid) form.append("blockGroupUuid", metadata.blockGroupUuid);
+}
+
+function tallyUploadHeaders(skill) {
+  const headers = {
+    accept: "application/json, text/plain, */*",
+    "tally-version": "2025-01-15",
+  };
+  const origin = skill.providerConfig?.origin || originFromUrl(skill.sourceUrl);
+  if (origin) {
+    headers.origin = origin;
+    headers.referer = skill.providerConfig?.referer || `${origin}/`;
+  }
+  return headers;
+}
+
+function resolveTallyFormId(skill) {
+  if (skill.providerConfig?.formId) return skill.providerConfig.formId;
+  for (const step of skill.steps || []) {
+    const match = step.request?.url?.match(/\/forms\/([^/]+)\/respond/);
+    if (match) return match[1];
+  }
+  return null;
+}
+
+function coerceExistingUpload(value) {
+  if (Array.isArray(value)) return value;
+  if (value && typeof value === "object") return [value];
+  if (typeof value !== "string") return null;
+
+  const trimmed = value.trim();
+  if (!/^[{\[]/.test(trimmed)) return null;
+  try {
+    const parsed = JSON.parse(trimmed);
+    return Array.isArray(parsed) ? parsed : [parsed];
+  } catch {
+    return null;
+  }
+}
+
+function stripQuotes(value) {
+  return value.replace(/^["']|["']$/g, "");
+}
+
+function originFromUrl(value) {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
+function mimeTypeForPath(filePath) {
+  const extension = path.extname(filePath).toLowerCase();
+  return MIME_TYPES[extension] || "application/octet-stream";
+}
+
+export function normalizeInputs(skill, rawInputs) {
+  const normalized = {};
+  for (const input of skill.inputs || []) {
+    const value = rawInputs[input.id] ?? input.default;
+    if ((value === undefined || value === "") && input.optional) continue;
+    if (input.type === "number" && value !== undefined && value !== "") {
+      normalized[input.id] = Number(value);
+    } else if (input.type === "boolean") {
+      normalized[input.id] = value === true || value === "true" || value === "yes" || value === "y";
+    } else {
+      normalized[input.id] = value;
+    }
+  }
+  for (const [key, value] of Object.entries(rawInputs)) {
+    if (!(key in normalized)) normalized[key] = value;
+  }
+  return normalized;
+}
+
+function summarize(skill, responses) {
+  if (skill.postProcess === "fwdTravelQuote") return summarizeFwdTravel(responses);
+  if (skill.postProcess === "singlifeSimpleTerm") return summarizeSinglifeSimpleTerm(responses);
+
+  const outputs = [];
+  for (const output of skill.outputs || []) {
+    const response = responses[output.from];
+    const source = response?.json ?? response?.text;
+    if (!response) continue;
+    if (output.each) {
+      const rows = getPath(source, output.each) || [];
+      outputs.push({
+        label: output.label,
+        rows: rows.map((row) => {
+          const mapped = {};
+          for (const [field, fieldPath] of Object.entries(output.fields || {})) {
+            mapped[field] = getPath(row, fieldPath);
+          }
+          return mapped;
+        }),
+      });
+    } else {
+      outputs.push({ label: output.label, value: getPath(source, output.path) });
+    }
+  }
+  return outputs;
+}
+
+function summarizeFwdTravel(responses) {
+  const quote = responses.quickCompute?.json;
+  const promo = responses.verifyPromoCode?.json;
+  const plans = getPath(quote, "$.data.policyPlans") || [];
+  const discountRows =
+    getPath(promo, "$.data.layeredPromoCode.t2[0].additionalVoucherDiscount") ||
+    getPath(promo, "$.data.additionalVoucherDiscount") ||
+    [];
+
+  return plans.map((plan) => {
+    const discount = findDiscount(discountRows, plan.id);
+    const discountRate = Number(discount?.finalPromoValue ?? discount?.promoPercentValue ?? 0);
+    const discountedPremium = discountRate ? roundMoney(plan.grossPremium * (1 - discountRate)) : plan.grossPremium;
+    return {
+      plan: plan.name,
+      code: plan.id,
+      basePremium: plan.grossPremium,
+      discountRate,
+      discountedPremium,
+    };
+  });
+}
+
+function findDiscount(rows, planId) {
+  if (!Array.isArray(rows)) return null;
+  return rows.find((row) => {
+    const values = Object.values(row).map(String);
+    return values.includes(planId);
+  });
+}
+
+function summarizeSinglifeSimpleTerm(responses) {
+  const data = responses.computePremium?.json?.data;
+  const coverages = data?.coverages || [];
+  return {
+    totalPremium: data?.totalOriginalPremium,
+    totalAfterDiscountPremium: data?.totalAfterDiscountPremium,
+    totalAnnualizedPremium: data?.totalAnnualizedPremium,
+    paymentModes: coverages.map((coverage) => ({
+      id: coverage.id,
+      name: coverage.name,
+      annualPremium: coverage.attributes?.annualPremium,
+      halfYearlyPremium: coverage.attributes?.halfYearlyPremium,
+      quarterlyPremium: coverage.attributes?.quarterlyPremium,
+      monthlyPremium: coverage.attributes?.monthlyPremium,
+      modalPremium: coverage.attributes?.modalPremium,
+    })),
+  };
+}
+
+function roundMoney(value) {
+  return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+const MIME_TYPES = {
+  ".pdf": "application/pdf",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".txt": "text/plain",
+  ".rtf": "application/rtf",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+};
+
+class CookieJar {
+  constructor() {
+    this.cookies = new Map();
+  }
+
+  addFromResponse(_url, response) {
+    const setCookies = response.headers.getSetCookie?.() || splitSetCookie(response.headers.get("set-cookie"));
+    for (const setCookie of setCookies) {
+      const [pair] = setCookie.split(";");
+      const separator = pair.indexOf("=");
+      if (separator === -1) continue;
+      const name = pair.slice(0, separator).trim();
+      const value = pair.slice(separator + 1).trim();
+      if (name) this.cookies.set(name, value);
+    }
+  }
+
+  headerFor() {
+    return [...this.cookies.entries()].map(([name, value]) => `${name}=${value}`).join("; ");
+  }
+}
+
+function splitSetCookie(value) {
+  if (!value) return [];
+  return value.split(/,(?=\s*[^;,]+=)/g);
+}

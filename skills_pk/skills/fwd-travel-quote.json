@@ -1,0 +1,158 @@
+{
+  "id": "fwd-travel-quote",
+  "name": "FWD Travel Insurance Quote",
+  "sourceUrl": "https://www.fwd.com.sg/travel-insurance/",
+  "description": "Gets FWD travel base premiums and optional promo discount metadata without browser automation.",
+  "inputs": [
+    {
+      "id": "trip",
+      "question": "Trip type",
+      "type": "choice",
+      "choices": ["Single", "Annual"],
+      "default": "Single"
+    },
+    {
+      "id": "insuredOption",
+      "question": "Who is travelling",
+      "type": "choice",
+      "choices": ["Individual", "Couple", "Family", "Group"],
+      "default": "Couple"
+    },
+    {
+      "id": "region",
+      "question": "Travel region",
+      "type": "choice",
+      "choices": ["Asean", "Asia (inc Aust & NZ)", "Worldwide Excluding USA", "Worldwide"],
+      "default": "Asia (inc Aust & NZ)"
+    },
+    {
+      "id": "noOfAdults",
+      "question": "Number of adults",
+      "type": "number",
+      "default": 2
+    },
+    {
+      "id": "ageBand1Count",
+      "question": "Children count in age band 1",
+      "type": "number",
+      "default": 0
+    },
+    {
+      "id": "ageBand2Count",
+      "question": "Children count in age band 2",
+      "type": "number",
+      "default": 0
+    },
+    {
+      "id": "ageBand3Count",
+      "question": "Children count in age band 3",
+      "type": "number",
+      "default": 0
+    },
+    {
+      "id": "travelStartDate",
+      "question": "Departure date (YYYY-MM-DD)",
+      "type": "date",
+      "default": "2026-06-09"
+    },
+    {
+      "id": "travelEndDate",
+      "question": "Return date (YYYY-MM-DD)",
+      "type": "date",
+      "default": "2026-06-25"
+    },
+    {
+      "id": "promoCode",
+      "question": "Promo code",
+      "type": "string",
+      "default": "FWDGSS",
+      "optional": true
+    }
+  ],
+  "computed": {
+    "travelStartDateFwd": {
+      "fn": "dateFormat",
+      "input": "travelStartDate",
+      "format": "DD-MM-YYYY"
+    },
+    "travelEndDateFwd": {
+      "fn": "dateFormat",
+      "input": "travelEndDate",
+      "format": "DD-MM-YYYY"
+    }
+  },
+  "steps": [
+    {
+      "id": "quickCompute",
+      "request": {
+        "method": "POST",
+        "url": "https://www.fwd.com.sg/api/gw/product/travel/quickCompute",
+        "headers": {
+          "accept": "application/json, text/plain, */*",
+          "content-type": "application/json",
+          "origin": "https://www.fwd.com.sg",
+          "referer": "https://www.fwd.com.sg/travel-insurance/",
+          "x-apigw-api-id": "lir381gzc5"
+        },
+        "body": {
+          "quickComputeData": {
+            "basicOnly": true,
+            "planCode": "",
+            "excludedCoverages": [],
+            "factors": {
+              "trip": "{{trip}}",
+              "insuredOption": "{{insuredOption}}",
+              "region": "{{region}}",
+              "noOfAdults": {
+                "$value": "{{noOfAdults}}"
+              },
+              "travelStartDate": "{{travelStartDateFwd}}",
+              "travelEndDate": "{{travelEndDateFwd}}",
+              "ageBand1Count": "{{ageBand1Count}}",
+              "ageBand2Count": "{{ageBand2Count}}",
+              "ageBand3Count": "{{ageBand3Count}}"
+            },
+            "discount": {}
+          }
+        }
+      }
+    },
+    {
+      "id": "verifyPromoCode",
+      "when": "promoCode",
+      "request": {
+        "method": "POST",
+        "url": "https://www.fwd.com.sg/api/gw/product/general/verifyPromoCode",
+        "headers": {
+          "accept": "application/json, text/plain, */*",
+          "content-type": "application/json",
+          "origin": "https://www.fwd.com.sg",
+          "referer": "https://www.fwd.com.sg/travel-insurance/",
+          "x-apigw-api-id": "lir381gzc5"
+        },
+        "body": {
+          "quotationCriteria": {
+            "factors": {
+              "trip": "{{trip}}",
+              "insuredOption": "{{insuredOption}}",
+              "region": "{{region}}",
+              "noOfAdults": {
+                "$value": "{{noOfAdults}}"
+              },
+              "travelStartDate": "{{travelStartDateFwd}}",
+              "travelEndDate": "{{travelEndDateFwd}}",
+              "ageBand1Count": "{{ageBand1Count}}",
+              "ageBand2Count": "{{ageBand2Count}}",
+              "ageBand3Count": "{{ageBand3Count}}"
+            }
+          },
+          "product": "travel",
+          "promoCodeTierType": "Marketing Promo",
+          "frontendPromoCode": "{{promoCode}}",
+          "additionalQuestions": null
+        }
+      }
+    }
+  ],
+  "postProcess": "fwdTravelQuote"
+}

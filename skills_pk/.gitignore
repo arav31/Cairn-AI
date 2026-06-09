@@ -1,0 +1,6 @@
+recordings/*
+!recordings/.gitkeep
+skills/*.draft.json
+skills/_old/
+node_modules/
+.DS_Store

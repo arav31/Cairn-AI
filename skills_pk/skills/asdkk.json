@@ -1,0 +1,357 @@
+{
+  "id": "asdkk",
+  "name": "asdkk",
+  "sourceUrl": "https://ask.level.io/r/supportengineer?utm_source=remoteok.com&rid=RMTU4LjE0MC4xNDkuMTMw&ref=remoteok.com",
+  "description": "Draft generated from recordings\\asdkk-2026-06-09T12-31-04-883Z.json. Questions are extracted from the form where possible; review file-upload fields before production use.",
+  "provider": "tally",
+  "providerConfig": {
+    "formId": "PdlXdd",
+    "origin": "https://ask.level.io"
+  },
+  "computed": {
+    "sessionUuid": {
+      "fn": "uuid"
+    },
+    "respondentUuid": {
+      "fn": "uuid"
+    }
+  },
+  "inputs": [
+    {
+      "id": "name",
+      "question": "Name",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "email",
+      "question": "Email",
+      "type": "email",
+      "optional": false
+    },
+    {
+      "id": "linkedin-profile",
+      "question": "LinkedIn Profile",
+      "type": "url",
+      "optional": true
+    },
+    {
+      "id": "resume",
+      "question": "Resume",
+      "type": "file",
+      "optional": false,
+      "description": "Paste a local file path, for example C:\\Users\\User\\Downloads\\Resume.pdf.",
+      "tally": {
+        "blockGroupUuid": "cb4b6399-e0b1-4c6e-9215-ff6f1ba220cf"
+      }
+    },
+    {
+      "id": "rate-your-proficiency-with-windows",
+      "question": "Rate your proficiency with Windows",
+      "type": "number",
+      "optional": false,
+      "choices": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ]
+    },
+    {
+      "id": "rate-your-proficiency-with-macos",
+      "question": "Rate your proficiency with macOS",
+      "type": "number",
+      "optional": false,
+      "choices": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ]
+    },
+    {
+      "id": "how-many-years-have-you-worked-in-msp-or-internal-it",
+      "question": "How many years have you worked in MSP or internal IT?",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "Under 5",
+          "value": "c4015a8c-9354-45df-a509-4ce5e99468bc"
+        },
+        {
+          "label": "5 - 7",
+          "value": "36255ded-42c6-44d1-88a7-ef375f0fca68"
+        },
+        {
+          "label": "7 - 10",
+          "value": "59ce90c4-b213-4a63-9c3a-650ba3e63729"
+        },
+        {
+          "label": "10 - 15",
+          "value": "a2ca99b6-3e2e-4b00-8f89-21674f5d95f3"
+        },
+        {
+          "label": "15+",
+          "value": "81fd27a9-1c8b-4dc3-b2ba-6d5debdeff4a"
+        }
+      ]
+    },
+    {
+      "id": "rate-your-proficiency-with-linux",
+      "question": "Rate your proficiency with Linux",
+      "type": "number",
+      "optional": false,
+      "choices": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5"
+      ]
+    },
+    {
+      "id": "roughly-how-many-endpoints-have-you-managed",
+      "question": "Roughly how many endpoints have you managed?",
+      "type": "choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "Under 250",
+          "value": "2ec1221b-b556-40d0-a90b-9e6d4cc7e357"
+        },
+        {
+          "label": "250 to 500",
+          "value": "eee46289-8724-4100-a9ba-680853a85ca0"
+        },
+        {
+          "label": "500 to 1,000",
+          "value": "67cc25df-c66b-43b8-ada3-73056c8003c6"
+        },
+        {
+          "label": "1,000 to 5,000",
+          "value": "0166a061-935a-4fad-a360-12ab864c302b"
+        },
+        {
+          "label": "5,000+",
+          "value": "5feb328c-d886-4608-aeca-baec971e11f3"
+        }
+      ]
+    },
+    {
+      "id": "describe-the-environment-for-example-one-large-tenant-or-many-small-msp-clients",
+      "question": "Describe the environment, for example one large tenant, or many small MSP clients.",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "which-rmm-platforms-have-you-used",
+      "question": "Which RMM platforms have you used?",
+      "type": "multi-choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "NinjaOne",
+          "value": "3b54e61c-b3a1-452a-85f7-2fd724d3ceca"
+        },
+        {
+          "label": "ConnectWise",
+          "value": "360a19be-004d-45b3-b715-c4e6f79650f7"
+        },
+        {
+          "label": "Datto RMM",
+          "value": "fcc318d0-2eeb-40c7-9614-2bfbe6395eb0"
+        },
+        {
+          "label": "Atera",
+          "value": "ef7ee475-530c-434a-b358-32e2a710a160"
+        },
+        {
+          "label": "Level",
+          "value": "06a9c9f6-010c-4f8f-a869-6cbfed77d200"
+        },
+        {
+          "label": "Syncro",
+          "value": "29304ede-998b-4eb4-b194-555679e0474f"
+        },
+        {
+          "label": "N-able",
+          "value": "6fef9fa0-83f3-4fab-8c28-95aff6db6135"
+        },
+        {
+          "label": "Kaseya",
+          "value": "7f8ab162-2f03-45a2-8c76-7ec996d0b9b4"
+        },
+        {
+          "label": "Action1",
+          "value": "68505a9c-7335-4a0d-89a5-ae4fd99cca18"
+        },
+        {
+          "label": "Other",
+          "value": "8089a1a3-dc2f-4274-a890-7101c368fd74"
+        }
+      ]
+    },
+    {
+      "id": "which-antivirus-or-endpoint-security-products-have-you-worked-with",
+      "question": "Which antivirus or endpoint security products have you worked with?",
+      "type": "multi-choice",
+      "optional": false,
+      "choices": [
+        {
+          "label": "SentinelOne",
+          "value": "25c6caa2-9e50-4df2-bea5-c26c7173f2df"
+        },
+        {
+          "label": "CrowdStrike",
+          "value": "b44932c8-65c3-4d78-8504-6185dfeab1ec"
+        },
+        {
+          "label": "Microsoft Defender",
+          "value": "cb2ad5ef-44b6-4e80-a6cb-5c380c504042"
+        },
+        {
+          "label": "Huntress",
+          "value": "3efe9506-61a6-4d61-a2c1-47696bb4d2d3"
+        },
+        {
+          "label": "Bitdefender",
+          "value": "64254113-a8e9-4bfa-896c-b529be665ace"
+        },
+        {
+          "label": "Sophos",
+          "value": "1513e876-1cb0-4099-ac5c-10f5554b7898"
+        },
+        {
+          "label": "Webroot",
+          "value": "43857b10-a173-4ee4-82de-ea90f8d300b6"
+        },
+        {
+          "label": "Malwarebytes",
+          "value": "90a5a321-b7eb-4151-8d06-a63bf23c2ac8"
+        },
+        {
+          "label": "Other",
+          "value": "08146d6e-278c-4970-be90-800cf71f5cc5"
+        }
+      ]
+    },
+    {
+      "id": "a-windows-agent-is-checking-in-fine-but-reporting-zero-available-patches-while-y",
+      "question": "A Windows agent is checking in fine but reporting zero available patches, while you know updates are pending. Walk us through how you'd diagnose it, step by step, including what you'd rule out and in what order.",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "paste-a-script-you-actually-wrote-powershell-or-bash-tell-us-what-problem-it-sol",
+      "question": "Paste a script you actually wrote (PowerShell or Bash). Tell us what problem it solved and anything you'd do differently now.",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "describe-an-automation-or-workflow-you-designed-end-to-end-what-triggered-it-wha",
+      "question": "Describe an automation or workflow you designed end to end. What triggered it, what was the logic, and what did it save in time or errors?",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "tell-us-about-a-bug-you-isolated-in-a-tool-or-platform-how-did-you-reproduce-it-",
+      "question": "Tell us about a bug you isolated in a tool or platform. How did you reproduce it, and how did you write it up so a developer could fix it?",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "have-you-ever-onboarded-a-customer-or-a-team-onto-a-new-platform-or-tool-what-di",
+      "question": "Have you ever onboarded a customer or a team onto a new platform or tool? What did that process look like, and how did you make sure they were set up for success?",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "how-do-you-use-ai-tools-in-your-work-give-a-specific-example-where-the-output-wa",
+      "question": "How do you use AI tools in your work? Give a specific example where the output was wrong and you caught it.",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "why-does-this-role-interest-you-and-what-specifically-about-your-background-make",
+      "question": "Why does this role interest you, and what specifically about your background makes you a good fit?",
+      "type": "string",
+      "optional": false
+    },
+    {
+      "id": "record-a-2-minute-video-teaching-something-technical-paste-the-link",
+      "question": "Record a 2-minute video teaching something technical, paste the link",
+      "type": "url",
+      "optional": false
+    },
+    {
+      "id": "anything-else-we-should-know-about-you",
+      "question": "Anything else we should know about you?",
+      "type": "string",
+      "optional": true
+    }
+  ],
+  "steps": [
+    {
+      "id": "submit",
+      "request": {
+        "method": "POST",
+        "url": "https://api.tally.so/forms/PdlXdd/respond",
+        "headers": {
+          "Referer": "https://ask.level.io/",
+          "Accept": "application/json, text/plain, */*",
+          "Content-Type": "application/json"
+        },
+        "body": {
+          "sessionUuid": "{{sessionUuid}}",
+          "respondentUuid": "{{respondentUuid}}",
+          "responses": {
+            "111ea110-fdbe-428c-b3ef-bf1949553e69": "{{name}}",
+            "207072d7-5681-4fce-a093-6a15eceebf49": "{{email}}",
+            "d07c9047-555c-4a73-9b63-4b618d9f5252": "{{linkedin-profile}}",
+            "cb4b6399-e0b1-4c6e-9215-ff6f1ba220cf": {
+              "$value": "{{resume}}"
+            },
+            "f0a20eeb-8b2d-4b38-b624-422454bb259a": "{{rate-your-proficiency-with-windows}}",
+            "003bb91a-bab8-4b27-9c50-3a1b65793487": "{{rate-your-proficiency-with-macos}}",
+            "726d9496-ecfa-4f7a-81a9-22db890a88e1": [
+              "{{how-many-years-have-you-worked-in-msp-or-internal-it}}"
+            ],
+            "917500e6-67e5-4b86-b12d-21d37f6eb17d": "{{rate-your-proficiency-with-linux}}",
+            "e463729f-9efc-4c5d-ae5d-1ed531dd7361": [
+              "{{roughly-how-many-endpoints-have-you-managed}}"
+            ],
+            "f1973c7f-c8e3-4634-8dda-a25dee901452": "{{describe-the-environment-for-example-one-large-tenant-or-many-small-msp-clients}}",
+            "b41f1c89-bf9e-4bf8-8e80-e687555c8569": {
+              "$value": "{{which-rmm-platforms-have-you-used}}"
+            },
+            "627122cc-307a-4edf-b11f-39aaf4c55025": {
+              "$value": "{{which-antivirus-or-endpoint-security-products-have-you-worked-with}}"
+            },
+            "084206a3-3cbf-4ff5-8b65-202f6df560c8": "{{a-windows-agent-is-checking-in-fine-but-reporting-zero-available-patches-while-y}}",
+            "5a5cbe96-17f9-4aa9-850d-0dae70ac62d3": "{{paste-a-script-you-actually-wrote-powershell-or-bash-tell-us-what-problem-it-sol}}",
+            "f6b206f2-48c9-4b1e-b861-053602ad92be": "{{describe-an-automation-or-workflow-you-designed-end-to-end-what-triggered-it-wha}}",
+            "bc0581fc-a2ec-4adf-968a-ffbd328f7ee1": "{{tell-us-about-a-bug-you-isolated-in-a-tool-or-platform-how-did-you-reproduce-it-}}",
+            "e526a833-125a-421b-92fc-cabe84fa7326": "{{have-you-ever-onboarded-a-customer-or-a-team-onto-a-new-platform-or-tool-what-di}}",
+            "96957e7f-1fb8-44ef-a079-a700eee9f951": "{{how-do-you-use-ai-tools-in-your-work-give-a-specific-example-where-the-output-wa}}",
+            "cb35d070-425f-4e7e-b3b9-3618fbcf3486": "{{why-does-this-role-interest-you-and-what-specifically-about-your-background-make}}",
+            "b6bbbc9c-1789-439a-8fcc-11efb8fb47fc": "{{record-a-2-minute-video-teaching-something-technical-paste-the-link}}",
+            "0864249a-29d8-4502-bfed-09931e3b6fb8": "{{anything-else-we-should-know-about-you}}"
+          },
+          "captchas": {},
+          "isCompleted": true,
+          "password": null
+        }
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "label": "Submit response",
+      "from": "submit",
+      "path": "$"
+    }
+  ]
+}

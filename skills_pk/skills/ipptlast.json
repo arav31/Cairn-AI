@@ -1,0 +1,62 @@
+{
+  "id": "ipptlast",
+  "name": "ipptLAST",
+  "sourceUrl": "https://thegympod.com/ippt-calculator-tgp/",
+  "description": "Draft generated from recordings\\ipptlast-2026-06-09T13-59-43-343Z.json. No reusable API endpoint was detected, so this skill replays the browser workflow.",
+  "inputs": [
+    {
+      "id": "age",
+      "question": "age",
+      "type": "number",
+      "optional": false
+    },
+    {
+      "id": "p",
+      "question": "p",
+      "type": "number",
+      "optional": false
+    },
+    {
+      "id": "s",
+      "question": "s",
+      "type": "number",
+      "optional": false
+    }
+  ],
+  "steps": [
+    {
+      "id": "goal",
+      "browserWorkflow": {
+        "startUrl": "https://thegympod.com/ippt-calculator-tgp/",
+        "actions": [
+          {
+            "type": "fill",
+            "selector": "#age",
+            "value": "{{age}}"
+          },
+          {
+            "type": "fill",
+            "selector": "#p",
+            "value": "{{p}}"
+          },
+          {
+            "type": "fill",
+            "selector": "#s",
+            "value": "{{s}}"
+          },
+          {
+            "type": "click",
+            "selector": "#calc"
+          }
+        ]
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "label": "Rendered result",
+      "from": "goal",
+      "path": "$"
+    }
+  ]
+}
