@@ -4,6 +4,12 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { CdpClient, getPageTarget, launchChrome, sleep } from "./cdp.js";
 import { flattenScalars } from "./json-path.js";
+import {
+  analyzeRecordingWithLlm,
+  applyLlmAnalysisToSkill,
+  llmAnalysisStatus,
+  orderCandidatesByAnalysis,
+} from "./llm-analyzer.js";
 
 const ANALYTICS_HOST_PATTERNS = [
   "google",
@@ -248,14 +254,27 @@ export async function inspectRecording(file) {
   return rankCandidates(recording.requests || [], recording.goal);
 }
 
+export async function analyzeRecordingFile(file) {
+  const recording = JSON.parse(await fs.readFile(file, "utf8"));
+  const candidates = rankCandidates(recording.requests || [], recording.goal);
+  return analyzeRecordingWithLlm(recording, candidates);
+}
+
+export { llmAnalysisStatus };
+
 export async function createDraftSkillFromRecording({ recordingFile, candidateIndex, name }) {
   const recording = JSON.parse(await fs.readFile(recordingFile, "utf8"));
   const candidates = rankCandidates(recording.requests || [], recording.goal);
+  const analysis = await safeAnalyzeRecording(recording, candidates);
+
+  const preferredFallback = await createPreferredFallbackSkill({ recording, recordingFile, name, analysis });
+  if (preferredFallback) return writeDraftSkill(finalizeSkill(preferredFallback, { analysis, recordingFile }));
+
   const requestedCandidate = Number.isInteger(candidateIndex) ? candidates[candidateIndex] : null;
-  const orderedCandidates = [
+  const orderedCandidates = orderCandidatesByAnalysis([
     requestedCandidate,
     ...candidates.filter((candidate) => candidate?.id !== requestedCandidate?.id),
-  ].filter(Boolean);
+  ].filter(Boolean), analysis);
 
   for (const candidate of orderedCandidates) {
     const request = recording.requests.find((item) => item.id === candidate.id);
@@ -263,10 +282,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
 
     const skill = await createSkillForRequest({ recording, request, recordingFile, name });
     if (skill) {
-      await fs.mkdir("skills", { recursive: true });
-      const file = path.join("skills", `${skill.id}.draft.json`);
-      await fs.writeFile(file, JSON.stringify(skill, null, 2));
-      return file;
+      return writeDraftSkill(finalizeSkill(skill, { analysis, recordingFile }));
     }
   }
 
@@ -275,13 +291,65 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
     await maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
 
   if (fallbackSkill) {
-    await fs.mkdir("skills", { recursive: true });
-    const file = path.join("skills", `${fallbackSkill.id}.draft.json`);
-    await fs.writeFile(file, JSON.stringify(fallbackSkill, null, 2));
-    return file;
+    return writeDraftSkill(finalizeSkill(fallbackSkill, { analysis, recordingFile }));
   }
 
   throw new Error("No reusable API endpoint, result URL, or browser input workflow was detected. Record the workflow again after interacting with the actual form/result controls.");
+}
+
+async function safeAnalyzeRecording(recording, candidates) {
+  const status = llmAnalysisStatus();
+  if (!status.enabled) return null;
+  try {
+    return await analyzeRecordingWithLlm(recording, candidates);
+  } catch (error) {
+    if (process.env.SKILL_BUILDER_LLM_REQUIRED === "1") throw error;
+    console.warn(`LLM contextual analysis skipped: ${error.message}`);
+    return null;
+  }
+}
+
+async function createPreferredFallbackSkill({ recording, recordingFile, name, analysis }) {
+  const kind = analysis?.strategy?.kind;
+  if (kind === "browser_result_url") {
+    return maybeCreateFinalUrlQuerySkill({ recording, recordingFile, name });
+  }
+  if (kind === "browser_replay") {
+    return maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
+  }
+  return null;
+}
+
+async function writeDraftSkill(skill) {
+  await fs.mkdir("skills", { recursive: true });
+  const file = path.join("skills", `${skill.id}.draft.json`);
+  await fs.writeFile(file, JSON.stringify(skill, null, 2));
+  return file;
+}
+
+function finalizeSkill(skill, { analysis, recordingFile }) {
+  const withMetadata = {
+    ...skill,
+    learning: {
+      strategy: {
+        kind: inferSkillStrategy(skill),
+        rationale: "Selected by deterministic recorder evidence.",
+      },
+      recordingFile,
+      llm: analysis ? "used" : "not-used",
+      ...(skill.learning || {}),
+    },
+  };
+  return applyLlmAnalysisToSkill(withMetadata, analysis);
+}
+
+function inferSkillStrategy(skill) {
+  const step = skill.steps?.[0] || {};
+  if (step.browserWorkflow) return "browser_replay";
+  if (step.browserMode === "navigate") return "browser_result_url";
+  const method = step.request?.method || "GET";
+  if (method === "GET" && step.request?.query) return "query_api";
+  return "direct_api";
 }
 
 async function createSkillForRequest({ recording, request, recordingFile, name }) {

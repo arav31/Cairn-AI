@@ -3,7 +3,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
-import { createDraftSkillFromRecording, inspectRecording, recordWorkflow } from "./recorder.js";
+import {
+  analyzeRecordingFile,
+  createDraftSkillFromRecording,
+  inspectRecording,
+  llmAnalysisStatus,
+  recordWorkflow,
+} from "./recorder.js";
 import { loadSkill, loadSkills, runSkill } from "./skill-runner.js";
 
 async function main() {
@@ -31,6 +37,9 @@ async function main() {
       break;
     case "inspect-recording":
       await inspect(args);
+      break;
+    case "analyze-recording":
+      await analyzeRecording(args);
       break;
     case "draft":
       await draft(args);
@@ -122,11 +131,12 @@ async function handleUrlFlow(rl) {
   console.log("Learning flow:");
   console.log("1. Browser automation opens the link and captures network traffic.");
   console.log("2. Complete the obvious workflow until the final result appears.");
-  console.log("3. The recorder ranks real endpoint candidates and ignores static/analytics noise.");
-  console.log("4. A draft skill is generated from the best reusable endpoint, result URL, or browser replay.");
+  console.log("3. The recorder ranks endpoint candidates and captures visible fields/clicks.");
+  console.log("4. If OPENAI_API_KEY is set, an LLM reads the page/network evidence to infer intent, inputs, buttons, outputs, and best strategy.");
   console.log("5. Future runs ask the website-like questions and use the fastest saved strategy available.");
   console.log("");
   console.log("For arbitrary sites, the first learning pass may need manual review because some forms use encrypted payloads, captchas, auth, or anti-bot checks.");
+  printLlmStatus();
 
   const start = await rl.question("Start browser learning now? [y/N]: ");
   if (start.trim().toLowerCase() !== "y") return;
@@ -151,6 +161,7 @@ async function handleUrlFlow(rl) {
   progress(5, "Creating draft skill");
   const draftFile = await createDraftSkillFromRecording({ recordingFile: file, candidateIndex: undefined, name });
   console.log(`Draft skill created: ${draftFile}`);
+  await printDraftLearningSummary(draftFile);
   const promote = await rl.question("Register this draft now? [y/N]: ");
   if (promote.trim().toLowerCase() === "y") {
     await promoteDraftCommand(draftFile);
@@ -275,6 +286,19 @@ async function inspect(args) {
   printCandidates(candidates);
 }
 
+async function analyzeRecording(args) {
+  const file = args[0];
+  if (!file) throw new Error("Usage: node src/cli.js analyze-recording <recording-file>");
+  const status = llmAnalysisStatus();
+  if (!status.enabled) {
+    console.log(`LLM analysis is not enabled: ${status.reason}.`);
+    console.log("Set OPENAI_API_KEY to enable contextual recording analysis.");
+    return;
+  }
+  const analysis = await analyzeRecordingFile(file);
+  console.log(JSON.stringify(analysis, null, 2));
+}
+
 async function draft(args) {
   const recordingFile = args[0];
   const candidateIndex = Number(args[1] || 0);
@@ -282,6 +306,7 @@ async function draft(args) {
   if (!recordingFile) throw new Error("Usage: node src/cli.js draft <recording-file> [candidate-index] --name <name>");
   const file = await createDraftSkillFromRecording({ recordingFile, candidateIndex, name });
   console.log(`Created draft skill: ${file}`);
+  await printDraftLearningSummary(file);
 }
 
 async function promoteDraftCommand(file) {
@@ -476,6 +501,24 @@ function printCandidates(candidates) {
   });
 }
 
+function printLlmStatus() {
+  const status = llmAnalysisStatus();
+  const enabledText = status.enabled ? "enabled" : "disabled";
+  console.log(`Contextual LLM analysis: ${enabledText} (${status.reason}; model=${status.model}).`);
+}
+
+async function printDraftLearningSummary(file) {
+  const draft = JSON.parse(await fs.readFile(file, "utf8"));
+  if (!draft.learning) return;
+  console.log("");
+  console.log("Learning summary:");
+  if (draft.learning.summary) console.log(`- ${draft.learning.summary}`);
+  if (draft.learning.inferredGoal) console.log(`- Inferred goal: ${draft.learning.inferredGoal}`);
+  if (draft.learning.strategy?.kind) console.log(`- Strategy: ${draft.learning.strategy.kind}`);
+  if (draft.learning.strategy?.rationale) console.log(`- Rationale: ${draft.learning.strategy.rationale}`);
+  if (draft.learning.confidence !== undefined) console.log(`- Confidence: ${draft.learning.confidence}`);
+}
+
 function progress(step, label) {
   const total = 5;
   const filled = Math.min(total, Math.max(0, step));
@@ -529,6 +572,7 @@ function printHelp() {
   node src/cli.js run <skill-id> --set key=value --set other=value
   node src/cli.js record <url> --name <name> --goal <goal>
   node src/cli.js inspect-recording <recording-file>
+  node src/cli.js analyze-recording <recording-file>
   node src/cli.js draft <recording-file> [candidate-index] --name <name>
   node src/cli.js promote-draft <skills/name.draft.json>`);
 }

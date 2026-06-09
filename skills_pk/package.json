@@ -8,7 +8,8 @@
     "chat": "node src/cli.js chat",
     "record": "node src/cli.js record",
     "run": "node src/cli.js run",
-    "inspect-recording": "node src/cli.js inspect-recording"
+    "inspect-recording": "node src/cli.js inspect-recording",
+    "analyze-recording": "node src/cli.js analyze-recording"
   },
   "engines": {
     "node": ">=20"

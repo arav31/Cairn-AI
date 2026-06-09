@@ -212,7 +212,7 @@ async function fetchStepRequestInBrowser(skill, step, request) {
 
 async function navigateRequestInBrowser(client, request, timeoutMs) {
   await navigateAndWait(client, request.url, timeoutMs);
-  await sleep(500);
+  await waitForStableBodyText(client, Math.min(timeoutMs, 5000));
   const rendered = await evaluateInBrowser(client, `(() => ({
     status: 200,
     statusText: "OK",
@@ -223,6 +223,24 @@ async function navigateRequestInBrowser(client, request, timeoutMs) {
     title: document.title
   }))()`);
   return rendered;
+}
+
+async function waitForStableBodyText(client, timeoutMs) {
+  const started = Date.now();
+  const deadline = Date.now() + timeoutMs;
+  let previous = "";
+  let stableCount = 0;
+  while (Date.now() < deadline) {
+    const current = await evaluateInBrowser(client, `(() => document.body ? document.body.innerText : document.documentElement.innerText)()`);
+    if (current && current === previous) {
+      stableCount += 1;
+      if (stableCount >= 2 && Date.now() - started >= 1200) return;
+    } else {
+      stableCount = 0;
+      previous = current || "";
+    }
+    await sleep(400);
+  }
 }
 
 async function runBrowserWorkflowStep(skill, step, workflow) {
