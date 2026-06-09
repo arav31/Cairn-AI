@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Cairn Control Plane</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Cairn pilot</p>
+        <h1>Verified Automation API Control Plane</h1>
+      </div>
+      <nav class="header-links" aria-label="Target apps">
+        <button id="open-meridian" class="ghost-button" type="button">Meridian CRM</button>
+        <button id="open-civic" class="ghost-button" type="button">Civic Portal</button>
+      </nav>
+    </header>
+
+    <main class="workspace">
+      <aside class="control-rail">
+        <section class="panel compact-panel">
+          <h2>Run</h2>
+          <label>Target
+            <select id="target-select">
+              <option value="civic">Civic Records</option>
+              <option value="meridian">Meridian CRM</option>
+            </select>
+          </label>
+          <label>Name
+            <input id="name-input" value="Marjorie Tan">
+          </label>
+          <label id="status-label">Status
+            <select id="status-input">
+              <option>Active</option>
+              <option>Trial</option>
+              <option>Inactive</option>
+            </select>
+          </label>
+          <div class="button-grid">
+            <button id="record-button" type="button">Record</button>
+            <button id="verify-button" type="button">Verify</button>
+            <button id="invoke-button" type="button">Invoke</button>
+            <button id="blocked-button" type="button">Blocked</button>
+          </div>
+          <div class="button-grid">
+            <button id="drift-button" type="button">Break Civic</button>
+            <button id="repair-button" type="button">Repair</button>
+            <button id="reset-button" type="button">Reset Drift</button>
+          </div>
+        </section>
+
+        <section class="panel compact-panel">
+          <h2>Pipeline</h2>
+          <ol class="stage-list" id="stage-list">
+            <li data-stage="record">Record</li>
+            <li data-stage="synth">Synthesize</li>
+            <li data-stage="verify">Verify</li>
+            <li data-stage="skill">Skill</li>
+            <li data-stage="repair">Repair</li>
+          </ol>
+        </section>
+
+        <section class="panel compact-panel">
+          <h2>Target State</h2>
+          <div id="target-state" class="stat-list"></div>
+        </section>
+      </aside>
+
+      <section class="center-stack">
+        <section class="operator-surface">
+          <div class="surface-toolbar">
+            <h2>Authorized Browser Task</h2>
+            <span id="frame-label">Civic Portal</span>
+          </div>
+          <iframe id="target-frame" src="/civic/login" title="Sandbox target"></iframe>
+        </section>
+
+        <section class="live-grid">
+          <section class="panel">
+            <h2>Live Network Feed</h2>
+            <div id="network-feed" class="event-list"></div>
+          </section>
+          <section class="panel">
+            <h2>Interaction Trace</h2>
+            <div id="interaction-feed" class="event-list"></div>
+          </section>
+        </section>
+
+        <section class="panel">
+          <h2>Correlation Graph</h2>
+          <div id="graph" class="graph"></div>
+        </section>
+
+        <section class="live-grid">
+          <section class="panel">
+            <h2>Parameter Classes</h2>
+            <table>
+              <thead><tr><th>Name</th><th>Class</th><th>Handling</th></tr></thead>
+              <tbody id="parameter-table"></tbody>
+            </table>
+          </section>
+          <section class="panel">
+            <h2>Verification</h2>
+            <div id="verification-panel" class="verification-panel"></div>
+          </section>
+        </section>
+      </section>
+
+      <aside class="right-rail">
+        <section class="panel">
+          <h2>Synthesized API</h2>
+          <div id="api-card" class="api-card"></div>
+        </section>
+        <section class="panel">
+          <h2>Skills</h2>
+          <div id="skills-list" class="stack-list"></div>
+        </section>
+        <section class="panel">
+          <h2>Internal Marketplace</h2>
+          <div id="marketplace-list" class="stack-list"></div>
+        </section>
+        <section class="panel">
+          <h2>Audit Log</h2>
+          <div id="audit-log" class="event-list"></div>
+        </section>
+      </aside>
+    </main>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>
