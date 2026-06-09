@@ -538,6 +538,8 @@ function analyzerInstructions() {
     "Use browser_result_url when the final URL query appears to carry the result state.",
     "Use browser_replay when the workflow depends on visible UI interactions and no reusable endpoint is clear.",
     "Write input questions as a user would see them on the website. Avoid raw JSON paths or UUIDs.",
+    "For outputs, identify only the important user-facing result fields, such as price, quote, BMI score, category, risk, eligibility, duration, distance, or plan summary.",
+    "Do not make outputs point to the entire page or entire response when a smaller result section or JSON path is evident.",
     "Never recommend bypassing CAPTCHA, login, payment, access control, bot protection, or website security.",
     "Do not include private user-entered values in your answer.",
   ].join(" ");
@@ -709,11 +711,22 @@ function improveOutputs(skill, analysis) {
   const usableExtractions = engineered.filter((output) => output.path && output.path !== "unknown");
   if (usableExtractions.length) {
     const defaultFrom = existing[0]?.from || skill.steps?.at(-1)?.id || "goal";
-    return usableExtractions.map((output, index) => ({
-      label: output.label || analysis.outputs?.[index]?.label || existing[index]?.label || "Result",
-      from: existing[index]?.from || defaultFrom,
-      path: output.path || existing[index]?.path || "$",
-    }));
+    return usableExtractions.map((output, index) => {
+      const base = {
+        label: output.label || analysis.outputs?.[index]?.label || existing[index]?.label || "Result",
+        from: existing[index]?.from || defaultFrom,
+        path: output.path || existing[index]?.path || "$",
+      };
+      if (["html", "text", "browser"].includes(output.source) || output.path === "$") {
+        return {
+          ...base,
+          path: "$",
+          extractor: "important",
+          focus: output.path === "$" ? output.evidence || output.label : output.path,
+        };
+      }
+      return base;
+    });
   }
 
   if (analysis.outputs?.length) {

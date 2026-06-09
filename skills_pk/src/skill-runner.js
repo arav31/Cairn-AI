@@ -675,10 +675,185 @@ function summarize(skill, responses) {
         }),
       });
     } else {
-      outputs.push({ label: output.label, value: getPath(source, output.path) });
+      const value = getPath(source, output.path);
+      outputs.push({
+        label: output.label,
+        value: formatOutputValue(value, response, output, skill),
+      });
     }
   }
   return outputs;
+}
+
+function formatOutputValue(value, response, output, skill) {
+  if (output.extractor === "important" || shouldCondenseOutput(value, response)) {
+    return extractImportantOutput(value, response, output, skill);
+  }
+  return value;
+}
+
+function shouldCondenseOutput(value, response) {
+  if (typeof value === "string") {
+    return value.length > 1200 || /<html|<!doctype|<body|<table|<main|<section/i.test(value);
+  }
+  if (value && typeof value === "object") {
+    return JSON.stringify(value).length > 2500;
+  }
+  const contentType = response?.headers?.["content-type"] || response?.headers?.["Content-Type"] || "";
+  return /html|text\/plain/i.test(contentType) && typeof response?.text === "string" && response.text.length > 1200;
+}
+
+function extractImportantOutput(value, response, output, skill) {
+  if (value && typeof value === "object") {
+    return compactJsonResult(value);
+  }
+
+  const text = htmlToReadableText(String(value ?? response?.text ?? ""));
+  if (!text) return "";
+
+  const explicit = extractByOutputHints(text, output);
+  if (explicit) return explicit;
+
+  const domain = `${skill.name || ""} ${skill.description || ""} ${skill.sourceUrl || ""}`.toLowerCase();
+  if (/bmi|body mass index/.test(domain) || /Calculated BMI Results/i.test(text)) {
+    return extractBmiResult(text);
+  }
+
+  return extractResultSection(text);
+}
+
+function compactJsonResult(value) {
+  const importantKeys = /price|premium|quote|total|amount|cost|fare|result|score|status|category|plan|name|id|rate|discount|duration|distance|bmi|risk|range/i;
+  if (Array.isArray(value)) {
+    return value.slice(0, 10).map(compactJsonResult);
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (importantKeys.test(key)) {
+      output[key] = compactJsonResult(child);
+    }
+  }
+  if (Object.keys(output).length) return output;
+
+  const entries = Object.entries(value).slice(0, 12);
+  for (const [key, child] of entries) {
+    if (child === null || ["string", "number", "boolean"].includes(typeof child)) output[key] = child;
+  }
+  return Object.keys(output).length ? output : value;
+}
+
+function extractByOutputHints(text, output) {
+  const focus = cleanText(output.focus || output.path || "");
+  if (!focus || focus === "$") return null;
+  if (focus.startsWith("regex:")) {
+    return extractRegexFields(text, focus.slice("regex:".length));
+  }
+  const index = text.toLowerCase().indexOf(focus.toLowerCase());
+  if (index === -1) return null;
+  return text.slice(index, index + 900).replace(/\s+/g, " ").trim();
+}
+
+function extractRegexFields(text, pattern) {
+  try {
+    const regex = new RegExp(pattern, "is");
+    const match = text.match(regex);
+    if (!match) return null;
+    if (match.groups) return { ...match.groups };
+    if (match.length > 2) {
+      return match.slice(1).reduce((acc, value, index) => {
+        acc[`value${index + 1}`] = cleanText(value);
+        return acc;
+      }, {});
+    }
+    return cleanText(match[1] || match[0]);
+  } catch {
+    return null;
+  }
+}
+
+function extractBmiResult(text) {
+  const section = sliceAround(text, /Your Calculated BMI Results/i, /BMI Range Singapore|Calculate again|Please note/i, 1400);
+  const resultText = section || text;
+  const fields = {};
+
+  assignMatch(fields, "height", resultText, /Height\s+([\d.]+\s*cm)/i);
+  assignMatch(fields, "weight", resultText, /Weight\s+([\d.]+\s*kg)/i);
+  assignMatch(fields, "bmi", resultText, /BMI\s+([\d.]+)/i);
+  assignMatch(fields, "category", resultText, /Category\s+([A-Za-z ]+?)(?=\s+Risk|\s+Your Healthy|\s*$)/i);
+  assignMatch(fields, "risk", resultText, /Risk of Heart Attack and Diabetes\s+([A-Za-z ]+?)(?=\s+Your Healthy|\s+Please note|\s*$)/i);
+  assignMatch(fields, "healthyWeightRange", resultText, /Your Healthy Weight Range.*?(Between\s+[\d.]+\s*kg\s+and\s+[\d.]+\s*kg)/i);
+
+  return Object.keys(fields).length ? fields : extractResultSection(text);
+}
+
+function assignMatch(target, key, text, regex) {
+  const match = text.match(regex);
+  if (match?.[1]) target[key] = cleanText(match[1]);
+}
+
+function extractResultSection(text) {
+  const section = sliceAround(
+    text,
+    /(result|results|quote|price|premium|total|summary|score|category|status|eligibility|calculated|estimate)/i,
+    /(please note|terms|privacy|faq|related|copyright|contact us|book appointment)/i,
+    1200,
+  );
+  if (section) return section;
+
+  const sentences = text
+    .split(/(?<=[.!?])\s+/)
+    .map(cleanText)
+    .filter((sentence) => /(result|quote|price|premium|total|score|category|status|risk|range|eligible|approved|declined|estimated)/i.test(sentence))
+    .slice(0, 6);
+  if (sentences.length) return sentences.join(" ");
+
+  return text.slice(0, 900).replace(/\s+/g, " ").trim();
+}
+
+function sliceAround(text, startPattern, endPattern, maxLength) {
+  const startMatch = text.match(startPattern);
+  if (!startMatch || startMatch.index === undefined) return "";
+  const start = startMatch.index;
+  const rest = text.slice(start);
+  const endMatch = rest.slice(60).match(endPattern);
+  const end = endMatch?.index !== undefined ? 60 + endMatch.index : maxLength;
+  return rest.slice(0, Math.min(end, maxLength)).replace(/\s+/g, " ").trim();
+}
+
+function htmlToReadableText(value) {
+  return decodeHtml(String(value || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<\/(tr|p|div|section|article|li|h[1-6]|table)>/gi, " ")
+    .replace(/<br\s*\/?>/gi, " ")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim());
+}
+
+function decodeHtml(value) {
+  const named = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+    nbsp: " ",
+  };
+  return String(value || "").replace(/&(#x?[0-9a-f]+|\w+);/gi, (_, entity) => {
+    if (entity[0] === "#") {
+      const radix = entity[1]?.toLowerCase() === "x" ? 16 : 10;
+      const codePoint = Number.parseInt(radix === 16 ? entity.slice(2) : entity.slice(1), radix);
+      return Number.isFinite(codePoint) ? String.fromCodePoint(codePoint) : "";
+    }
+    return named[entity.toLowerCase()] ?? "";
+  });
+}
+
+function cleanText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function summarizeFwdTravel(responses) {

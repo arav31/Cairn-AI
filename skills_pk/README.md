@@ -397,7 +397,7 @@ The generator uses that result to:
 - regenerate UUID-like payload fields when the model marks them volatile
 - omit volatile fields when the model says they should not be replayed
 - keep recorded constants that are part of the product/workflow rather than user input
-- use output extraction paths from the model when they are available
+- use output extraction paths or result-section hints from the model when they are available
 - rewrite bad questions like raw JSON paths into human website-style prompts
 - attach a `learning` metadata block to the draft skill
 - print a learning summary in the CLI, including selected endpoint, payload type, input mappings, volatile fields, preflight hints, and warnings
@@ -524,9 +524,10 @@ Minimal shape:
   ],
   "outputs": [
     {
-      "label": "Goal response",
+      "label": "Result",
       "from": "goal",
-      "path": "$"
+      "path": "$",
+      "extractor": "important"
     }
   ]
 }
@@ -556,6 +557,26 @@ The runner:
 5. Executes each step in order.
 6. Saves intermediate response values when configured.
 7. Extracts outputs from response JSON or text.
+8. Condenses raw endpoint/page responses into the important user-facing result.
+
+The runner should not dump whole endpoint payloads or full HTML pages by default. Generated generic outputs use `extractor: "important"`, which:
+
+- uses explicit JSON paths when a skill provides them
+- compacts large JSON responses to result-like keys such as price, premium, quote, score, category, risk, status, duration, distance, or plan
+- strips HTML down to readable text and extracts likely result sections
+- has a BMI-specific extractor for BMI score, category, risk, and healthy weight range
+
+For custom skills, add `focus` to guide text/HTML extraction:
+
+```json
+{
+  "label": "Result",
+  "from": "goal",
+  "path": "$",
+  "extractor": "important",
+  "focus": "Your Calculated BMI Results"
+}
+```
 
 ### Direct HTTP Runtime
 

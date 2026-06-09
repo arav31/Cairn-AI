@@ -433,9 +433,10 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
     ],
     outputs: [
       {
-        label: "Goal response",
+        label: "Result",
         from: "goal",
         path: "$",
+        extractor: "important",
       },
     ],
   };
@@ -512,6 +513,7 @@ async function maybeCreateFinalUrlQuerySkill({ recording, recordingFile, name })
         label: "Rendered result",
         from: "goal",
         path: "$",
+        extractor: "important",
       },
     ],
   };
@@ -604,6 +606,7 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
         label: "Rendered result",
         from: "goal",
         path: "$",
+        extractor: "important",
       },
     ],
   };
@@ -915,9 +918,10 @@ async function maybeCreateQuerySkill({ recording, request, recordingFile, name, 
       ],
       outputs: [
         {
-          label: "Goal response",
+          label: "Result",
           from: "goal",
           path: "$",
+          extractor: "important",
         },
       ],
     };
@@ -963,9 +967,10 @@ async function maybeCreateQuerySkill({ recording, request, recordingFile, name, 
     ],
     outputs: [
       {
-        label: "Goal response",
+        label: "Result",
         from: "goal",
         path: "$",
+        extractor: "important",
       },
     ],
   };
