@@ -10,7 +10,10 @@ import {
   llmAnalysisStatus,
   recordWorkflow,
 } from "./recorder.js";
+import { loadEnvFile } from "./env.js";
 import { loadSkill, loadSkills, runSkill } from "./skill-runner.js";
+
+const envFile = loadEnvFile();
 
 async function main() {
   const [command, ...args] = process.argv.slice(2);
@@ -504,7 +507,8 @@ function printCandidates(candidates) {
 function printLlmStatus() {
   const status = llmAnalysisStatus();
   const enabledText = status.enabled ? "enabled" : "disabled";
-  console.log(`Contextual LLM analysis: ${enabledText} (${status.reason}; model=${status.model}).`);
+  const envText = envFile.loaded ? `.env loaded` : ".env not found";
+  console.log(`Contextual LLM analysis: ${enabledText} (${status.reason}; model=${status.model}; ${envText}).`);
 }
 
 async function printDraftLearningSummary(file) {

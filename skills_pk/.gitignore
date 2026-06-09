@@ -3,4 +3,7 @@ recordings/*
 skills/*.draft.json
 skills/_old/
 node_modules/
+.env
+.env.*
+!.env.example
 .DS_Store

@@ -63,13 +63,22 @@ For better skill learning, set `OPENAI_API_KEY`. The learner will then call the 
 - what output the user is likely expecting
 - what risks require manual review
 
-The LLM pass is optional and gated by environment variables:
+The LLM pass is optional and gated by environment variables. The CLI auto-loads `skills_pk/.env` on startup.
 
 ```powershell
-$env:OPENAI_API_KEY = "sk-..."
-$env:OPENAI_MODEL = "gpt-5.4-mini"
+Copy-Item .env.example .env
+notepad .env
 node src/cli.js menu
 ```
+
+Fill `.env` like this:
+
+```env
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-5.4-mini
+```
+
+Real terminal environment variables still win over `.env` values when both are set. The real `.env` file is ignored by git; only `.env.example` is committed.
 
 Useful environment variables:
 
