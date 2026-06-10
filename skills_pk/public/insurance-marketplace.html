@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cairn AI Skill Marketplace</title>
+    <link rel="stylesheet" href="/insurance-marketplace.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="marketplace" aria-label="Skill marketplace">
+        <div class="topbar">
+          <div>
+            <p class="eyebrow">Cairn AI Marketplace</p>
+            <h1>Agent Skills</h1>
+          </div>
+          <span class="status-pill" id="serverStatus">Connecting</span>
+        </div>
+
+        <div class="search-row">
+          <input id="skillSearch" type="search" placeholder="Search skills" autocomplete="off" />
+          <button id="refreshSkills" type="button">Refresh</button>
+        </div>
+
+        <div id="skillsList" class="skills-list" aria-live="polite"></div>
+      </section>
+
+      <section class="chat-panel" aria-label="Skill chatbot">
+        <div class="chat-header">
+          <div>
+            <p class="eyebrow">Installed skill</p>
+            <h2 id="activeSkillTitle">Term Plan Insurance Comparison</h2>
+          </div>
+          <span class="status-pill strong" id="installState">Not installed</span>
+        </div>
+
+        <div class="progress-wrap">
+          <div class="progress-label">
+            <span id="progressText">Waiting for skill purchase</span>
+            <span id="progressPercent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div id="chatLog" class="chat-log" aria-live="polite"></div>
+
+        <form id="quoteForm" class="question-form">
+          <div class="form-intro">
+            <h3>Quote questions</h3>
+            <p>
+              These are the fields learned from the insurer quote flows: date of birth, gender,
+              smoker status, cover amount, occupation, payment frequency, and term type.
+            </p>
+          </div>
+
+          <label>
+            Date of birth
+            <input name="dateOfBirth" type="text" inputmode="numeric" value="01/01/1990" placeholder="DD/MM/YYYY" required />
+          </label>
+
+          <div class="field-grid">
+            <label>
+              Gender
+              <select name="gender">
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+              </select>
+            </label>
+
+            <label>
+              Smoker
+              <select name="smoker">
+                <option value="no">No</option>
+                <option value="yes">Yes</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            Coverage amount
+            <input name="coverageAmount" type="number" min="150000" step="10000" value="500000" required />
+          </label>
+
+          <label>
+            Occupation
+            <input name="occupation" type="text" value="Accountant / Accounts Staff" required />
+          </label>
+
+          <div class="field-grid">
+            <label>
+              Payment frequency
+              <select name="premiumFrequency">
+                <option value="yearly">Yearly</option>
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="half-yearly">Half-yearly</option>
+              </select>
+            </label>
+
+            <label>
+              Term type
+              <select name="termType">
+                <option value="renewable">Renewable</option>
+                <option value="fixed">Fixed</option>
+              </select>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="buySkill" type="button">Buy skill</button>
+            <button id="runCompare" type="submit">Compare quotes</button>
+            <button id="runCached" type="button">Run again from cache</button>
+          </div>
+        </form>
+
+        <section id="results" class="results" aria-label="Quote results"></section>
+      </section>
+    </main>
+
+    <script type="module" src="/insurance-marketplace.js"></script>
+  </body>
+</html>

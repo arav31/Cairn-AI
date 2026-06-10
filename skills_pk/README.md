@@ -51,6 +51,30 @@ The saved strategy can be one of four modes:
 | Browser result URL | The site calculates in the browser but encodes inputs in the URL | Chrome CDP navigation |
 | Browser workflow replay | No reusable endpoint or result URL exists, but fields/clicks were recorded | Chrome CDP replay |
 
+## Insurance Marketplace Demo
+
+There is also a dedicated browser UI for the insurance marketplace proof-of-concept:
+
+```bash
+npm run marketplace
+```
+
+Open:
+
+```text
+http://127.0.0.1:8787
+```
+
+This demo does not ask you to learn a new skill in the terminal. It uses a Codex-learned adapter for the real marketplace skill named **Term Plan Insurance Comparison**:
+
+- Singlife Simple Term: live direct call to `POST https://directsales.singlife.com/QuoteBuy/directsales/computePremium`.
+- FWD Term Life Plus: live direct call to `POST https://www.fwd.com.sg/gw/life/api/common/calculatePremium`.
+- Income: guarded/cached adapter. The supplied `https://lifeinsurance.income.com.sg/pre-toggler` route did not expose a public quote application during capture, but the bundle/network evidence exposed Income quote routes such as `https://apili.income.com.sg/quot/api/getProducts` and `https://apili.income.com.sg/quot/api/productLookup`.
+
+The UI shows a mock skill marketplace, lets you "buy" the insurance skill, asks the quote inputs in website-style language, calls the learned endpoints, and displays a compact comparison. Running the same input again is served from the local skill cache, so it demonstrates the speed difference between the first endpoint call and cached replay.
+
+The optional LLM comparison layer uses `OPENAI_API_KEY` or `NVIDIA_API_KEY` when present. Without an API key, the demo still works and uses deterministic comparison logic.
+
 ## Why This Exists
 
 Browser automation is flexible but slow. Direct API calls are fast but hard to discover by hand.

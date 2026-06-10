@@ -11,7 +11,8 @@
     "inspect-recording": "node src/cli.js inspect-recording",
     "analyze-recording": "node src/cli.js analyze-recording",
     "unbrowse:status": "node src/cli.js unbrowse-status",
-    "workflow:learn": "node src/workflows/learn-skill.js"
+    "workflow:learn": "node src/workflows/learn-skill.js",
+    "marketplace": "node src/insurance-marketplace-server.js"
   },
   "engines": {
     "node": ">=20"
