@@ -1,0 +1,68 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/cairn.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/",
+      "dest": "/public/index.html"
+    },
+    {
+      "src": "/marketplace",
+      "dest": "/public/marketplace.html"
+    },
+    {
+      "src": "/pricing",
+      "dest": "/public/pricing.html"
+    },
+    {
+      "src": "/favicon.ico",
+      "dest": "/public/favicon.svg"
+    },
+    {
+      "src": "/\\.well-known/cairn\\.json",
+      "dest": "/api/cairn.js?cairnPath=/.well-known/cairn.json"
+    },
+    {
+      "src": "/openapi.json",
+      "dest": "/api/cairn.js?cairnPath=/openapi.json"
+    },
+    {
+      "src": "/mcp",
+      "dest": "/api/cairn.js?cairnPath=/mcp"
+    },
+    {
+      "src": "/api/(.*)",
+      "dest": "/api/cairn.js?cairnPath=/api/$1"
+    },
+    {
+      "src": "/meridian",
+      "dest": "/api/cairn.js?cairnPath=/meridian"
+    },
+    {
+      "src": "/meridian/(.*)",
+      "dest": "/api/cairn.js?cairnPath=/meridian/$1"
+    },
+    {
+      "src": "/civic",
+      "dest": "/api/cairn.js?cairnPath=/civic"
+    },
+    {
+      "src": "/civic/(.*)",
+      "dest": "/api/cairn.js?cairnPath=/civic/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
+    }
+  ]
+}

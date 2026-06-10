@@ -169,6 +169,53 @@ const properties = [
   }
 ];
 
+const businessRenewals = [
+  {
+    id: "LIC-5001",
+    businessName: "Northstar Textiles",
+    state: "TX",
+    licenseType: "general",
+    renewalStatus: "Due soon",
+    dueDate: "2026-07-31",
+    feeCents: 8500,
+    requiredDocuments: ["Certificate of good standing", "Updated ownership attestation"],
+    sourceUrl: "https://example-business.test/renewals/LIC-5001"
+  },
+  {
+    id: "LIC-5002",
+    businessName: "Atlas Foundry",
+    state: "CA",
+    licenseType: "manufacturing",
+    renewalStatus: "Action required",
+    dueDate: "2026-06-28",
+    feeCents: 12500,
+    requiredDocuments: ["Safety compliance form", "Local tax clearance"],
+    sourceUrl: "https://example-business.test/renewals/LIC-5002"
+  },
+  {
+    id: "LIC-5003",
+    businessName: "Bright Harbor Labs",
+    state: "NY",
+    licenseType: "professional",
+    renewalStatus: "Current",
+    dueDate: "2027-02-15",
+    feeCents: 6500,
+    requiredDocuments: [],
+    sourceUrl: "https://example-business.test/renewals/LIC-5003"
+  },
+  {
+    id: "LIC-5004",
+    businessName: "Cobalt Works",
+    state: "FL",
+    licenseType: "contractor",
+    renewalStatus: "Due soon",
+    dueDate: "2026-08-12",
+    feeCents: 9800,
+    requiredDocuments: ["Insurance certificate", "Continuing education proof"],
+    sourceUrl: "https://example-business.test/renewals/LIC-5004"
+  }
+];
+
 function normalize(value) {
   return String(value || "").trim().toLowerCase();
 }
@@ -247,15 +294,50 @@ function searchProperties(input) {
   };
 }
 
+function checkBusinessRenewals(input) {
+  const businessName = input.businessName || input.company || "Northstar Textiles";
+  const state = String(input.state || "TX").toUpperCase();
+  const licenseType = normalize(input.licenseType || "");
+  const match = businessRenewals.find((record) => {
+    const nameMatches = normalize(record.businessName).includes(normalize(businessName));
+    const stateMatches = !state || record.state === state;
+    const licenseMatches = !licenseType || normalize(record.licenseType).includes(licenseType);
+    return nameMatches && stateMatches && licenseMatches;
+  }) || businessRenewals.find((record) => normalize(record.businessName).includes(normalize(businessName))) || businessRenewals[0];
+
+  return {
+    businessName,
+    state,
+    licenseType: input.licenseType || match.licenseType,
+    renewalStatus: match.renewalStatus,
+    dueDate: match.dueDate,
+    feeCents: match.feeCents,
+    feeLabel: `$${(match.feeCents / 100).toFixed(2)}`,
+    requiredDocuments: match.requiredDocuments,
+    sourceUrl: match.sourceUrl,
+    nextSteps: match.renewalStatus === "Current"
+      ? ["No immediate action required.", "Recheck 60 days before the due date."]
+      : ["Collect required documents.", "Submit renewal before the due date.", "Confirm payment receipt."],
+    record: {
+      id: match.id,
+      status: match.renewalStatus,
+      source: "Recorded workflow demo"
+    },
+    notes: "Synthetic business renewal result for the Cairn marketplace demo."
+  };
+}
+
 module.exports = {
   customers,
   civicRecords,
   insuranceQuoteTemplates,
   properties,
+  businessRenewals,
   searchCustomers,
   searchCivicRecords,
   compareInsuranceQuotes,
   searchProperties,
+  checkBusinessRenewals,
   getCustomer,
   getCivicRecord
 };

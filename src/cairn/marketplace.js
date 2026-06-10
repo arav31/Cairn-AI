@@ -1,6 +1,7 @@
 const { createSkill } = require("./policy");
+const { listPublishedApis, recordUsageEvent, upsertPublishedApi } = require("./database");
 const { id, now, stableHash } = require("./utils");
-const { compareInsuranceQuotes, searchProperties } = require("../data/seed");
+const { checkBusinessRenewals, compareInsuranceQuotes, searchProperties } = require("../data/seed");
 
 const STRIPE_ENV = {
   secretKey: "STRIPE_SECRET_KEY",
@@ -8,6 +9,7 @@ const STRIPE_ENV = {
   publicUrl: "CAIRN_PUBLIC_URL",
   insurancePrice: "STRIPE_PRICE_INSURANCE_COMPARE",
   propertyPrice: "STRIPE_PRICE_PROPERTY_SEARCH",
+  businessRenewalsPrice: "STRIPE_PRICE_BUSINESS_RENEWALS",
   meterEventName: "STRIPE_METER_EVENT_NAME"
 };
 
@@ -165,14 +167,95 @@ const STARTER_WORKFLOWS = [
       maxPrice: 700000,
       bedrooms: 2
     })
+  },
+  {
+    target: "business",
+    name: "checkBusinessRenewals",
+    title: "Business Renewals",
+    category: "Business",
+    publisher: "Cairn Verified",
+    tagline: "Check renewal status, fees, and deadlines for business licenses.",
+    description: "Give this API a business name, state, and license type. It returns renewal status, due dates, fees, and the next steps an agent can complete.",
+    icon: "BR",
+    accent: "plum",
+    scopes: ["business:renewals:read"],
+    tags: ["business", "renewals", "compliance"],
+    priceCents: 5,
+    tokenCost: 2,
+    stripePriceEnv: STRIPE_ENV.businessRenewalsPrice,
+    meterEventName: "cairn_business_renewals",
+    healthScore: 96,
+    uptimePct: 99.5,
+    latencyMsP50: 820,
+    callCount: 8420,
+    installCount: 184,
+    clients: ["ChatGPT", "Claude", "Codex", "Zapier", "n8n"],
+    sampleInput: {
+      businessName: "Northstar Textiles",
+      state: "TX",
+      licenseType: "general"
+    },
+    inputSchema: {
+      type: "object",
+      required: ["businessName", "state"],
+      properties: {
+        businessName: {
+          type: "string",
+          description: "Business or company name to check."
+        },
+        state: {
+          type: "string",
+          description: "US state where the license is registered."
+        },
+        licenseType: {
+          type: "string",
+          description: "Optional license category or permit type."
+        }
+      }
+    },
+    outputSchema: {
+      type: "object",
+      required: ["businessName", "state", "renewalStatus", "dueDate"],
+      properties: {
+        businessName: { type: "string" },
+        state: { type: "string" },
+        licenseType: { type: "string" },
+        renewalStatus: { type: "string" },
+        dueDate: { type: "string" },
+        feeCents: { type: "number" },
+        feeLabel: { type: "string" },
+        requiredDocuments: {
+          type: "array",
+          items: { type: "string" }
+        },
+        sourceUrl: { type: "string" },
+        nextSteps: {
+          type: "array",
+          items: { type: "string" }
+        },
+        notes: { type: "string" }
+      }
+    },
+    exampleOutput: checkBusinessRenewals({
+      businessName: "Northstar Textiles",
+      state: "TX",
+      licenseType: "general"
+    })
   }
 ];
 
+const SUCCESS_FIELD_BY_TARGET = {
+  insurance: "quotes",
+  property: "results",
+  business: "renewalStatus"
+};
+
 function operationFromWorkflow(workflow) {
+  const version = workflow.version || "v1";
   const operation = {
-    id: id("op"),
+    id: `op_${stableHash({ target: workflow.target, name: workflow.name, version })}`,
     target: workflow.target,
-    version: "v1",
+    version,
     name: workflow.name,
     title: workflow.title,
     description: workflow.description,
@@ -235,7 +318,7 @@ function operationFromWorkflow(workflow) {
     ],
     freshTokenExtractors: [],
     selectionRules: [],
-    successPredicates: [{ type: "json_field_present", field: workflow.target === "insurance" ? "quotes" : "results" }],
+    successPredicates: [{ type: "json_field_present", field: SUCCESS_FIELD_BY_TARGET[workflow.target] || "id" }],
     createdAt: now()
   };
   operation.openapi = singleToolOpenApi(operation);
@@ -325,6 +408,7 @@ function createListing(skill, operation, workflow) {
     quotePath: `/api/tools/${slug}/quote`,
     checkoutPath: `/api/tools/${slug}/checkout`,
     readmePath: `/api/tools/${slug}/readme.md`,
+    verificationPath: `/api/tools/${slug}/verification`,
     mcpToolName: operation.name,
     pricing: {
       enabled: priceCents > 0,
@@ -383,12 +467,23 @@ ${workflow.description}
 ${JSON.stringify(operation.inputSchema, null, 2)}
 \`\`\`
 
-## Try it in demo mode
+## Auth
+
+Create an account first. Cairn returns an \`agentKey\` once; store it and send it as \`Authorization: Bearer <agentKey>\`.
+
+\`\`\`bash
+curl -X POST /api/accounts \\
+  -H "Content-Type: application/json" \\
+  -d '{"accountId":"demo-user"}'
+\`\`\`
+
+## Try it with tokens
 
 \`\`\`bash
 curl -X POST /api/tools/${slug}/invoke \\
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '${sample.replace(/\n/g, "")}'
+  -d '${tokenSample.replace(/\n/g, "")}'
 \`\`\`
 
 ## Pay and run
@@ -405,9 +500,9 @@ ${paidSample}
 
 This API costs ${tokenLabel}. Buy tokens once, then spend them across any marketplace API.
 
-1. Check a wallet: \`GET /api/tokens/wallet?accountId=demo-user\`
-2. Buy a pack: \`POST /api/tokens/checkout\`
-3. Invoke with \`paymentMethod: "tokens"\`
+1. Check a wallet with your bearer key: \`GET /api/tokens/wallet?accountId=demo-user\`
+2. Buy a pack with your bearer key: \`POST /api/tokens/checkout\`
+3. Invoke with your bearer key and \`paymentMethod: "tokens"\`
 
 \`\`\`json
 ${tokenSample}
@@ -441,7 +536,8 @@ function publicTool(listing, operation) {
       quote: listing.quotePath,
       checkout: listing.checkoutPath,
       openapi: listing.openapiPath,
-      readme: listing.readmePath
+      readme: listing.readmePath,
+      verification: listing.verificationPath
     }
   };
 }
@@ -492,8 +588,14 @@ function formBody(entries) {
   return body;
 }
 
+function publicBaseUrl(value) {
+  return String(value || "http://localhost:3000")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
 async function createStripeCheckoutSession(listing, quote, buyer = {}) {
-  const publicUrl = buyer.returnBaseUrl || process.env[STRIPE_ENV.publicUrl] || "http://localhost:3000";
+  const publicUrl = publicBaseUrl(buyer.returnBaseUrl || process.env[STRIPE_ENV.publicUrl]);
   const lineItem = listing.pricing.stripePriceId
     ? {
         "line_items[0][price]": listing.pricing.stripePriceId,
@@ -519,6 +621,7 @@ async function createStripeCheckoutSession(listing, quote, buyer = {}) {
       "metadata[tool_id]": listing.slug,
       "metadata[quote_id]": quote.id,
       "metadata[input_hash]": quote.inputHash,
+      "metadata[account_id]": buyer.accountId || buyer.account || "",
       ...lineItem
     })
   });
@@ -543,6 +646,7 @@ async function createCheckout(listing, quote, buyer = {}) {
         mode: "stripe_checkout",
         toolId: listing.slug,
         quoteId: quote.id,
+        accountId: buyer.accountId || buyer.account || null,
         buyerAgent: buyer.agent || "unknown-agent",
         amount: quote.total,
         currency: quote.currency,
@@ -560,6 +664,7 @@ async function createCheckout(listing, quote, buyer = {}) {
       mode: "stripe_checkout",
       toolId: listing.slug,
       quoteId: quote.id,
+      accountId: buyer.accountId || buyer.account || null,
       error: session
     };
   }
@@ -570,6 +675,7 @@ async function createCheckout(listing, quote, buyer = {}) {
     mode: "stub",
     toolId: listing.slug,
     quoteId: quote.id,
+    accountId: buyer.accountId || buyer.account || null,
     buyerAgent: buyer.agent || "unknown-agent",
     amount: quote.total,
     currency: quote.currency,
@@ -594,14 +700,29 @@ function hasPaymentAuthorization(listing, body) {
 async function recordUsage(listing, details = {}) {
   const eventName = listing.pricing.stripeMeterEventName;
   const customerId = details.stripeCustomerId || details.customerId;
+  const identifier = details.identifier || id("usage");
+  const localUsageRecorded = await recordUsageEvent({
+    id: identifier,
+    accountId: details.accountId,
+    listingSlug: listing.slug,
+    invocationId: details.invocationId || details.identifier,
+    paymentMethod: details.paymentMethod || "direct",
+    tokenCost: details.tokenCost || 0,
+    stripeCustomerId: customerId,
+    metadata: {
+      value: details.value || 1,
+      stripeMeterEventName: eventName,
+      ...details
+    }
+  });
   if (!process.env.STRIPE_SECRET_KEY || !eventName || !customerId) {
     return {
       mode: "stub",
       recorded: false,
+      localUsageRecorded,
       reason: "Set STRIPE_SECRET_KEY, STRIPE_METER_EVENT_NAME, and pass stripeCustomerId to record Stripe meter events."
     };
   }
-  const identifier = details.identifier || id("usage");
   const response = await fetch("https://api.stripe.com/v1/billing/meter_events", {
     method: "POST",
     headers: {
@@ -621,9 +742,32 @@ async function recordUsage(listing, details = {}) {
   return {
     mode: "stripe_meter_event",
     recorded: response.ok,
+    localUsageRecorded,
     statusCode: response.status,
     stripe: payload
   };
+}
+
+function hydratePublishedApi(state, published) {
+  if (!published || !published.operation || !published.skill || !published.listing) {
+    return false;
+  }
+  state.operations[published.operation.id] = published.operation;
+  state.skills[published.skill.id] = published.skill;
+  state.marketplaceListings[published.skill.id] = published.listing;
+  if (published.verificationRecord) {
+    state.verificationRecords[published.operation.id] = published.verificationRecord;
+  }
+  state.currentOperationId = published.operation.id;
+  return true;
+}
+
+async function hydrateMarketplaceFromDatabase(state) {
+  const publishedApis = await listPublishedApis();
+  for (const published of publishedApis) {
+    hydratePublishedApi(state, published);
+  }
+  return publishedApis.length;
 }
 
 async function bootstrapMarketplace(state) {
@@ -652,8 +796,16 @@ async function bootstrapMarketplace(state) {
     skill.marketplace.pricingModel = "per_call";
     skill.marketplace.agenticCommerceEnabled = true;
     state.skills[skill.id] = skill;
-    state.marketplaceListings[skill.id] = createListing(skill, operation, workflow);
+    const listing = createListing(skill, operation, workflow);
+    state.marketplaceListings[skill.id] = listing;
+    await upsertPublishedApi({
+      operation,
+      skill,
+      listing,
+      verificationRecord: state.verificationRecords[operation.id]
+    });
   }
+  await hydrateMarketplaceFromDatabase(state);
 }
 
 function openApiDocument(listings, state) {
@@ -664,6 +816,7 @@ function openApiDocument(listings, state) {
       post: {
         operationId: operation.name,
         summary: listing.tagline,
+        security: [{ agentBearerAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -696,6 +849,7 @@ function openApiDocument(listings, state) {
         },
         responses: {
           "200": { description: "Tool call completed." },
+          "401": { description: "Agent bearer key is missing or invalid." },
           "402": { description: "Payment authorization required." },
           "403": { description: "Caller lacks required scope." }
         }
@@ -708,13 +862,28 @@ function openApiDocument(listings, state) {
       title: "Cairn Agent Workflow API Marketplace",
       version: "0.3.0"
     },
+    components: {
+      securitySchemes: {
+        agentBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "Account-scoped Cairn agent key returned once from POST /api/accounts."
+        }
+      }
+    },
     paths
   };
 }
 
 function integrationSnippet(baseUrl, listing) {
   return {
-    curl: `curl -X POST ${baseUrl}${listing.invokePath} -H "Content-Type: application/json" -d '{"input":${JSON.stringify(listing.sampleInput)},"demo":true}'`,
+    curl: `curl -X POST ${baseUrl}${listing.invokePath} -H "Authorization: Bearer $CAIRN_AGENT_KEY" -H "Content-Type: application/json" -d '{"input":${JSON.stringify(listing.sampleInput)},"paymentMethod":"tokens","tokenAccountId":"demo-user"}'`,
+    package: {
+      installFromGitHub: "npm install github:arav31/Cairn-AI",
+      futureNpmPackage: "npm install @cairn/ai",
+      cli: "npx cairn help"
+    },
+    sdk: `const { CairnClient } = require("cairn");\nconst cairn = new CairnClient({ baseUrl: "${baseUrl}", accountId: "demo-user", agentKey: process.env.CAIRN_AGENT_KEY });\nawait cairn.createAccount();\nawait cairn.buyTokens("starter");\nconst result = await cairn.invoke("${listing.slug}", { input: ${JSON.stringify(listing.sampleInput)}, paymentMethod: "tokens" });`,
     mcp: {
       endpoint: `${baseUrl}/mcp`,
       tool: listing.mcpToolName
@@ -725,6 +894,107 @@ function integrationSnippet(baseUrl, listing) {
       type: "custom_action_or_mcp_connector",
       discovery: `${baseUrl}/.well-known/cairn.json`
     }
+  };
+}
+
+function integrationGuide(baseUrl, listing = null) {
+  const selected = listing || null;
+  const sampleInput = selected ? selected.sampleInput : {
+    coverageType: "auto",
+    zipCode: "78701",
+    driverAge: 35,
+    vehicleYear: 2021
+  };
+  const toolId = selected ? selected.slug : "insurance/compare-insurance-prices";
+  const toolName = selected ? selected.operationName : "compareInsurancePrices";
+  return {
+    package: {
+      currentInstall: "npm install github:arav31/Cairn-AI",
+      futureInstall: "npm install @cairn/ai",
+      cliBinary: "cairn",
+      nodeVersion: ">=18"
+    },
+    environment: {
+      CAIRN_BASE_URL: baseUrl,
+      CAIRN_ACCOUNT_ID: "demo-user",
+      CAIRN_AGENT_KEY: "returned_once_from_POST_api_accounts"
+    },
+    accountAndCredits: {
+      createAccount: {
+        method: "POST",
+        url: `${baseUrl}/api/accounts`,
+        body: { accountId: "demo-user" },
+        returns: "agentAuth.agentKey"
+      },
+      buyCredits: {
+        method: "POST",
+        url: `${baseUrl}/api/tokens/checkout`,
+        headers: { Authorization: "Bearer $CAIRN_AGENT_KEY" },
+        body: { accountId: "demo-user", packId: "starter" }
+      },
+      wallet: `${baseUrl}/api/tokens/wallet?accountId=demo-user`,
+      walletHeaders: { Authorization: "Bearer $CAIRN_AGENT_KEY" }
+    },
+    invokeWithCredits: {
+      method: "POST",
+      url: `${baseUrl}/api/tools/${toolId}/invoke`,
+      headers: { Authorization: "Bearer $CAIRN_AGENT_KEY" },
+      body: {
+        input: sampleInput,
+        paymentMethod: "tokens",
+        tokenAccountId: "demo-user"
+      },
+      debitRule: "Tokens are reserved before the run and deducted only after the workflow returns a successful result."
+    },
+    sdk: {
+      commonjs: [
+        'const { CairnClient } = require("cairn");',
+        `const cairn = new CairnClient({ baseUrl: "${baseUrl}", accountId: "demo-user", agentKey: process.env.CAIRN_AGENT_KEY });`,
+        "const account = await cairn.createAccount();",
+        "process.env.CAIRN_AGENT_KEY ||= account.agentAuth.agentKey;",
+        'await cairn.buyTokens("starter");',
+        `const result = await cairn.invoke("${toolId}", {`,
+        `  input: ${JSON.stringify(sampleInput)},`,
+        '  paymentMethod: "tokens"',
+        "});"
+      ].join("\n")
+    },
+    cli: {
+      createAccount: `npx cairn account create --account demo-user --base-url ${baseUrl}`,
+      buyCredits: `npx cairn buy-tokens --pack starter --account demo-user --base-url ${baseUrl}`,
+      invoke: `npx cairn invoke --tool ${toolId} --account demo-user --base-url ${baseUrl} --input '${JSON.stringify(sampleInput)}'`
+    },
+    rest: {
+      discovery: `${baseUrl}/.well-known/cairn.json`,
+      catalog: `${baseUrl}/api/catalog`,
+      openapi: `${baseUrl}/openapi.json`,
+      mcp: `${baseUrl}/mcp`,
+      selectedToolReadme: selected ? `${baseUrl}${selected.readmePath}` : null,
+      selectedToolOpenAPI: selected ? `${baseUrl}${selected.openapiPath}` : null,
+      selectedToolVerification: selected ? `${baseUrl}${selected.verificationPath}` : null
+    },
+    mcp: {
+      endpoint: `${baseUrl}/mcp`,
+      tool: toolName,
+      call: {
+        jsonrpc: "2.0",
+        id: "call-1",
+        method: "tools/call",
+        params: {
+          name: toolName,
+          arguments: sampleInput,
+          paymentMethod: "tokens",
+          tokenAccountId: "demo-user"
+        }
+      }
+    },
+    futureIntegrationWork: [
+      "Publish the SDK under a stable npm package name.",
+      "Add OAuth/OIDC helpers for enterprise agent runtimes.",
+      "Generate typed clients from each listing OpenAPI schema.",
+      "Emit webhooks for completed workflow runs and credit debits.",
+      "Add hosted MCP connection templates for ChatGPT, Claude, Cursor, Zapier, and n8n."
+    ]
   };
 }
 
@@ -739,6 +1009,7 @@ function stripeConfig() {
     optionalEnv: [
       STRIPE_ENV.insurancePrice,
       STRIPE_ENV.propertyPrice,
+      STRIPE_ENV.businessRenewalsPrice,
       STRIPE_ENV.meterEventName
     ],
     supports: {
@@ -750,7 +1021,7 @@ function stripeConfig() {
     setupSteps: [
       "Create a Stripe account and get a test secret key.",
       "Set STRIPE_SECRET_KEY and CAIRN_PUBLIC_URL.",
-      "Optionally create Stripe Prices and set STRIPE_PRICE_INSURANCE_COMPARE or STRIPE_PRICE_PROPERTY_SEARCH.",
+      "Optionally create Stripe Prices and set STRIPE_PRICE_INSURANCE_COMPARE, STRIPE_PRICE_PROPERTY_SEARCH, or STRIPE_PRICE_BUSINESS_RENEWALS.",
       "Create a Billing Meter, set STRIPE_METER_EVENT_NAME, and pass stripeCustomerId when invoking if you want usage-based invoices.",
       "Configure STRIPE_WEBHOOK_SECRET before trusting Stripe webhooks in production."
     ]
@@ -764,6 +1035,8 @@ module.exports = {
   createQuote,
   findListing,
   hasPaymentAuthorization,
+  hydrateMarketplaceFromDatabase,
+  integrationGuide,
   integrationSnippet,
   openApiDocument,
   publicTool,

@@ -3,108 +3,76 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cairn API Marketplace</title>
+  <title>Cairn | Workflow APIs for AI agents</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <div class="marketplace-shell">
-    <header class="topbar">
-      <a class="brand" href="/">
-        <span class="brand-mark">C</span>
-        <span>Cairn</span>
-      </a>
-      <nav class="topnav" aria-label="Marketplace sections">
-        <a href="#catalog">Find APIs</a>
-        <a href="/pricing">Pricing</a>
-        <a href="#publish">Add your task</a>
-        <a href="/.well-known/cairn.json">Discovery</a>
-        <a href="/openapi.json">OpenAPI</a>
-      </nav>
-    </header>
+<body class="landing-body">
+  <header class="landing-nav">
+    <a class="landing-brand" href="/">
+      <span class="brand-symbol">C</span>
+      <span>Cairn</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="/marketplace">Marketplace</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/openapi.json">OpenAPI</a>
+      <a href="/.well-known/cairn.json">Discovery</a>
+    </nav>
+  </header>
 
-    <main>
-      <section class="market-hero">
-        <div class="hero-copy">
-          <p class="eyebrow">APIs for AI agents</p>
-          <h1>Give your AI a task. Let it call the right API.</h1>
-          <p class="hero-text">Find ready-made task APIs, connect them to ChatGPT or another AI tool, pay a few cents or spend prepaid tokens, and get the job done.</p>
-          <div class="search-box">
-            <input id="search-input" aria-label="Search APIs" placeholder="Search insurance, property, quotes, homes">
-            <button id="clear-search" class="ghost-button" type="button">Clear</button>
-          </div>
+  <main>
+    <section class="landing-hero">
+      <div class="landing-copy">
+        <p class="eyebrow">Workflow APIs for AI agents</p>
+        <h1>Turn repeated web tasks into APIs your AI can use.</h1>
+        <p>Record a workflow once. Cairn turns it into a verified endpoint. Your agent can call it later, pay with tokens, and finish the task without clicking through every page again.</p>
+        <div class="landing-actions">
+          <a class="primary-link" href="/marketplace">Open marketplace</a>
+          <a class="secondary-link" href="/marketplace#publish">Submit a workflow</a>
         </div>
+        <dl class="landing-metrics" aria-label="Cairn marketplace snapshot">
+          <div><dt>3</dt><dd>starter APIs</dd></div>
+          <div><dt>Tokens</dt><dd>or pay per run</dd></div>
+          <div><dt>MCP</dt><dd>ready for agents</dd></div>
+        </dl>
+      </div>
+      <figure class="landing-preview">
+        <img src="/marketplace-preview.png" alt="Cairn marketplace dashboard showing workflow API cards, token balance, and payment modes.">
+      </figure>
+    </section>
 
-        <aside class="connection-panel" aria-label="Connection endpoints">
-          <div class="endpoint-map">
-            <span class="node buyer">Agent</span>
-            <span class="line"></span>
-            <span class="node cairn">Cairn</span>
-            <span class="line"></span>
-            <span class="node pay">Stripe</span>
-          </div>
-          <dl class="endpoint-list">
-            <dt>Discovery</dt><dd>/.well-known/cairn.json</dd>
-            <dt>MCP</dt><dd>/mcp</dd>
-            <dt>OpenAPI</dt><dd>/openapi.json</dd>
-          </dl>
-          <section class="wallet-card" aria-label="Token wallet">
-            <div>
-              <span>Token balance</span>
-              <strong id="token-balance">0</strong>
-            </div>
-            <label>Buy tokens
-              <select id="token-pack-select"></select>
-            </label>
-            <button id="buy-tokens-button" type="button">Buy tokens</button>
-            <p id="token-status" class="form-status"></p>
-          </section>
-        </aside>
-      </section>
+    <section class="landing-section">
+      <div>
+        <p class="eyebrow">How it works</p>
+        <h2>Simple enough for normal users, structured enough for agents.</h2>
+      </div>
+      <div class="landing-steps">
+        <article>
+          <span>01</span>
+          <h3>Record the task</h3>
+          <p>Show Cairn a workflow you already do in a browser, like checking quotes or looking up renewal status.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Get a verified API</h3>
+          <p>Cairn turns the workflow into a typed endpoint with a README, OpenAPI schema, and test result.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Let agents use it</h3>
+          <p>Agents connect through MCP or HTTP, spend tokens after success, and keep a clear usage trail.</p>
+        </article>
+      </div>
+    </section>
 
-      <section class="stats-row" aria-label="Marketplace stats">
-        <article><strong id="stat-tools">0</strong><span>task APIs</span></article>
-        <article><strong id="stat-calls">0</strong><span>tool calls</span></article>
-        <article><strong id="stat-uptime">0%</strong><span>avg uptime</span></article>
-        <article><strong>Tokens</strong><span>or pay per run</span></article>
-      </section>
-
-      <section id="catalog" class="catalog-layout">
-        <section class="catalog-main">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Browse</p>
-              <h2>Task APIs</h2>
-            </div>
-            <div id="category-filters" class="filter-row"></div>
-          </div>
-          <div id="listing-grid" class="listing-grid"></div>
-        </section>
-
-        <aside id="detail-pane" class="detail-pane" aria-label="Selected API"></aside>
-      </section>
-
-      <section id="publish" class="publish-band">
-        <div>
-          <p class="eyebrow">Contribute</p>
-          <h2>Add a task you want automated.</h2>
-          <p>Record a task you already do, such as checking prices, searching portals, or comparing websites. The workflow team turns it into an API, then agents can pay and use it.</p>
-        </div>
-        <form id="contribute-form" class="contribute-form">
-          <label>Task name
-            <input name="title" placeholder="Compare insurance prices" required>
-          </label>
-          <label>Website or starting point
-            <input name="targetUrl" placeholder="https://example.com/search">
-          </label>
-          <label>What should the API return?
-            <textarea name="goal" placeholder="Return the three cheapest quotes with provider names and monthly prices." required></textarea>
-          </label>
-          <button type="submit">Submit workflow</button>
-          <p id="contribute-status" class="form-status"></p>
-        </form>
-      </section>
-    </main>
-  </div>
-  <script src="/app.js"></script>
+    <section class="landing-band">
+      <div>
+        <h2>Start with the marketplace.</h2>
+        <p>Insurance quotes, property search, and business renewals are live starter skills. More workflows can be contributed from inside the app.</p>
+      </div>
+      <a class="primary-link" href="/marketplace">Browse APIs</a>
+    </section>
+  </main>
 </body>
 </html>

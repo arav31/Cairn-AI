@@ -11,3 +11,4 @@ dist/
 .next/
 coverage/
 *.local
+.vercel

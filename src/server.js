@@ -1,11 +1,22 @@
 const { loadEnv } = require("./cairn/env");
 loadEnv();
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
 const { URL } = require("node:url");
 const { EventBus } = require("./cairn/eventBus");
+const { accountExistsPersistent, ensureAccountPersistent, normalizeAccountId } = require("./cairn/accounts");
+const {
+  accountMatchesAuth,
+  authenticateAgentRequest,
+  issueAgentKeyPersistent
+} = require("./cairn/agentAuth");
+const {
+  accountUsageSummary,
+  recordWorkflowSubmission
+} = require("./cairn/database");
 const {
   createState,
   invokeSkill,
@@ -19,6 +30,7 @@ const {
   createQuote,
   findListing,
   hasPaymentAuthorization,
+  integrationGuide,
   integrationSnippet,
   openApiDocument,
   publicTool,
@@ -28,12 +40,13 @@ const {
 const {
   createTokenCheckout,
   createTokenQuote,
-  ensureWallet,
-  previewTokenDebit,
+  ensureWalletPersistent,
+  fulfillTokenCheckoutSession,
+  previewTokenDebitPersistent,
   publicWallet,
-  spendTokens,
+  spendTokensPersistent,
   tokenConfig,
-  walletLedger
+  walletLedgerPersistent
 } = require("./cairn/tokens");
 const {
   customers,
@@ -94,6 +107,44 @@ async function parseBody(req) {
   return raw;
 }
 
+function safeJsonParse(raw) {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    return { error: "invalid_json", message: error.message };
+  }
+}
+
+function verifyStripeSignature(raw, signatureHeader, secret) {
+  if (!secret) {
+    return { ok: true, skipped: true };
+  }
+  const parts = Object.fromEntries(
+    String(signatureHeader || "")
+      .split(",")
+      .map((part) => part.split("="))
+      .filter(([key, value]) => key && value)
+  );
+  const timestamp = parts.t;
+  const expected = parts.v1;
+  if (!timestamp || !expected) {
+    return { ok: false, error: "missing_signature_fields" };
+  }
+  const signedPayload = `${timestamp}.${raw}`;
+  const actual = crypto
+    .createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("hex");
+  const actualBuffer = Buffer.from(actual, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return { ok: false, error: "signature_length_mismatch" };
+  }
+  return {
+    ok: crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  };
+}
+
 function setCookie(res, name, value) {
   res.setHeader("Set-Cookie", `${name}=${encodeURIComponent(value)}; Path=/; HttpOnly; SameSite=Lax`);
 }
@@ -131,6 +182,63 @@ function tokenAccountFrom(body) {
   );
 }
 
+function usageAccountFrom(body) {
+  return normalizeAccountId(
+    body.accountId ||
+    body.tokenAccountId ||
+    (body.payment && body.payment.accountId) ||
+    (body.payment && body.payment.tokenAccountId) ||
+    (body.buyer && body.buyer.accountId) ||
+    (body.caller && body.caller.id) ||
+    "marketplace-agent"
+  );
+}
+
+function explicitAccountFrom(body) {
+  const value = body.accountId ||
+    body.tokenAccountId ||
+    (body.payment && body.payment.accountId) ||
+    (body.payment && body.payment.tokenAccountId) ||
+    (body.buyer && body.buyer.accountId) ||
+    (body.caller && body.caller.id);
+  return value ? normalizeAccountId(value) : null;
+}
+
+function authHelp(origin) {
+  return {
+    createAccount: `${origin}/api/accounts`,
+    header: "Authorization: Bearer <agentKey>",
+    sdk: "new CairnClient({ accountId, agentKey })"
+  };
+}
+
+function authError(res, status, error, origin, details = {}) {
+  json(res, status, {
+    error,
+    message: error === "agent_account_mismatch"
+      ? "This agent key is not allowed to access the requested account."
+      : "Create an account and send its agent key before calling protected Cairn APIs.",
+    auth: authHelp(origin),
+    ...details
+  });
+}
+
+async function requireAgentAuth(req, res, state, accountId, origin) {
+  const auth = await authenticateAgentRequest(req, state);
+  if (!auth.ok) {
+    authError(res, auth.status || 401, auth.error, origin);
+    return null;
+  }
+  if (accountId && !accountMatchesAuth(auth, accountId)) {
+    authError(res, 403, "agent_account_mismatch", origin, {
+      requestedAccountId: normalizeAccountId(accountId),
+      authenticatedAccountId: auth.accountId
+    });
+    return null;
+  }
+  return auth;
+}
+
 function pageShell(title, body) {
   return `<!doctype html>
 <html lang="en">
@@ -138,6 +246,7 @@ function pageShell(title, body) {
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${htmlEscape(title)}</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body class="target-body">
@@ -373,6 +482,8 @@ function publicState(state) {
     skills: Object.values(state.skills),
     marketplaceListings: listings,
     catalog: listings,
+    accounts: Object.values(state.accounts || {}),
+    workflowSubmissions: Object.values(state.workflowSubmissions || {}),
     tokenWallets: Object.values(state.tokenWallets).map(publicWallet),
     tokenLedger: state.tokenLedger.slice(0, 20),
     verificationRecords: Object.values(state.verificationRecords),
@@ -402,8 +513,23 @@ function serveStatic(req, res, pathname) {
     return false;
   }
   const ext = path.extname(filePath);
-  const type = ext === ".css" ? "text/css" : ext === ".js" ? "text/javascript" : "text/html";
-  send(res, 200, fs.readFileSync(filePath), { "Content-Type": `${type}; charset=utf-8` });
+  const typeByExt = {
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".html": "text/html"
+  };
+  const type = typeByExt[ext] || "application/octet-stream";
+  const contentType = type.startsWith("text/") || type === "application/json"
+    ? `${type}; charset=utf-8`
+    : type;
+  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
   return true;
 }
 
@@ -412,16 +538,17 @@ function createApp() {
   const bus = new EventBus();
   const tokenStore = new Set();
   let baseUrl = "http://localhost:3000";
-  bootstrapMarketplace(state)
+  const ready = bootstrapMarketplace(state)
     .then(() => bus.emit("marketplace.ready", { listings: Object.values(state.marketplaceListings).length }))
     .catch((error) => bus.emit("marketplace.bootstrap_failed", { error: { message: error.message } }));
 
   const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, baseUrl);
     const pathname = url.pathname;
+    const origin = requestOrigin(req, baseUrl);
     try {
+      await ready;
       if (req.method === "GET" && pathname === "/.well-known/cairn.json") {
-        const origin = requestOrigin(req, baseUrl);
         const listings = Object.values(state.marketplaceListings);
         json(res, 200, {
           name: "Cairn",
@@ -431,6 +558,16 @@ function createApp() {
           tools: `${origin}/api/tools`,
           mcp: `${origin}/mcp`,
           openapi: `${origin}/openapi.json`,
+          package: {
+            install: "npm install github:arav31/Cairn-AI",
+            integrationGuide: `${origin}/api/integrations`
+          },
+          auth: {
+            type: "bearer",
+            createAccount: `${origin}/api/accounts`,
+            header: "Authorization: Bearer <agentKey>",
+            protectedEndpoints: ["tool checkout", "tool invoke", "MCP tools/call", "wallet", "usage", "workflow submissions"]
+          },
           payments: {
             provider: "stripe",
             sharedPaymentTokens: true,
@@ -470,6 +607,20 @@ function createApp() {
         });
         return;
       }
+      if (req.method === "GET" && pathname === "/api/integrations") {
+        json(res, 200, integrationGuide(requestOrigin(req, baseUrl)));
+        return;
+      }
+      if (req.method === "GET" && pathname.startsWith("/api/integrations/")) {
+        const slug = pathAfter(pathname, "/api/integrations/");
+        const listing = findListing(state, slug);
+        if (!listing) {
+          json(res, 404, { error: "listing_not_found", slug });
+          return;
+        }
+        json(res, 200, integrationGuide(requestOrigin(req, baseUrl), listing));
+        return;
+      }
       if (req.method === "GET" && pathname.startsWith("/api/catalog/")) {
         const slug = pathAfter(pathname, "/api/catalog/");
         const listing = findListing(state, slug);
@@ -481,6 +632,7 @@ function createApp() {
         json(res, 200, {
           listing,
           operation,
+          verification: state.verificationRecords[operation.id] || null,
           snippets: integrationSnippet(requestOrigin(req, baseUrl), listing)
         });
         return;
@@ -500,12 +652,102 @@ function createApp() {
         json(res, 200, tokenConfig());
         return;
       }
+      if (req.method === "POST" && pathname === "/api/accounts") {
+        const body = await parseBody(req);
+        const accountId = normalizeAccountId(tokenAccountFrom(body));
+        const auth = await authenticateAgentRequest(req, state);
+        if (!auth.ok && auth.error !== "agent_auth_required") {
+          authError(res, auth.status || 401, auth.error, origin);
+          return;
+        }
+        if (auth.ok && !accountMatchesAuth(auth, accountId)) {
+          authError(res, 403, "agent_account_mismatch", origin, {
+            requestedAccountId: accountId,
+            authenticatedAccountId: auth.accountId
+          });
+          return;
+        }
+        const exists = await accountExistsPersistent(state, accountId);
+        if (!auth.ok && exists) {
+          authError(res, 409, "account_auth_required", origin, { accountId });
+          return;
+        }
+        const account = await ensureAccountPersistent(state, accountId, {
+          displayName: body.displayName || body.name,
+          source: "api_accounts"
+        });
+        const issued = auth.ok
+          ? { key: auth.key, agentKey: null }
+          : await issueAgentKeyPersistent(state, accountId, {
+              displayName: body.displayName || body.name,
+              label: body.agentLabel || "Default agent key"
+            });
+        const wallet = await ensureWalletPersistent(state, accountId);
+        const ledger = await walletLedgerPersistent(state, accountId);
+        json(res, 201, {
+          account,
+          agentAuth: {
+            type: "bearer",
+            header: "Authorization",
+            scheme: "Bearer",
+            agentKey: issued.agentKey,
+            key: issued.key,
+            note: issued.agentKey
+              ? "Store this key now. Cairn only returns the raw agent key once."
+              : "Authenticated with an existing agent key."
+          },
+          wallet,
+          ledger,
+          next: {
+            buyCredits: `${requestOrigin(req, baseUrl)}/api/tokens/checkout`,
+            listSkills: `${requestOrigin(req, baseUrl)}/api/catalog`,
+            integrationGuide: `${requestOrigin(req, baseUrl)}/api/integrations`
+          }
+        });
+        return;
+      }
+      if (req.method === "GET" && pathname.startsWith("/api/accounts/") && pathname.endsWith("/usage")) {
+        const accountId = pathAfter(pathname, "/api/accounts/", "/usage");
+        const normalizedAccountId = normalizeAccountId(accountId);
+        const auth = await requireAgentAuth(req, res, state, normalizedAccountId, origin);
+        if (!auth) return;
+        const wallet = await ensureWalletPersistent(state, normalizedAccountId);
+        const databaseUsage = await accountUsageSummary(normalizedAccountId);
+        if (databaseUsage) {
+          json(res, 200, {
+            accountId: normalizedAccountId,
+            wallet,
+            usage: databaseUsage
+          });
+          return;
+        }
+        json(res, 200, {
+          accountId: normalizedAccountId,
+          wallet,
+          usage: {
+            ledger: await walletLedgerPersistent(state, normalizedAccountId),
+            usageEvents: state.invocationLogs
+              .filter((log) => log.callerId === normalizedAccountId)
+              .slice(0, 50),
+            payments: [],
+            invocationLogs: state.invocationLogs
+              .filter((log) => log.callerId === normalizedAccountId)
+              .slice(0, 50),
+            workflowSubmissions: Object.values(state.workflowSubmissions || {})
+              .filter((submission) => submission.accountId === normalizedAccountId)
+              .slice(0, 50)
+          }
+        });
+        return;
+      }
       if (req.method === "GET" && pathname === "/api/tokens/wallet") {
         const accountId = url.searchParams.get("accountId") || "demo-user";
-        const wallet = ensureWallet(state, accountId);
+        const auth = await requireAgentAuth(req, res, state, accountId, origin);
+        if (!auth) return;
+        const wallet = await ensureWalletPersistent(state, accountId);
         json(res, 200, {
-          wallet: publicWallet(wallet),
-          ledger: walletLedger(state, accountId)
+          wallet,
+          ledger: await walletLedgerPersistent(state, accountId)
         });
         return;
       }
@@ -518,7 +760,10 @@ function createApp() {
       }
       if (req.method === "POST" && pathname === "/api/tokens/checkout") {
         const body = await parseBody(req);
-        const accountId = body.accountId || (body.buyer && body.buyer.accountId) || "demo-user";
+        const requestedAccountId = body.accountId || (body.buyer && body.buyer.accountId) || null;
+        const auth = await requireAgentAuth(req, res, state, requestedAccountId, origin);
+        if (!auth) return;
+        const accountId = normalizeAccountId(requestedAccountId || auth.accountId);
         const quote = body.quote || createTokenQuote(body.packId || "starter", accountId);
         const checkout = await createTokenCheckout(state, quote, {
           ...(body.buyer || {}),
@@ -559,6 +804,22 @@ function createApp() {
         });
         return;
       }
+      if (req.method === "GET" && pathname.startsWith("/api/tools/") && pathname.endsWith("/verification")) {
+        const slug = pathAfter(pathname, "/api/tools/", "/verification");
+        const listing = findListing(state, slug);
+        if (!listing) {
+          json(res, 404, { error: "tool_not_found", slug });
+          return;
+        }
+        const operation = state.operations[listing.operationId];
+        json(res, 200, {
+          listing: listing.slug,
+          operationId: operation.id,
+          operationVersion: operation.version,
+          verification: state.verificationRecords[operation.id] || null
+        });
+        return;
+      }
       if (req.method === "GET" && pathname.startsWith("/api/tools/")) {
         const slug = pathAfter(pathname, "/api/tools/");
         const listing = findListing(state, slug);
@@ -569,6 +830,7 @@ function createApp() {
         json(res, 200, {
           tool: publicTool(listing, state.operations[listing.operationId]),
           listing,
+          verification: state.verificationRecords[listing.operationId] || null,
           snippets: integrationSnippet(requestOrigin(req, baseUrl), listing)
         });
         return;
@@ -592,8 +854,13 @@ function createApp() {
           return;
         }
         const body = await parseBody(req);
+        const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(body), origin);
+        if (!auth) return;
         const quote = body.quote || createQuote(listing, body.input || {});
-        const checkout = await createCheckout(listing, quote, body.buyer || {});
+        const checkout = await createCheckout(listing, quote, {
+          ...(body.buyer || {}),
+          accountId: auth.accountId
+        });
         bus.emit("payment.checkout_created", { toolId: listing.slug, checkoutId: checkout.id, mode: checkout.mode });
         json(res, 200, { checkout });
         return;
@@ -607,8 +874,11 @@ function createApp() {
         }
         const body = await parseBody(req);
         const tokenPayment = wantsTokenPayment(body);
-        const tokenAccountId = tokenAccountFrom(body);
-        const tokenPreview = tokenPayment ? previewTokenDebit(state, tokenAccountId, listing) : null;
+        const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(body), origin);
+        if (!auth) return;
+        const tokenAccountId = tokenPayment ? normalizeAccountId(explicitAccountFrom(body) || auth.accountId) : null;
+        const usageAccountId = tokenPayment ? tokenAccountId : normalizeAccountId(explicitAccountFrom(body) || auth.accountId);
+        const tokenPreview = tokenPayment ? await previewTokenDebitPersistent(state, tokenAccountId, listing) : null;
         if (tokenPayment && !tokenPreview.ok) {
           json(res, 402, {
             error: "insufficient_tokens",
@@ -636,21 +906,25 @@ function createApp() {
         const result = await invokeSkill({
           skillId: listing.skillId,
           input: body.input || {},
-          caller: body.caller || { id: "marketplace-agent", scopes: listing.scopes },
+          caller: { ...(body.caller || {}), id: usageAccountId, scopes: listing.scopes },
           state,
           bus,
-          baseUrl
+          baseUrl,
+          listingSlug: listing.slug
         });
         const tokenDebit = tokenPayment && result.allowed === true && result.output
-          ? spendTokens(state, tokenAccountId, listing, {
+          ? await spendTokensPersistent(state, tokenAccountId, listing, {
               toolId: listing.slug,
               invocationId: result.log && result.log.id
             })
           : null;
         const usage = !tokenPayment && result.allowed === true && result.output
           ? await recordUsage(listing, {
+              accountId: usageAccountId,
               stripeCustomerId: body.stripeCustomerId || (body.payment && body.payment.stripeCustomerId),
               identifier: result.log && result.log.id,
+              invocationId: result.log && result.log.id,
+              paymentMethod: "direct",
               value: 1
             })
           : null;
@@ -681,8 +955,15 @@ function createApp() {
           json(res, 404, { error: "tool_not_found", toolId: body.toolId || body.slug });
           return;
         }
+        const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(body), origin);
+        if (!auth) return;
         const quote = body.quote || createQuote(listing, body.input || {});
-        json(res, 200, { checkout: await createCheckout(listing, quote, body.buyer || {}) });
+        json(res, 200, {
+          checkout: await createCheckout(listing, quote, {
+            ...(body.buyer || {}),
+            accountId: auth.accountId
+          })
+        });
         return;
       }
       if (req.method === "POST" && pathname === "/api/payments/usage") {
@@ -692,36 +973,87 @@ function createApp() {
           json(res, 404, { error: "tool_not_found", toolId: body.toolId || body.slug });
           return;
         }
+        const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(body), origin);
+        if (!auth) return;
         json(res, 200, {
           usage: await recordUsage(listing, {
+            accountId: auth.accountId,
             stripeCustomerId: body.stripeCustomerId,
             customerId: body.customerId,
             identifier: body.identifier,
+            invocationId: body.invocationId,
+            paymentMethod: body.paymentMethod || "direct",
             value: body.value || 1
           })
         });
         return;
       }
       if (req.method === "POST" && pathname === "/api/stripe/webhook") {
-        const body = await parseBody(req);
+        const raw = await readBody(req);
+        if (process.env.STRIPE_SECRET_KEY && !process.env.STRIPE_WEBHOOK_SECRET) {
+          json(res, 503, {
+            error: "stripe_webhook_secret_required",
+            message: "Set STRIPE_WEBHOOK_SECRET before Cairn will fulfill paid token checkouts."
+          });
+          return;
+        }
+        const signature = verifyStripeSignature(raw, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET);
+        if (!signature.ok) {
+          json(res, 400, { error: "invalid_stripe_signature", reason: signature.error || "signature_mismatch" });
+          return;
+        }
+        const body = safeJsonParse(raw);
+        if (body.error) {
+          json(res, 400, body);
+          return;
+        }
+        const session = body && body.data && body.data.object ? body.data.object : null;
+        const tokenFulfillment = body.type === "checkout.session.completed" && session
+          ? await fulfillTokenCheckoutSession(state, session)
+          : null;
         bus.emit("payment.webhook_received", {
           provider: "stripe",
           type: body.type || "unknown",
-          livemode: Boolean(body.livemode)
+          livemode: Boolean(body.livemode),
+          signatureVerified: !signature.skipped,
+          tokenFulfillment
         });
-        json(res, 200, { received: true, mode: "stub_until_signature_verification_is_configured" });
+        json(res, 200, {
+          received: true,
+          signatureVerified: !signature.skipped,
+          tokenFulfillment
+        });
         return;
       }
       if (req.method === "POST" && pathname === "/api/workflows/recordings") {
         const body = await parseBody(req);
+        const submissionId = id("recording_upload");
+        const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(body), origin);
+        if (!auth) return;
+        const accountId = auth.accountId;
+        const submission = {
+          id: submissionId,
+          accountId,
+          title: body.title || "Untitled workflow",
+          targetUrl: body.targetUrl || null,
+          goal: body.goal || "",
+          artifacts: Array.isArray(body.artifacts) ? body.artifacts : [],
+          status: "submitted"
+        };
+        state.workflowSubmissions[submissionId] = {
+          ...submission,
+          createdAt: new Date().toISOString()
+        };
+        await recordWorkflowSubmission(submission);
         json(res, 202, {
-          id: id("recording_upload"),
+          id: submissionId,
           status: "accepted",
           message: "Recording upload accepted. The recorder/compiler team can wire this to artifact storage and synthesis.",
           received: {
-            title: body.title || null,
-            targetUrl: body.targetUrl || null,
-            artifactCount: Array.isArray(body.artifacts) ? body.artifacts.length : 0
+            accountId,
+            title: submission.title,
+            targetUrl: submission.targetUrl,
+            artifactCount: submission.artifacts.length
           }
         });
         return;
@@ -780,12 +1112,17 @@ function createApp() {
             sharedPaymentToken: params.sharedPaymentToken,
             paymentMethod: params.paymentMethod,
             tokenAccountId: params.tokenAccountId,
+            accountId: params.accountId,
+            caller: params.caller,
             useTokens: params.useTokens,
             demo: params.demo
           };
           const tokenPayment = wantsTokenPayment(callBody);
-          const tokenAccountId = tokenAccountFrom(callBody);
-          const tokenPreview = tokenPayment ? previewTokenDebit(state, tokenAccountId, listing) : null;
+          const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(callBody), origin);
+          if (!auth) return;
+          const tokenAccountId = tokenPayment ? normalizeAccountId(explicitAccountFrom(callBody) || auth.accountId) : null;
+          const usageAccountId = tokenPayment ? tokenAccountId : normalizeAccountId(explicitAccountFrom(callBody) || auth.accountId);
+          const tokenPreview = tokenPayment ? await previewTokenDebitPersistent(state, tokenAccountId, listing) : null;
           if (tokenPayment && !tokenPreview.ok) {
             json(res, 200, {
               jsonrpc: "2.0",
@@ -825,21 +1162,25 @@ function createApp() {
           const result = await invokeSkill({
             skillId: listing.skillId,
             input: callBody.input,
-            caller: { id: "mcp-agent", scopes: listing.scopes },
+            caller: { ...(params.caller || {}), id: usageAccountId, scopes: listing.scopes },
             state,
             bus,
-            baseUrl
+            baseUrl,
+            listingSlug: listing.slug
           });
           const tokenDebit = tokenPayment && result.allowed === true && result.output
-            ? spendTokens(state, tokenAccountId, listing, {
+            ? await spendTokensPersistent(state, tokenAccountId, listing, {
                 toolId: listing.slug,
                 invocationId: result.log && result.log.id
               })
             : null;
           const usage = !tokenPayment && result.allowed === true && result.output
             ? await recordUsage(listing, {
+                accountId: usageAccountId,
                 stripeCustomerId: params.stripeCustomerId || (params.payment && params.payment.stripeCustomerId),
                 identifier: result.log && result.log.id,
+                invocationId: result.log && result.log.id,
+                paymentMethod: "direct",
                 value: 1
               })
             : null;
@@ -901,10 +1242,12 @@ function createApp() {
       }
       if (req.method === "POST" && pathname === "/api/invoke") {
         const body = await parseBody(req);
+        const auth = await requireAgentAuth(req, res, state, explicitAccountFrom(body), origin);
+        if (!auth) return;
         const result = await invokeSkill({
           skillId: body.skillId,
           input: body.input || {},
-          caller: body.caller || { id: "demo-agent", scopes: ["crm:customer:read", "civic:record:read"] },
+          caller: { ...(body.caller || {}), id: auth.accountId, scopes: ["crm:customer:read", "civic:record:read"] },
           state,
           bus,
           baseUrl
@@ -995,7 +1338,7 @@ function createApp() {
         return;
       }
 
-      if (req.method === "GET" && serveStatic(req, res, pathname)) {
+      if ((req.method === "GET" || req.method === "HEAD") && serveStatic(req, res, pathname)) {
         return;
       }
       json(res, 404, { error: "not_found", pathname });
@@ -1009,7 +1352,29 @@ function createApp() {
   };
   server.state = state;
   server.bus = bus;
+  server.ready = ready;
   return server;
+}
+
+let serverlessApp;
+
+function getServerlessBaseUrl(req) {
+  const configured = process.env.CAIRN_PUBLIC_URL;
+  if (configured) return configured;
+  return requestOrigin(req, "https://localhost");
+}
+
+function serverlessHandler(req, res) {
+  if (!serverlessApp) {
+    serverlessApp = createApp();
+  }
+  serverlessApp.setBaseUrl(getServerlessBaseUrl(req));
+  return new Promise((resolve, reject) => {
+    res.on("finish", resolve);
+    res.on("close", resolve);
+    res.on("error", reject);
+    serverlessApp.emit("request", req, res);
+  });
 }
 
 if (require.main === module) {
@@ -1023,4 +1388,5 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp };
+module.exports = serverlessHandler;
+module.exports.createApp = createApp;

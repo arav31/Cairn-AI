@@ -2,7 +2,8 @@ const pricingState = {
   listings: [],
   tokenConfig: null,
   wallet: null,
-  accountId: "demo-user"
+  accountId: "demo-user",
+  agentKey: null
 };
 
 const byId = (id) => document.getElementById(id);
@@ -32,19 +33,61 @@ function tokenLabel(count) {
   return `${value} token${value === 1 ? "" : "s"}`;
 }
 
-async function postJson(path, body) {
+function generatedAccountId() {
+  const suffix = crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : String(Date.now()).slice(-8);
+  return `acct_${suffix}`;
+}
+
+function authHeaders(headers = {}) {
+  return pricingState.agentKey
+    ? { ...headers, Authorization: `Bearer ${pricingState.agentKey}` }
+    : headers;
+}
+
+function saveAgentSession(accountId, agentKey) {
+  pricingState.accountId = accountId;
+  if (agentKey) pricingState.agentKey = agentKey;
+  localStorage.setItem("cairnAccountId", pricingState.accountId);
+  if (pricingState.agentKey) localStorage.setItem("cairnAgentKey", pricingState.agentKey);
+}
+
+function applyAgentAuth(payload) {
+  const agentKey = payload && payload.agentAuth && payload.agentAuth.agentKey;
+  if (agentKey) {
+    saveAgentSession(payload.account.accountId || payload.account.id, agentKey);
+  }
+}
+
+async function postJson(path, body, options = {}) {
+  const headers = options.auth === false
+    ? { "Content-Type": "application/json" }
+    : authHeaders({ "Content-Type": "application/json" });
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body)
   });
   return { ok: response.ok, payload: await response.json() };
 }
 
+async function ensureAccountSession() {
+  if (pricingState.agentKey) return;
+  if (pricingState.accountId === "demo-user") {
+    pricingState.accountId = generatedAccountId();
+  }
+  const result = await postJson("/api/accounts", { accountId: pricingState.accountId }, { auth: false });
+  if (result.ok) {
+    applyAgentAuth(result.payload);
+    pricingState.wallet = result.payload.wallet;
+  }
+}
+
 async function refreshWallet() {
-  const response = await fetch(`/api/tokens/wallet?accountId=${encodeURIComponent(pricingState.accountId)}`);
+  const response = await fetch(`/api/tokens/wallet?accountId=${encodeURIComponent(pricingState.accountId)}`, {
+    headers: authHeaders()
+  });
   const payload = await response.json();
-  pricingState.wallet = payload.wallet;
+  pricingState.wallet = response.ok ? payload.wallet : null;
 }
 
 async function buyPack(packId) {
@@ -66,7 +109,7 @@ async function buyPack(packId) {
     return;
   }
   await refreshWallet();
-  renderTokenPacks(checkoutResult.ok ? "Tokens added to your demo wallet." : "Could not start checkout.");
+    renderTokenPacks(checkoutResult.ok ? "Tokens added to your wallet." : "Could not start checkout.");
 }
 
 function renderTokenPacks(status = "") {
@@ -115,7 +158,7 @@ function renderApiPrices() {
         </span>
         <span>${escapeHtml(tokenLabel(listing.pricing.tokenCost))}</span>
         <span>${money(listing.pricing.priceCents, listing.pricing.currency)}</span>
-        <a href="/#catalog">Open</a>
+        <a href="/marketplace#catalog">Open</a>
       </div>
     `).join("")}
   `;
@@ -129,6 +172,9 @@ async function initPricing() {
   const catalog = await catalogResponse.json();
   pricingState.listings = catalog.listings || [];
   pricingState.tokenConfig = await tokenResponse.json();
+  pricingState.accountId = localStorage.getItem("cairnAccountId") || pricingState.accountId;
+  pricingState.agentKey = localStorage.getItem("cairnAgentKey") || pricingState.agentKey;
+  await ensureAccountSession();
   await refreshWallet();
   renderTokenPacks();
   renderApiPrices();

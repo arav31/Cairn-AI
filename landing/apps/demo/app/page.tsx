@@ -89,6 +89,26 @@ export default function Page() {
         </div>
       </section>
 
+      <section className="pad video-section" id="demo-video" data-anchor="demo video">
+        <div className="container video-layout">
+          <div>
+            <h2>watch the <em>demo</em>.</h2>
+            <p className="lede">
+              This section is reserved for the recorded walkthrough. Replace the placeholder embed with the final YouTube link when the demo video is ready.
+            </p>
+          </div>
+          <div className="video-shell">
+            <iframe
+              src="https://www.youtube-nocookie.com/embed/VIDEO_ID"
+              title="Cairn demo video placeholder"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              referrerPolicy="strict-origin-when-cross-origin"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      </section>
+
       <section className="pad" id="platform" data-anchor="platform">
         <div className="container">
           <h2>what <em>cairn</em> does.</h2>
