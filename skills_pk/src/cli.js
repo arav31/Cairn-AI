@@ -15,6 +15,23 @@ import { loadSkill, loadSkills, runSkill } from "./skill-runner.js";
 
 const envFile = loadEnvFile();
 
+const REPEATABLE_GROUP_KEYS = [
+  "module",
+  "mod",
+  "course",
+  "subject",
+  "item",
+  "traveller",
+  "traveler",
+  "passenger",
+  "person",
+  "member",
+  "dependent",
+  "applicant",
+  "child",
+  "row",
+];
+
 async function main() {
   const [command, ...args] = process.argv.slice(2);
 
@@ -245,13 +262,37 @@ async function chooseAndRunSkill(rl) {
 
 async function runSkillChat(rl, skill) {
   console.log(`\n${skill.name}`);
-  if (skill.description) console.log(skill.description);
+  const chat = buildSkillConversation(skill);
+  if (chat.intro) console.log(chat.intro);
+  if (skill.description && !chat.intro) console.log(skill.description);
+  if (chat.warning) console.log(chat.warning);
   console.log("");
   progress(1, "Collecting required inputs");
 
   const inputs = {};
-  for (const spec of skill.inputs || []) {
-    inputs[spec.id] = await askInput(rl, spec);
+  for (const group of chat.groups) {
+    if (group.title && chat.groups.length > 1) console.log(`\n${group.title}`);
+    if (group.description) console.log(group.description);
+
+    if (group.repeatable) {
+      let index = 1;
+      while (true) {
+        if (group.title) console.log(`\n${group.title} ${index}`);
+        for (const spec of group.inputs) {
+          const value = await askInput(rl, spec);
+          if (!Array.isArray(inputs[spec.id])) inputs[spec.id] = [];
+          inputs[spec.id].push(value);
+        }
+        const again = await askYesNo(rl, group.addAnotherQuestion || "Do you want to add another entry?", false);
+        if (!again) break;
+        index += 1;
+      }
+      continue;
+    }
+
+    for (const spec of group.inputs) {
+      inputs[spec.id] = await askInput(rl, spec);
+    }
   }
 
   progress(2, "Calling saved API workflow");
@@ -322,6 +363,169 @@ async function promoteDraftCommand(file) {
   await fs.mkdir(path.dirname(target), { recursive: true });
   await fs.rename(file, target);
   console.log(`Registered skill: ${target}`);
+}
+
+function buildSkillConversation(skill) {
+  const visibleInputs = (skill.inputs || []).filter((spec) => !isTechnicalInputSpec(spec));
+  const hiddenTechnical = (skill.inputs || []).filter((spec) => isTechnicalInputSpec(spec));
+  const inputById = new Map(visibleInputs.map((spec) => [spec.id, spec]));
+  const intro = cleanPromptText(skill.conversation?.intro)
+    || cleanPromptText(skill.learning?.inferredGoal ? `I'll help you ${lowercaseFirst(skill.learning.inferredGoal)}.` : "")
+    || cleanPromptText(skill.description || "");
+  const groups = [];
+
+  for (const rawGroup of skill.conversation?.inputGroups || []) {
+    const inputs = (rawGroup.inputIds || [])
+      .map((id) => inputById.get(id) || inputById.get(findInputIdByLooseMatch(inputById, id)))
+      .filter(Boolean)
+      .filter((spec, index, all) => all.findIndex((item) => item.id === spec.id) === index);
+    if (!inputs.length) continue;
+    groups.push({
+      title: cleanPromptText(rawGroup.title || "Details"),
+      description: cleanPromptText(rawGroup.description || ""),
+      repeatable: Boolean(rawGroup.repeatable),
+      addAnotherQuestion: cleanPromptText(rawGroup.addAnotherQuestion || ""),
+      inputs,
+    });
+  }
+
+  const groupedIds = new Set(groups.flatMap((group) => group.inputs.map((spec) => spec.id)));
+  const remaining = visibleInputs.filter((spec) => !groupedIds.has(spec.id));
+  if (remaining.length) groups.push(...inferRuntimeGroups(remaining));
+
+  return {
+    intro: intro || "I'll ask for the details this skill needs, then run the saved workflow.",
+    groups,
+    warning: hiddenTechnical.length
+      ? `Skipped ${hiddenTechnical.length} internal replay field(s). Re-learn or re-draft the skill if the saved workflow still fails.`
+      : "",
+  };
+}
+
+function inferRuntimeGroups(inputs) {
+  const byKey = new Map();
+  for (const spec of inputs) {
+    const key = groupKeyForInput(spec);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(spec);
+  }
+  return [...byKey.entries()].map(([key, groupInputs]) => ({
+    title: groupTitleFromKey(key),
+    description: "",
+    repeatable: isRepeatableGroupKey(key) && groupInputs.length > 1,
+    addAnotherQuestion: defaultAddAnotherQuestion(key),
+    inputs: groupInputs,
+  }));
+}
+
+function groupKeyForInput(spec) {
+  const id = String(spec.id || "");
+  const firstPart = id
+    .replace(/\[\d+\]/g, "")
+    .split(/[_-]+/)
+    .find((part) => part && part.length > 1);
+  if (firstPart && REPEATABLE_GROUP_KEYS.includes(firstPart.toLowerCase())) return firstPart.toLowerCase();
+  if (firstPart && id.split(/[_-]+/).length > 1) return firstPart.toLowerCase();
+  return "details";
+}
+
+function groupTitleFromKey(key) {
+  const normalized = String(key || "details").toLowerCase();
+  if (["mod", "module", "course", "subject"].includes(normalized)) return "Module details";
+  if (["traveller", "traveler", "passenger", "person"].includes(normalized)) return "Traveller details";
+  if (["dependent", "child", "member", "applicant"].includes(normalized)) return `${humanizeRuntimeName(normalized)} details`;
+  if (normalized === "details") return "Details";
+  return `${humanizeRuntimeName(normalized)} details`;
+}
+
+function isRepeatableGroupKey(key) {
+  return REPEATABLE_GROUP_KEYS.includes(String(key || "").toLowerCase());
+}
+
+function defaultAddAnotherQuestion(key) {
+  const normalized = String(key || "").toLowerCase();
+  if (["mod", "module", "course", "subject"].includes(normalized)) return "Do you want to add another module?";
+  if (["traveller", "traveler", "passenger", "person"].includes(normalized)) return "Do you want to add another traveller?";
+  if (normalized === "child") return "Do you want to add another child?";
+  if (normalized === "dependent") return "Do you want to add another dependent?";
+  if (["item", "row"].includes(normalized)) return "Do you want to add another item?";
+  return "Do you want to add another entry?";
+}
+
+function findInputIdByLooseMatch(inputById, candidate) {
+  const normalized = normalizeRuntimeKey(candidate);
+  if (!normalized) return "";
+  for (const [id, spec] of inputById) {
+    const keys = [id, spec.question].filter(Boolean).map(normalizeRuntimeKey);
+    if (keys.some((key) => key === normalized || key.includes(normalized) || normalized.includes(key))) return id;
+  }
+  return "";
+}
+
+function isTechnicalInputSpec(spec) {
+  const haystack = [spec?.id, spec?.question, spec?.description].filter(Boolean).join(" ");
+  return isTechnicalName(spec?.id)
+    || /^\s*(?:value for|\$\.)/i.test(String(spec?.question || ""))
+    || /\b(?:viewstate|eventvalidation|csrf|xsrf|captcha|recaptcha|turnstile|nonce|authenticity token|request verification token)\b/i.test(haystack);
+}
+
+function isTechnicalName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const normalized = normalizeRuntimeKey(raw);
+  return [
+    /^__.+$/i,
+    /^_+(?:method|token|csrf|xsrf)$/i,
+    /^viewstate(?:generator)?$/i,
+    /^eventvalidation$/i,
+    /^eventtarget$/i,
+    /^eventargument$/i,
+    /^lastfocus$/i,
+    /csrf/i,
+    /xsrf/i,
+    /antiforgery/i,
+    /authenticitytoken/i,
+    /requestverificationtoken/i,
+    /verificationtoken/i,
+    /captcha/i,
+    /recaptcha/i,
+    /turnstile/i,
+    /nonce/i,
+    /(?:session|respondent|blockgroup|request|visitor|client|correlation|interaction).*(?:uuid|id|token|key)/i,
+    /(?:uuid|id|token|key).*(?:session|respondent|blockgroup|request|visitor|client|correlation|interaction)/i,
+    /^gen(?:erated)?.*(?:num|count|index)$/i,
+  ].some((pattern) => pattern.test(raw) || pattern.test(normalized));
+}
+
+async function askYesNo(rl, question, defaultValue = false) {
+  const suffix = defaultValue ? " [Y/n]: " : " [y/N]: ";
+  while (true) {
+    const answer = (await rl.question(`${question}${suffix}`)).trim().toLowerCase();
+    if (!answer) return defaultValue;
+    if (["y", "yes"].includes(answer)) return true;
+    if (["n", "no"].includes(answer)) return false;
+    console.log("Please answer yes or no.");
+  }
+}
+
+function cleanPromptText(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function lowercaseFirst(value) {
+  const text = cleanPromptText(value);
+  return text ? text.charAt(0).toLowerCase() + text.slice(1) : "";
+}
+
+function normalizeRuntimeKey(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function humanizeRuntimeName(value) {
+  return cleanPromptText(String(value || "")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (letter) => letter.toUpperCase()));
 }
 
 async function askInput(rl, spec) {

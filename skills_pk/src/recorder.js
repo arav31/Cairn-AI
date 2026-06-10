@@ -100,6 +100,60 @@ const GOAL_PATH_PATTERNS = [
   "/checkout",
 ];
 
+const TECHNICAL_FIELD_PATTERNS = [
+  /^__.+$/i,
+  /^_+(?:method|token|csrf|xsrf)$/i,
+  /^viewstate(?:generator)?$/i,
+  /^eventvalidation$/i,
+  /^eventtarget$/i,
+  /^eventargument$/i,
+  /^lastfocus$/i,
+  /csrf/i,
+  /xsrf/i,
+  /anti[-_]?forgery/i,
+  /authenticity[_-]?token/i,
+  /requestverificationtoken/i,
+  /verificationtoken/i,
+  /captcha/i,
+  /recaptcha/i,
+  /turnstile/i,
+  /nonce/i,
+  /(?:session|respondent|blockgroup|request|visitor|client|correlation|interaction).*(?:uuid|id|token|key)/i,
+  /(?:uuid|id|token|key).*(?:session|respondent|blockgroup|request|visitor|client|correlation|interaction)/i,
+  /respondentuuid/i,
+  /blockgroupuuid/i,
+  /fingerprint/i,
+  /trace/i,
+];
+
+const NON_USER_CONTROL_PATTERNS = [
+  /(?:^|[_-])submit(?:$|[_-])/i,
+  /(?:^|[_-])button(?:$|[_-])/i,
+  /(?:^|[_-])btn(?:$|[_-])/i,
+  /(?:^|[_-])but(?:$|[_-])/i,
+  /(?:^|[_-])action(?:$|[_-])/i,
+  /(?:^|[_-])command(?:$|[_-])/i,
+  /(?:^|[_-])event(?:$|[_-])/i,
+  /^gen(?:erated)?[_-].*(?:num|count|index)$/i,
+];
+
+const REPEATABLE_GROUP_KEYS = [
+  "module",
+  "mod",
+  "course",
+  "subject",
+  "item",
+  "traveller",
+  "traveler",
+  "passenger",
+  "person",
+  "member",
+  "dependent",
+  "applicant",
+  "child",
+  "row",
+];
+
 export async function recordWorkflow({ url, name, goal, headless = false, waitForDone } = {}) {
   const { child, port, profileDir } = launchChrome({ url, headless });
   console.log(`Chrome launched on debug port ${port}.`);
@@ -285,7 +339,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
   const analysis = await safeAnalyzeRecording(recording, candidates);
 
   const preferredFallback = await createPreferredFallbackSkill({ recording, recordingFile, name, analysis });
-  if (preferredFallback) return writeDraftSkill(finalizeSkill(preferredFallback, { analysis, recordingFile }));
+  if (preferredFallback) return writeDraftSkill(finalizeSkill(preferredFallback, { analysis, recordingFile, recording }));
 
   const requestedCandidate = Number.isInteger(candidateIndex) ? candidates[candidateIndex] : null;
   const orderedCandidates = orderCandidatesByAnalysis([
@@ -299,7 +353,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
 
     const skill = await createSkillForRequest({ recording, request, recordingFile, name, analysis });
     if (skill) {
-      return writeDraftSkill(finalizeSkill(skill, { analysis, recordingFile }));
+      return writeDraftSkill(finalizeSkill(skill, { analysis, recordingFile, recording }));
     }
   }
 
@@ -308,7 +362,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
     await maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
 
   if (fallbackSkill) {
-    return writeDraftSkill(finalizeSkill(fallbackSkill, { analysis, recordingFile }));
+    return writeDraftSkill(finalizeSkill(fallbackSkill, { analysis, recordingFile, recording }));
   }
 
   throw new Error("No reusable API endpoint, result URL, or browser input workflow was detected. Record the workflow again after interacting with the actual form/result controls.");
@@ -344,7 +398,7 @@ async function writeDraftSkill(skill) {
   return file;
 }
 
-function finalizeSkill(skill, { analysis, recordingFile }) {
+function finalizeSkill(skill, { analysis, recordingFile, recording }) {
   const withMetadata = {
     ...skill,
     learning: {
@@ -357,7 +411,181 @@ function finalizeSkill(skill, { analysis, recordingFile }) {
       ...(skill.learning || {}),
     },
   };
-  return applyLlmAnalysisToSkill(withMetadata, analysis);
+  return ensureConversationMetadata(applyLlmAnalysisToSkill(withMetadata, analysis), recording, analysis);
+}
+
+function ensureConversationMetadata(skill, recording, analysis) {
+  const inputs = (skill.inputs || []).filter((inputSpec) => !isTechnicalInputSpec(inputSpec));
+  const inputIds = new Set(inputs.map((inputSpec) => inputSpec.id));
+  const analysisConversation = analysis?.conversation || {};
+  const existingConversation = skill.conversation || {};
+  const inferredGoal = cleanText(analysis?.goal || "");
+  const workflowName = cleanText(recording?.pageFields?.title || skill.name || "this workflow");
+  const fallbackIntro = inferredGoal
+    ? `I'll help you ${lowercaseFirst(inferredGoal)}. I'll ask for the details the website needs, then run the saved workflow.`
+    : `I'll help you run ${workflowName}. I'll ask for the details the website needs, then run the saved workflow.`;
+
+  const requestedGroups = Array.isArray(analysisConversation.inputGroups)
+    ? analysisConversation.inputGroups
+    : Array.isArray(existingConversation.inputGroups)
+      ? existingConversation.inputGroups
+      : [];
+  const groups = sanitizeConversationGroups(requestedGroups, inputs, inputIds);
+  const groupedIds = new Set(groups.flatMap((group) => group.inputIds));
+  const remaining = inputs.filter((inputSpec) => !groupedIds.has(inputSpec.id));
+  if (remaining.length) groups.push(...inferConversationGroups(remaining));
+
+  return applyRepeatableGroupCounters({
+    ...skill,
+    inputs,
+    conversation: {
+      intro: cleanText(analysisConversation.intro || existingConversation.intro || fallbackIntro),
+      inputGroups: groups,
+    },
+  });
+}
+
+function sanitizeConversationGroups(groups, inputs, inputIds) {
+  const inputById = new Map(inputs.map((inputSpec) => [inputSpec.id, inputSpec]));
+  return groups
+    .map((group) => {
+      const ids = (group.inputIds || [])
+        .map(String)
+        .map((id) => inputById.has(id) ? id : findInputIdByLooseMatch(inputById, id))
+        .filter((id, index, all) => id && inputIds.has(id) && all.indexOf(id) === index);
+      if (!ids.length) return null;
+      const key = commonGroupKey(ids.map((id) => inputById.get(id))) || ids[0];
+      return {
+        title: cleanText(group.title || group.label || groupTitleFromKey(key)),
+        description: cleanText(group.description || ""),
+        inputIds: ids,
+        repeatable: Boolean(group.repeatable) || isRepeatableGroupKey(key),
+        addAnotherQuestion: cleanText(group.addAnotherQuestion || defaultAddAnotherQuestion(key)),
+      };
+    })
+    .filter(Boolean);
+}
+
+function inferConversationGroups(inputs) {
+  const byKey = new Map();
+  for (const inputSpec of inputs) {
+    const key = groupKeyForInput(inputSpec);
+    if (!byKey.has(key)) byKey.set(key, []);
+    byKey.get(key).push(inputSpec);
+  }
+
+  const groups = [];
+  for (const [key, groupInputs] of byKey) {
+    groups.push({
+      title: groupTitleFromKey(key),
+      description: "",
+      inputIds: groupInputs.map((inputSpec) => inputSpec.id),
+      repeatable: isRepeatableGroupKey(key) && groupInputs.length > 1,
+      addAnotherQuestion: defaultAddAnotherQuestion(key),
+    });
+  }
+  return groups;
+}
+
+function findInputIdByLooseMatch(inputById, candidate) {
+  const normalized = normalizeFieldName(candidate);
+  for (const [id, inputSpec] of inputById) {
+    const keys = [id, inputSpec.question].filter(Boolean).map(normalizeFieldName);
+    if (keys.some((key) => key === normalized || key.includes(normalized) || normalized.includes(key))) return id;
+  }
+  return "";
+}
+
+function commonGroupKey(inputs) {
+  const keys = inputs.map(groupKeyForInput).filter(Boolean);
+  if (!keys.length) return "";
+  const counts = new Map();
+  for (const key of keys) counts.set(key, (counts.get(key) || 0) + 1);
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+function groupKeyForInput(inputSpec) {
+  const inputId = inputSpec.id || "";
+  const key = baseParamName(inputId)
+    .replace(/\[\d+\]/g, "")
+    .split(/[_-]+/)
+    .find((part) => part && part.length > 1);
+  if (key && REPEATABLE_GROUP_KEYS.includes(key.toLowerCase())) return key.toLowerCase();
+  if (key && inputId.split(/[_-]+/).length > 1) return key.toLowerCase();
+  return "details";
+}
+
+function groupTitleFromKey(key) {
+  const normalized = String(key || "details").toLowerCase();
+  if (["mod", "module", "course", "subject"].includes(normalized)) return "Module details";
+  if (["traveller", "traveler", "passenger", "person"].includes(normalized)) return "Traveller details";
+  if (["dependent", "child", "member", "applicant"].includes(normalized)) return `${humanizeName(normalized)} details`;
+  if (normalized === "details") return "Details";
+  return `${humanizeName(normalized)} details`;
+}
+
+function isRepeatableGroupKey(key) {
+  return REPEATABLE_GROUP_KEYS.includes(String(key || "").toLowerCase());
+}
+
+function defaultAddAnotherQuestion(key) {
+  const normalized = String(key || "").toLowerCase();
+  if (["mod", "module", "course", "subject"].includes(normalized)) return "Do you want to add another module?";
+  if (["traveller", "traveler", "passenger", "person"].includes(normalized)) return "Do you want to add another traveller?";
+  if (normalized === "child") return "Do you want to add another child?";
+  if (normalized === "dependent") return "Do you want to add another dependent?";
+  if (["item", "row"].includes(normalized)) return "Do you want to add another item?";
+  return "Do you want to add another entry?";
+}
+
+function applyRepeatableGroupCounters(skill) {
+  const repeatableGroups = (skill.conversation?.inputGroups || []).filter((group) => group.repeatable && group.inputIds?.length);
+  if (!repeatableGroups.length) return skill;
+
+  const updated = structuredClone(skill);
+  updated.computed = { ...(updated.computed || {}) };
+  for (const group of repeatableGroups) {
+    const firstInputId = group.inputIds[0];
+    const groupKey = groupKeyForInput({ id: firstInputId });
+    const countId = uniqueInputId(`${groupKey}-count`, new Set(Object.keys(updated.computed)));
+    updated.computed[countId] = { fn: "count", input: firstInputId };
+    for (const step of updated.steps || []) {
+      if (step.request) {
+        step.request = replaceGeneratedCounterValues(step.request, groupKey, repeatableGroups.length === 1, `{{${countId}}}`);
+      }
+    }
+  }
+  return updated;
+}
+
+function replaceGeneratedCounterValues(value, groupKey, onlyRepeatableGroup, replacement) {
+  if (Array.isArray(value)) {
+    return value.map((item) => replaceGeneratedCounterValues(item, groupKey, onlyRepeatableGroup, replacement));
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const output = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (isGeneratedCounterName(key)
+      && (onlyRepeatableGroup || normalizeFieldName(key).includes(normalizeFieldName(groupKey)))
+      && isPrimitiveCounterValue(child)) {
+      output[key] = replacement;
+      continue;
+    }
+    output[key] = replaceGeneratedCounterValues(child, groupKey, onlyRepeatableGroup, replacement);
+  }
+  return output;
+}
+
+function isGeneratedCounterName(name) {
+  const normalized = normalizeFieldName(name);
+  return /^gen(?:erated)?.*(?:num|count|index)$/.test(normalized)
+    || /(?:row|item|entry).*(?:num|count|index)$/.test(normalized);
+}
+
+function isPrimitiveCounterValue(value) {
+  if (Array.isArray(value) || (value && typeof value === "object")) return false;
+  return value === "" || /^\d+$/.test(String(value));
 }
 
 function inferSkillStrategy(skill) {
@@ -392,10 +620,9 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
         inputs = engineered.inputs;
         computed = engineered.computed;
       } else {
-        inputs = flattenScalars(body)
-          .filter((row) => row.value !== "" && row.value !== null && row.value !== undefined)
-          .map((row) => toBodyInputSpec(row, fields));
-        body = templateScalars(body);
+        const conservative = buildConservativeBodyTemplate(body, fields);
+        body = conservative.body;
+        inputs = conservative.inputs;
       }
     } catch {
       const fields = await getPageFieldCatalog(recording);
@@ -637,6 +864,8 @@ function buildEngineeredBodyTemplate(body, fields, analysis) {
   const inputIdByMapping = new Map();
 
   for (const row of rows) {
+    const field = findFieldForParam(fields, inputIdFromPath(row.path));
+    const technicalOrGenerated = isTechnicalPayloadPath(row.path) || isTechnicalOrGeneratedControl(lastPathName(row.path), field);
     const volatile = findPathPlan(row.path, plan.volatileFields || []);
     if (volatile) {
       if (volatile.handling === "omit") {
@@ -650,6 +879,7 @@ function buildEngineeredBodyTemplate(body, fields, analysis) {
         continue;
       }
       if (volatile.handling === "ask_user") {
+        if (technicalOrGenerated) continue;
         const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
         inputs.push(input);
         setPathValue(template, row.path, `{{${input.id}}}`);
@@ -659,6 +889,7 @@ function buildEngineeredBodyTemplate(body, fields, analysis) {
 
     const mapping = findPathPlan(row.path, mappings);
     if (mapping) {
+      if (technicalOrGenerated) continue;
       const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
       let inputId = inputIdByMapping.get(mappingKey);
       if (!inputId) {
@@ -674,10 +905,27 @@ function buildEngineeredBodyTemplate(body, fields, analysis) {
   return { body: template, inputs, computed };
 }
 
+function buildConservativeBodyTemplate(body, fields) {
+  const template = structuredClone(body);
+  const inputs = [];
+  const usedInputIds = new Set();
+  for (const row of flattenScalars(body)) {
+    if (row.value === "" || row.value === null || row.value === undefined) continue;
+    const field = findFieldForParam(fields, inputIdFromPath(row.path));
+    if (!shouldAskPayloadPath(row.path, [row.value], field)) continue;
+    const input = toBodyInputSpec(row, fields, usedInputIds);
+    inputs.push(input);
+    setPathValue(template, row.path, `{{${input.id}}}`);
+  }
+  return { body: template, inputs };
+}
+
 function inputFromMappingOrRow(mapping, row, fields, usedInputIds) {
   const field = findFieldForMapping(fields, mapping, row);
   const choices = cleanChoices(field?.options || []);
-  const inputId = uniqueInputId(slugify(mapping?.inputId || mapping?.id || mapping?.question || inputIdFromPath(row.path)), usedInputIds);
+  const preferredId = [mapping?.inputId, mapping?.id, inputIdFromPath(row.path), mapping?.question]
+    .find((candidate) => candidate && !isTechnicalFieldName(candidate)) || "input";
+  const inputId = uniqueInputId(slugify(preferredId), usedInputIds);
   const spec = {
     id: inputId,
     question: questionForEngineeredInput(mapping, row, field),
@@ -715,7 +963,7 @@ function findFieldForMapping(fields, mapping, row) {
 
 function questionForEngineeredInput(mapping, row, field) {
   const question = cleanText(mapping?.question || "");
-  if (question && !/^\$\.|uuid|value for/i.test(question)) return question;
+  if (question && !/^\$\.|uuid|value for/i.test(question) && !isTechnicalFieldName(question)) return question;
   return questionForField(inputIdFromPath(row.path), field);
 }
 
@@ -802,10 +1050,15 @@ function buildFormBodyTemplate(postData, fields, analysis, request) {
   for (const [paramName, value] of params.entries()) {
     const row = { path: `form.${paramName}`, value };
     const field = findFieldForParam(fields, paramName);
+    const technicalOrGenerated = isTechnicalOrGeneratedControl(paramName, field);
     const volatile = usePlan ? findPathPlan(row.path, plan.volatileFields || []) : null;
 
     if (volatile?.handling === "omit") continue;
     if (volatile?.handling === "ask_user") {
+      if (technicalOrGenerated) {
+        appendFormTemplateValue(form, paramName, value);
+        continue;
+      }
       const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
       inputs.push(input);
       appendFormTemplateValue(form, paramName, `{{${input.id}}}`);
@@ -814,6 +1067,10 @@ function buildFormBodyTemplate(postData, fields, analysis, request) {
 
     const mapping = usePlan ? findPathPlan(row.path, mappings) : null;
     if (mapping) {
+      if (technicalOrGenerated) {
+        appendFormTemplateValue(form, paramName, value);
+        continue;
+      }
       const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
       let inputId = inputIdByMapping.get(mappingKey);
       if (!inputId) {
@@ -877,12 +1134,13 @@ function appendFormTemplateValue(form, key, value) {
   form[key] = [form[key], value];
 }
 
-function toBodyInputSpec(row, fields) {
+function toBodyInputSpec(row, fields, usedInputIds = new Set()) {
   const inputName = inputIdFromPath(row.path);
   const field = findFieldForParam(fields, inputName);
   const choices = cleanChoices(field?.options || []);
+  const inputId = uniqueInputId(slugify(field?.label || field?.placeholder || inputName), usedInputIds);
   const spec = {
-    id: inputName,
+    id: inputId,
     question: questionForField(inputName, field),
     type: typeof row.value === "number" ? "number" : choices.length ? "choice" : "string",
   };
@@ -993,10 +1251,16 @@ function buildEngineeredQueryTemplate(url, fields, analysis) {
       path: `query.${paramName}`,
       value: values.length > 1 ? values : values[0],
     };
+    const field = findFieldForParam(fields, paramName);
+    const technicalOrGenerated = isTechnicalOrGeneratedControl(paramName, field);
 
     const volatile = findPathPlan(row.path, plan.volatileFields || []);
     if (volatile?.handling === "omit") continue;
     if (volatile?.handling === "ask_user") {
+      if (technicalOrGenerated) {
+        query[paramName] = values.length > 1 ? values : values[0];
+        continue;
+      }
       const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
       inputs.push(input);
       query[paramName] = { $value: `{{${input.id}}}` };
@@ -1005,6 +1269,10 @@ function buildEngineeredQueryTemplate(url, fields, analysis) {
 
     const mapping = findPathPlan(row.path, mappings);
     if (mapping) {
+      if (technicalOrGenerated) {
+        query[paramName] = values.length > 1 ? values : values[0];
+        continue;
+      }
       const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
       let inputId = inputIdByMapping.get(mappingKey);
       if (!inputId) {
@@ -1055,9 +1323,17 @@ function shouldSkipQueryParam(name, values, field) {
 }
 
 function shouldAskQueryParam(name, values, field) {
-  if (field && !isLikelyHiddenField(field)) return true;
-  if (values.some((value) => value !== "")) return true;
-  return baseParamName(name) === "term";
+  return shouldAskPayloadPath(name, values, field);
+}
+
+function shouldAskPayloadPath(name, values, field) {
+  if (isTechnicalPayloadPath(name) || isTechnicalField(field)) return false;
+  if (field) return isUserFacingField(field);
+  if (isNonUserControlName(name)) return false;
+  if (values.every((value) => value === "" || value === undefined || value === null)) {
+    return ["term", "q", "query", "search", "keyword", "keywords"].includes(baseParamName(lastPathName(name)).toLowerCase());
+  }
+  return !isTechnicalFieldName(name);
 }
 
 function toQueryInputSpec(inputId, paramName, values, field) {
@@ -1358,10 +1634,64 @@ function normalizeFieldRecord(field) {
   };
 }
 
+function isUserFacingField(field) {
+  if (!field || isTechnicalField(field) || isLikelyHiddenField(field)) return false;
+  const type = String(field.type || "").toLowerCase();
+  if (["submit", "button", "image", "reset", "file"].includes(type)) return type === "file";
+  return field.visible === true || Boolean(field.label || field.placeholder || field.options?.length || field.name || field.id);
+}
+
 function isLikelyHiddenField(field) {
+  if (!field) return false;
+  const type = String(field.type || "").toLowerCase();
+  if (["hidden", "submit", "button", "image", "reset"].includes(type)) return true;
   if (field.visible === true) return false;
   if (field.tag === "select" && field.options?.length) return false;
-  return ["hidden", "submit", "button", "image"].includes(String(field.type || "").toLowerCase());
+  return field.visible === false;
+}
+
+function isTechnicalField(field) {
+  if (!field) return false;
+  return [field.name, field.id, field.dataInput, field.dataSelect, field.label, field.placeholder]
+    .filter(Boolean)
+    .some(isTechnicalFieldName);
+}
+
+function isTechnicalOrGeneratedControl(name, field) {
+  if (isTechnicalFieldName(name) || isTechnicalField(field)) return true;
+  if (field && isUserFacingField(field)) return false;
+  return isNonUserControlName(name);
+}
+
+function isTechnicalPayloadPath(pathExpression) {
+  const raw = String(pathExpression || "");
+  return raw.split(/[.[\]]+/).filter(Boolean).some(isTechnicalFieldName);
+}
+
+function isTechnicalFieldName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return false;
+  const base = baseParamName(lastPathName(raw));
+  const normalized = normalizeFieldName(base);
+  return TECHNICAL_FIELD_PATTERNS.some((pattern) => pattern.test(raw) || pattern.test(base) || pattern.test(normalized));
+}
+
+function isNonUserControlName(name) {
+  const raw = String(name || "").trim();
+  if (!raw) return false;
+  const base = baseParamName(lastPathName(raw));
+  const normalized = normalizeFieldName(base);
+  return NON_USER_CONTROL_PATTERNS.some((pattern) => pattern.test(raw) || pattern.test(base) || pattern.test(normalized));
+}
+
+function isTechnicalInputSpec(inputSpec) {
+  const haystack = [inputSpec?.id, inputSpec?.question, inputSpec?.description]
+    .filter(Boolean)
+    .join(" ");
+  return isTechnicalFieldName(inputSpec?.id)
+    || isTechnicalFieldName(inputSpec?.question)
+    || /^\s*(?:value for|\$\.)/i.test(String(inputSpec?.question || ""))
+    || /\b(?:viewstate|eventvalidation|csrf|xsrf|captcha|recaptcha|turnstile|nonce|authenticity token|request verification token)\b/i.test(haystack);
 }
 
 function baseParamName(name) {
@@ -1377,11 +1707,36 @@ function normalizeFieldName(name) {
 }
 
 function humanizeName(name) {
-  return cleanText(String(name)
+  const words = String(name)
     .replace(/\[\]$/, "")
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (letter) => letter.toUpperCase()));
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => {
+      const lower = word.toLowerCase();
+      const replacements = {
+        cap: "CAP",
+        cgpa: "CGPA",
+        gpa: "GPA",
+        dob: "Date of birth",
+        mc: "MCs",
+        mcs: "MCs",
+        mod: "Module",
+        num: "Number",
+        qty: "Quantity",
+        url: "URL",
+        id: "ID",
+      };
+      return replacements[lower] || lower.replace(/\b\w/g, (letter) => letter.toUpperCase());
+    });
+  return cleanText(words.join(" "));
+}
+
+function lowercaseFirst(value) {
+  const text = cleanText(value);
+  if (!text) return "";
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 function cleanText(value) {

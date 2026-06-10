@@ -199,7 +199,8 @@ After recording, the learner:
 - Falls back to final URL query parameters when the site computes client-side.
 - Falls back to recorded browser replay when no endpoint exists.
 - Extracts visible labels/options from the website where possible.
-- Improves draft descriptions, strategy metadata, endpoint selection, payload mappings, input questions, volatile fields, and output labels from contextual evidence.
+- Filters hidden/framework/generated fields out of the chatbot prompt layer.
+- Improves draft descriptions, strategy metadata, endpoint selection, payload mappings, input questions, conversation groups, volatile fields, and output labels from contextual evidence.
 - Generates a draft file under `skills/*.draft.json`.
 
 ### 4. Promote The Draft
@@ -385,6 +386,7 @@ The model returns:
 - preferred candidate request id when relevant
 - `endpointEngineering`, including selected endpoint, method, payload type, endpoint purpose, user input mappings, constants, volatile fields, preflight hints, output extraction, implementation notes, warnings, and confidence
 - cleaned website-like input questions
+- a short chatbot intro and logical input groups
 - important actions/buttons
 - expected outputs
 - risks and review notes
@@ -399,6 +401,7 @@ The generator uses that result to:
 - keep recorded constants that are part of the product/workflow rather than user input
 - use output extraction paths or result-section hints from the model when they are available
 - rewrite bad questions like raw JSON paths into human website-style prompts
+- ask grouped chatbot questions instead of dumping a flat payload-field list
 - attach a `learning` metadata block to the draft skill
 - print a learning summary in the CLI, including selected endpoint, payload type, input mappings, volatile fields, preflight hints, and warnings
 
@@ -413,6 +416,26 @@ SKILL_BUILDER_LLM_REQUIRED=1
 ## How Draft Generation Works
 
 The draft generator tries strategies in order. When LLM analysis is available, it can influence the order, but it does not bypass the same safety filters.
+
+### Prompt Hygiene And Conversation Flow
+
+The generator separates two kinds of request data:
+
+- User-facing inputs: visible text fields, selects, textareas, file controls, choices, and values that the website user actually enters or chooses.
+- Replay internals: hidden state, framework fields, submit buttons, generated counters, CSRF/XSRF/authenticity/request verification tokens, nonces, UUID/session/correlation ids, CAPTCHA fields, and similar transport details.
+
+Replay internals are kept in the request when they are needed, or marked as volatile/preflight/computed values, but they are not saved as user questions. For example, ASP.NET fields such as `__VIEWSTATE`, `__VIEWSTATEGENERATOR`, and `__EVENTVALIDATION` stay inside the form payload and should never appear as chatbot prompts.
+
+When the LLM provider is enabled, it must also return a `conversation` plan:
+
+- `intro`: one short sentence explaining what the skill will do
+- `inputGroups`: ordered groups of related inputs
+- `repeatable`: whether the group can be asked multiple times
+- `addAnotherQuestion`: the follow-up prompt for repeated entities
+
+This is how a course/CAP calculator can ask for `Module Code`, `Module MCs`, and `Module Grade`, then ask `Do you want to add another module?`, instead of asking raw payload names.
+
+If GPT is unavailable, the deterministic generator still applies the same technical-field filters and infers simple groups from field names and visible labels.
 
 ### 1. Tally Form Strategy
 
@@ -457,7 +480,7 @@ For JSON POST/PUT/PATCH endpoints, the generator:
 - Regenerates UUID-like volatile fields when the model marks them as generated values.
 - Omits volatile fields when the model says they should not be replayed.
 - Keeps unmapped constants from the recorded body for review.
-- Falls back to flattening scalar fields when GPT is unavailable or no mapping plan exists.
+- Falls back to templating only non-technical, user-facing scalar fields when GPT is unavailable or no mapping plan exists.
 
 This is the fallback for reusable API endpoints that do not have a custom provider parser.
 
@@ -533,6 +556,35 @@ Minimal shape:
 }
 ```
 
+Conversation metadata is optional but generated drafts now include it when possible:
+
+```json
+{
+  "conversation": {
+    "intro": "I'll help you run the quote workflow. I'll ask for the details the website needs, then run the saved workflow.",
+    "inputGroups": [
+      {
+        "title": "Traveller details",
+        "description": "",
+        "inputIds": ["traveller-age", "traveller-region"],
+        "repeatable": true,
+        "addAnotherQuestion": "Do you want to add another traveller?"
+      }
+    ]
+  }
+}
+```
+
+Repeatable groups collect arrays at runtime. If the recorded request has a generated matching count field, the draft can add a computed count:
+
+```json
+{
+  "computed": {
+    "traveller-count": { "fn": "count", "input": "traveller-age" }
+  }
+}
+```
+
 Input types supported by the CLI:
 
 - `string`
@@ -551,7 +603,7 @@ Runtime execution is implemented in `src/skill-runner.js`.
 The runner:
 
 1. Normalizes raw inputs.
-2. Applies computed values such as UUIDs or formatted dates.
+2. Applies computed values such as UUIDs, formatted dates, ages, or repeatable-group counts.
 3. Uploads provider-specific files if required.
 4. Renders template placeholders like `{{age}}`.
 5. Executes each step in order.
@@ -703,6 +755,10 @@ Check that Chrome is installed. `src/cdp.js` searches common Chrome paths on Win
 ### The generated skill asks bad questions
 
 Record again and make sure you actually interact with the visible website form fields before pressing Enter. The recorder uses field labels, placeholders, selected options, and interaction events to infer questions.
+
+If you see prompts such as `VIEWSTATE`, `EVENTVALIDATION`, `csrf`, `sessionUuid`, `respondentUuid`, `Value for $.payload.path`, or generated button/counter names, the skill was probably drafted before prompt hygiene was added or the recording did not expose enough visible-field evidence. Re-draft from the recording or re-learn the skill with the current version. Those fields should be replay internals, not questions.
+
+Enable `OPENAI_API_KEY` or `NVIDIA_API_KEY` for better contextual rewriting. The LLM pass is specifically asked to infer what the website is doing, write a short chatbot intro, group related questions, detect repeated entities, and keep hidden/generated transport fields out of the user prompt layer.
 
 ### The skill learned CSS, images, or analytics
 

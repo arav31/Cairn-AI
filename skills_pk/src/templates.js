@@ -55,6 +55,8 @@ function computeValue(spec, context, now) {
   switch (spec.fn) {
     case "uuid":
       return crypto.randomUUID();
+    case "count":
+      return countValue(context[spec.input]);
     case "dateFormat":
       return formatDate(context[spec.input], spec.format);
     case "ageNextBirthday":
@@ -62,6 +64,12 @@ function computeValue(spec, context, now) {
     default:
       throw new Error(`Unknown computed function: ${spec.fn}`);
   }
+}
+
+function countValue(value) {
+  if (Array.isArray(value)) return value.length;
+  if (value === undefined || value === null || value === "") return 0;
+  return 1;
 }
 
 function formatDate(value, format) {

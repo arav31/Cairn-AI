@@ -6,7 +6,7 @@ const DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const ANALYSIS_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["summary", "goal", "confidence", "strategy", "endpointEngineering", "inputs", "actions", "outputs", "risks"],
+  required: ["summary", "goal", "confidence", "strategy", "endpointEngineering", "inputs", "actions", "outputs", "conversation", "risks"],
   properties: {
     summary: { type: "string" },
     goal: { type: "string" },
@@ -194,6 +194,32 @@ const ANALYSIS_SCHEMA = {
         },
       },
     },
+    conversation: {
+      type: "object",
+      additionalProperties: false,
+      required: ["intro", "inputGroups"],
+      properties: {
+        intro: { type: "string" },
+        inputGroups: {
+          type: "array",
+          items: {
+            type: "object",
+            additionalProperties: false,
+            required: ["title", "description", "inputIds", "repeatable", "addAnotherQuestion"],
+            properties: {
+              title: { type: "string" },
+              description: { type: "string" },
+              inputIds: {
+                type: "array",
+                items: { type: "string" },
+              },
+              repeatable: { type: "boolean" },
+              addAnotherQuestion: { type: "string" },
+            },
+          },
+        },
+      },
+    },
     risks: {
       type: "array",
       items: { type: "string" },
@@ -295,12 +321,16 @@ export function applyLlmAnalysisToSkill(skill, analysis) {
   };
 
   if (Array.isArray(improved.inputs)) {
-    improved.inputs = improved.inputs.map((input) => improveInput(input, analysis.inputs || []));
+    improved.inputs = improved.inputs
+      .map((input) => improveInput(input, analysis.inputs || []))
+      .filter((input) => !isTechnicalInput(input));
   }
 
   if (Array.isArray(improved.outputs)) {
     improved.outputs = improveOutputs(improved, analysis);
   }
+
+  improved.conversation = improveConversation(improved, analysis);
 
   return improved;
 }
@@ -534,10 +564,14 @@ function analyzerInstructions() {
     "Infer the website's purpose from page text, visible fields, clicks, final URL, candidate requests, request payload shapes, and response previews.",
     "Identify which captured request actually completes the user goal, which request fields are user-controlled, which are constants, and which are volatile session/generated fields.",
     "For payload paths, use JSONPath-like strings such as $.tripType, $.travellers[0].age, query.region, or form.height.",
+    "Never turn hidden, framework, generated, or transport fields into user questions. Examples include __VIEWSTATE, __VIEWSTATEGENERATOR, __EVENTVALIDATION, __EVENTTARGET, CSRF/XSRF/authenticity/request verification tokens, nonces, UUID/session/correlation IDs, captcha/turnstile/recaptcha fields, submit buttons, counters, and generated row numbers.",
+    "Classify technical fields as constantsToKeep, volatileFields, requiredPreflightSteps, or replay details. Only fields a real website user would knowingly enter/select/upload belong in inputs or userInputMappings.",
     "Prefer direct_api or query_api only when a candidate request clearly represents the final user goal.",
     "Use browser_result_url when the final URL query appears to carry the result state.",
     "Use browser_replay when the workflow depends on visible UI interactions and no reusable endpoint is clear.",
-    "Write input questions as a user would see them on the website. Avoid raw JSON paths or UUIDs.",
+    "Write input questions as a user would see them on the website. If the website labels are unclear, rewrite them into concise natural questions based on page context and nearby options. Avoid raw JSON paths, UUIDs, request field names, or generic prompts such as 'Value for ...'.",
+    "Return a conversation intro explaining in one short sentence what the learned skill will do, then group questions into a natural chatbot flow using inputGroups.",
+    "For repeated visible rows or entities, such as modules, travellers, passengers, dependents, products, or jobs, create one repeatable input group and write a natural addAnotherQuestion.",
     "For outputs, identify only the important user-facing result fields, such as price, quote, BMI score, category, risk, eligibility, duration, distance, or plan summary.",
     "Do not make outputs point to the entire page or entire response when a smaller result section or JSON path is evident.",
     "Never recommend bypassing CAPTCHA, login, payment, access control, bot protection, or website security.",
@@ -593,6 +627,7 @@ function normalizeAnalysis(analysis, evidence) {
     inputs: Array.isArray(analysis.inputs) ? analysis.inputs.map(normalizeInputAnalysis) : [],
     actions: Array.isArray(analysis.actions) ? analysis.actions.map(normalizeActionAnalysis) : [],
     outputs: Array.isArray(analysis.outputs) ? analysis.outputs.map(normalizeOutputAnalysis) : [],
+    conversation: normalizeConversation(analysis.conversation || {}),
     risks: Array.isArray(analysis.risks) ? analysis.risks.map(cleanText).filter(Boolean) : [],
   };
 }
@@ -691,6 +726,25 @@ function normalizeOutputAnalysis(output) {
   };
 }
 
+function normalizeConversation(conversation) {
+  return {
+    intro: cleanText(conversation.intro || ""),
+    inputGroups: Array.isArray(conversation.inputGroups)
+      ? conversation.inputGroups.map(normalizeInputGroup).filter((group) => group.inputIds.length)
+      : [],
+  };
+}
+
+function normalizeInputGroup(group) {
+  return {
+    title: cleanText(group.title || "Details"),
+    description: cleanText(group.description || ""),
+    inputIds: Array.isArray(group.inputIds) ? group.inputIds.map(slugLike).filter(Boolean) : [],
+    repeatable: Boolean(group.repeatable),
+    addAnotherQuestion: cleanText(group.addAnotherQuestion || ""),
+  };
+}
+
 function improveInput(input, analyzedInputs) {
   const match = bestInputMatch(input, analyzedInputs);
   if (!match) return input;
@@ -738,6 +792,45 @@ function improveOutputs(skill, analysis) {
   return existing;
 }
 
+function improveConversation(skill, analysis) {
+  const inputs = skill.inputs || [];
+  const inputById = new Map(inputs.map((input) => [input.id, input]));
+  const intro = cleanText(analysis.conversation?.intro || analysis.summary || "");
+  const groups = Array.isArray(analysis.conversation?.inputGroups)
+    ? analysis.conversation.inputGroups
+    : [];
+  const sanitizedGroups = groups
+    .map((group) => {
+      const inputIds = (group.inputIds || [])
+        .map((id) => inputById.has(id) ? id : findInputIdByLooseMatch(inputById, id))
+        .filter((id, index, all) => id && all.indexOf(id) === index);
+      if (!inputIds.length) return null;
+      return {
+        title: cleanText(group.title || "Details"),
+        description: cleanText(group.description || ""),
+        inputIds,
+        repeatable: Boolean(group.repeatable),
+        addAnotherQuestion: cleanText(group.addAnotherQuestion || ""),
+      };
+    })
+    .filter(Boolean);
+
+  return {
+    intro,
+    inputGroups: sanitizedGroups,
+  };
+}
+
+function findInputIdByLooseMatch(inputById, candidate) {
+  const normalized = normalizeKey(candidate);
+  if (!normalized) return "";
+  for (const [id, input] of inputById) {
+    const keys = [id, input.question].filter(Boolean).map(normalizeKey);
+    if (keys.some((key) => key === normalized || key.includes(normalized) || normalized.includes(key))) return id;
+  }
+  return "";
+}
+
 function bestInputMatch(input, analyzedInputs) {
   const inputKeys = new Set([
     input.id,
@@ -781,7 +874,45 @@ function enhancedDescription(existing, analysis) {
 function looksLikeGoodQuestion(question) {
   if (!question || question.length < 2 || question.length > 120) return false;
   if (/^\$\.|uuid|blockGroupUuid|value for/i.test(question)) return false;
+  if (isTechnicalName(question)) return false;
   return true;
+}
+
+function isTechnicalInput(input) {
+  const haystack = [input?.id, input?.question, input?.description]
+    .filter(Boolean)
+    .join(" ");
+  return isTechnicalName(input?.id)
+    || /^\s*(?:value for|\$\.)/i.test(String(input?.question || ""))
+    || /\b(?:viewstate|eventvalidation|csrf|xsrf|captcha|recaptcha|turnstile|nonce|authenticity token|request verification token)\b/i.test(haystack);
+}
+
+function isTechnicalName(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return false;
+  const normalized = normalizeKey(raw);
+  return [
+    /^__.+$/i,
+    /^_+(?:method|token|csrf|xsrf)$/i,
+    /^viewstate(?:generator)?$/i,
+    /^eventvalidation$/i,
+    /^eventtarget$/i,
+    /^eventargument$/i,
+    /^lastfocus$/i,
+    /csrf/i,
+    /xsrf/i,
+    /antiforgery/i,
+    /authenticitytoken/i,
+    /requestverificationtoken/i,
+    /verificationtoken/i,
+    /captcha/i,
+    /recaptcha/i,
+    /turnstile/i,
+    /nonce/i,
+    /(?:session|respondent|blockgroup|request|visitor|client|correlation|interaction).*(?:uuid|id|token|key)/i,
+    /(?:uuid|id|token|key).*(?:session|respondent|blockgroup|request|visitor|client|correlation|interaction)/i,
+    /^gen(?:erated)?.*(?:num|count|index)$/i,
+  ].some((pattern) => pattern.test(raw) || pattern.test(normalized));
 }
 
 function canSafelyUseType(input, analyzedType) {

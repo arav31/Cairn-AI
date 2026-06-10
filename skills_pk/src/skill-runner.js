@@ -640,9 +640,11 @@ export function normalizeInputs(skill, rawInputs) {
     const value = rawInputs[input.id] ?? input.default;
     if ((value === undefined || value === "") && input.optional) continue;
     if (input.type === "number" && value !== undefined && value !== "") {
-      normalized[input.id] = Number(value);
+      normalized[input.id] = Array.isArray(value) ? value.map((item) => Number(item)) : Number(value);
     } else if (input.type === "boolean") {
-      normalized[input.id] = value === true || value === "true" || value === "yes" || value === "y";
+      normalized[input.id] = Array.isArray(value)
+        ? value.map((item) => booleanValue(item))
+        : booleanValue(value);
     } else {
       normalized[input.id] = value;
     }
@@ -651,6 +653,10 @@ export function normalizeInputs(skill, rawInputs) {
     if (!(key in normalized)) normalized[key] = value;
   }
   return normalized;
+}
+
+function booleanValue(value) {
+  return value === true || value === "true" || value === "yes" || value === "y";
 }
 
 function summarize(skill, responses) {
