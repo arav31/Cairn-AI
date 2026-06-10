@@ -174,6 +174,8 @@ Useful environment variables:
 | `UNBROWSE_NON_INTERACTIVE` | `1` in `.env.example` | Keeps Unbrowse startup non-interactive |
 | `HEADLESS` | `false` in `.env.example` | Keeps the Unbrowse/Kuri capture browser visible during manual learning |
 | `KURI_HEADLESS` | `false` in `.env.example` | Explicit Kuri override for visible manual capture |
+| `UNBROWSE_DIRECT_EGRESS` | `1` in `.env.example` | Uses your normal local network for Kuri capture instead of Unbrowse's default proxy |
+| `UNBROWSE_KURI_PROXY` | `0` in `.env.example` | Disables automatic Kuri proxy wiring; set to `auto` or a proxy URL only when needed |
 | `SKILL_BUILDER_UNBROWSE_REMOTE` | unset | Set to `1` to allow remote Unbrowse SDK resolve/execute using `UNBROWSE_API_KEY`; remote mode cannot open a local capture browser |
 | `UNBROWSE_API_KEY` | unset | Optional Unbrowse remote SDK/API key |
 | `OPENAI_API_KEY` | unset | Enables OpenAI Chat Completions analysis when using the OpenAI provider |
@@ -250,6 +252,7 @@ When learning starts, the tool first tries Unbrowse if it is available:
 - If Unbrowse has a cached route, a draft skill is created without opening a browser.
 - If Unbrowse needs first-time capture, it opens an Unbrowse-controlled browser session.
 - The managed local runtime is started with `HEADLESS=false` and `KURI_HEADLESS=false` so this capture browser is visible.
+- It also defaults to direct egress with `UNBROWSE_DIRECT_EGRESS=1` and `UNBROWSE_KURI_PROXY=0`, so local learning does not fail through Unbrowse's default proxy tunnel.
 - Complete the website workflow manually in that browser. Use realistic placeholder values if you are just testing.
 - When the final quote/result/search output is visible, return to the terminal and press Enter.
 - The app syncs/closes the Unbrowse session and saves a local pointer skill that calls Unbrowse execute on future runs.

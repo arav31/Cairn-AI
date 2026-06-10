@@ -135,6 +135,11 @@ async function startUnbrowseServe(status) {
       // defaults to headless unless these flags are explicitly false.
       HEADLESS: process.env.HEADLESS || "false",
       KURI_HEADLESS: process.env.KURI_HEADLESS || process.env.HEADLESS || "false",
+      // The npm Unbrowse runtime defaults Kuri to proxykingdom.cn2.ai. That
+      // breaks normal local capture when the proxy tunnel is unavailable.
+      UNBROWSE_DIRECT_EGRESS: process.env.UNBROWSE_DIRECT_EGRESS || "1",
+      UNBROWSE_KURI_PROXY: process.env.UNBROWSE_KURI_PROXY || "0",
+      KURI_PROXY: process.env.KURI_PROXY || "",
       HOST: !url.hostname || url.hostname === "localhost" ? "127.0.0.1" : url.hostname,
       PORT: url.port || (url.protocol === "https:" ? "443" : "80"),
     },
