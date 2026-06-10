@@ -447,13 +447,18 @@ function hasInputMappingWarning(skill) {
 function isBrokenSavedSkill(skill) {
   if (skill?.provider !== "unbrowse") return false;
   const inputs = Array.isArray(skill.inputs) ? skill.inputs : [];
-  if (!inputs.length) return false;
-  const badInputs = inputs.filter(isPageTextInputSpec);
   const context = cleanPromptText([
     skill.unbrowse?.endpointDescription,
     skill.learning?.summary,
     skill.learning?.endpointEngineering?.endpointPurpose,
+    ...(skill.learning?.replayWarnings || []),
   ].filter(Boolean).join(" "));
+  if (!inputs.length) {
+    return isInteractiveSavedSkill(skill)
+      && /page content from|captured page artifact|static page|did not expose user-facing parameter specs/i.test(context);
+  }
+
+  const badInputs = inputs.filter(isPageTextInputSpec);
   if (badInputs.length === inputs.length) return true;
   return badInputs.length / inputs.length >= 0.5 && /returns?\s+(?:options|fields)|course codeunitgrade|simulated gpa|please add courses/i.test(context);
 }
@@ -469,6 +474,16 @@ function isPageTextInputSpec(spec) {
   if (/course\s*code.*unit.*grade.*simulated\s*gpa/i.test(question)) return true;
   if (/please\s+add\s+courses\s+to\s+the\s+list/i.test(question)) return true;
   return false;
+}
+
+function isInteractiveSavedSkill(skill) {
+  const text = cleanPromptText([
+    skill.description,
+    skill.learning?.inferredGoal,
+    skill.unbrowse?.intent,
+    skill.name,
+  ].filter(Boolean).join(" "));
+  return /input|fill|submit|calculate|calculator|quote|price|premium|search|gpa|bmi|grade|score|form|run time|situp|pushup/i.test(text);
 }
 
 async function run(args) {

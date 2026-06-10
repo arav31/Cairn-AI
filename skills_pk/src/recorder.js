@@ -137,6 +137,10 @@ const NON_USER_CONTROL_PATTERNS = [
   /(?:^|[_-])command(?:$|[_-])/i,
   /(?:^|[_-])event(?:$|[_-])/i,
   /^gen(?:erated)?[_-].*(?:num|count|index)$/i,
+  /^gen.*(?:num|count|index)$/i,
+  /auto\s*generate/i,
+  /autogenerate/i,
+  /dummy/i,
 ];
 
 const REPEATABLE_GROUP_KEYS = [
@@ -1760,7 +1764,6 @@ function buildVisibleChoiceBodyTemplate(body, fields, base = {}) {
       question: questionForField(inputId, field),
       type: "choice",
       optional: false,
-      default: match.row.value,
       choices: payloadChoicesForVisibleField(field, match.row.value),
     });
     setPathValue(template, match.row.path, `{{${inputId}}}`);

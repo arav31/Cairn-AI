@@ -254,6 +254,7 @@ When learning starts, the tool first tries Unbrowse if it is available:
 - The managed local runtime is started with `HEADLESS=false` and `KURI_HEADLESS=false` so this capture browser is visible.
 - It also defaults to direct egress with `UNBROWSE_DIRECT_EGRESS=1` and `UNBROWSE_KURI_PROXY=0`, so local learning does not fail through Unbrowse's default proxy tunnel.
 - If Unbrowse only returns a static DOM/page-text route for an interactive form, the learner rejects it and falls back to browser/Codex recording instead of saving page text as questions.
+- If Unbrowse returns a zero-input page artifact for a form/calculator, the saved route is treated as broken because future runs must ask for your values, not replay page content or dummy controls.
 - Complete the website workflow manually in that browser. Use realistic placeholder values if you are just testing.
 - When the final quote/result/search output is visible, return to the terminal and press Enter.
 - The app syncs/closes the Unbrowse session and saves a local pointer skill that calls Unbrowse execute on future runs.

@@ -457,6 +457,13 @@ function validateUnbrowseEndpointForSkill(endpoint, inputs, { url, goal } = {}) 
     };
   }
 
+  if (!inputs.length && looksLikeStaticPageArtifact(endpoint) && likelyInteractiveGoal(goal) && isSamePageGet(endpoint, url)) {
+    return {
+      ok: false,
+      reason: "Unbrowse returned a zero-input static page artifact for an interactive workflow. Falling back to browser/Codex recording.",
+    };
+  }
+
   if (looksLikeDomOptionEndpoint(endpoint) && likelyInteractiveGoal(goal) && isSamePageGet(endpoint, url)) {
     return {
       ok: false,
@@ -486,7 +493,15 @@ function looksLikeDomOptionEndpoint(endpoint) {
   const text = cleanText(`${endpoint?.description || ""} ${endpoint?.description_out || ""}`).toLowerCase();
   if (method !== "GET") return false;
   if (/\/api\/|graphql|ajax|json|compute|calculate|quote|premium|price/i.test(url)) return false;
-  return /returns?\s+(?:options|fields)|option-list|dom|page\s+text|course codeunitgrade|simulated gpa/.test(text);
+  return /returns?\s+(?:options|fields)|option-list|dom|page\s+text|page content from|captured page artifact|course codeunitgrade|simulated gpa/.test(text);
+}
+
+function looksLikeStaticPageArtifact(endpoint) {
+  const method = String(endpoint?.method || "GET").toUpperCase();
+  const text = cleanText(`${endpoint?.description || ""} ${endpoint?.description_out || ""}`).toLowerCase();
+  if (method !== "GET") return false;
+  return /page content from|captured page artifact|dom fallback|static page|page artifact/.test(text)
+    || looksLikeDomOptionEndpoint(endpoint);
 }
 
 function likelyInteractiveGoal(goal) {
