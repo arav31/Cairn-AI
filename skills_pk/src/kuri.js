@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -48,7 +48,7 @@ export function randomKuriPort() {
   return 18080 + Math.floor(Math.random() * 1000);
 }
 
-export async function startKuriBroker({ port = randomKuriPort(), headless = false } = {}) {
+export async function startKuriBroker({ port = randomKuriPort(), headless = false, cdpUrl = "" } = {}) {
   const binary = findKuriExecutable();
   const stateDir = fs.mkdtempSync(path.join(os.tmpdir(), "api-skill-builder-kuri-"));
   const child = spawn(binary, [], {
@@ -58,6 +58,7 @@ export async function startKuriBroker({ port = randomKuriPort(), headless = fals
       PORT: String(port),
       HEADLESS: headless ? "true" : "false",
       STATE_DIR: stateDir,
+      ...(cdpUrl ? { CDP_URL: cdpUrl } : {}),
     },
     detached: false,
     stdio: "ignore",
@@ -105,6 +106,17 @@ class KuriBroker {
 
   async health() {
     return this.get("/health", {}, 5000);
+  }
+
+  async tabs() {
+    const result = await this.get("/tabs", {}, 10000);
+    return Array.isArray(result) ? result : [];
+  }
+
+  async discover(cdpPort) {
+    const params = {};
+    if (cdpPort) params.cdp_url = `ws://127.0.0.1:${cdpPort}`;
+    return this.get("/discover", params, 10000).catch(() => null);
   }
 
   async newTab(url = "about:blank") {
@@ -171,19 +183,38 @@ class KuriBroker {
   async stop() {
     if (!this.child || this.child.exitCode !== null) return;
     this.child.kill("SIGTERM");
-    if (await waitForProcessExit(this.child, 2500)) return;
-    if (process.platform === "win32" && this.child.pid) {
-      const killer = spawn("taskkill", ["/PID", String(this.child.pid), "/T", "/F"], {
-        stdio: "ignore",
-        windowsHide: true,
-      });
-      await waitForProcessExit(killer, 5000);
-      if (this.child.exitCode === null) this.child.kill("SIGKILL");
+    if (process.platform === "win32") {
+      await waitForProcessExit(this.child, 800);
+      killWindowsProcessTree(this.child.pid);
+      const portPid = findWindowsListenerPid(this.port);
+      if (portPid && portPid !== this.child.pid) killWindowsProcessTree(portPid);
+      await waitForProcessExit(this.child, 1500);
       return;
     }
+    if (await waitForProcessExit(this.child, 2500)) return;
     this.child.kill("SIGKILL");
     await waitForProcessExit(this.child, 2500);
   }
+}
+
+function killWindowsProcessTree(pid) {
+  if (!pid) return;
+  spawnSync("taskkill", ["/PID", String(pid), "/T", "/F"], {
+    stdio: "ignore",
+    windowsHide: true,
+  });
+}
+
+function findWindowsListenerPid(port) {
+  const result = spawnSync("netstat", ["-ano", "-p", "tcp"], {
+    encoding: "utf8",
+    stdio: ["ignore", "pipe", "ignore"],
+    windowsHide: true,
+  });
+  if (result.status !== 0 || !result.stdout) return 0;
+  const pattern = new RegExp(`(?:^|\\s)(?:127\\.0\\.0\\.1|0\\.0\\.0\\.0|\\[?::1\\]?):${port}\\s+.*\\sLISTENING\\s+(\\d+)`, "im");
+  const match = result.stdout.match(pattern);
+  return match ? Number(match[1]) : 0;
 }
 
 function waitForProcessExit(child, timeoutMs) {

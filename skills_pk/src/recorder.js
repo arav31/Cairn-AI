@@ -273,24 +273,27 @@ async function recordWorkflowWithCdp({ url, name, goal, headless = false, waitFo
 }
 
 async function recordWorkflowWithKuri({ url, name, goal, headless = false, waitForDone } = {}) {
-  const broker = await startKuriBroker({ headless });
+  const chrome = launchChrome({ url, headless });
+  console.log(`Chrome launched on debug port ${chrome.port}.`);
+  console.log(`Profile: ${chrome.profileDir}`);
+
+  const page = await getPageTarget(chrome.port);
+  const broker = await startKuriBroker({
+    headless,
+    cdpUrl: `http://127.0.0.1:${chrome.port}/json/version`,
+  });
   console.log(`Kuri launched on broker port ${broker.port}.`);
-  console.log(`Browser engine: Kuri (vendored Zig-native CDP broker).`);
+  console.log(`Browser engine: Chrome + Kuri attached recorder.`);
   console.log(`State: ${broker.stateDir}`);
 
   let tabId = "";
   try {
-    tabId = await broker.newTab(url);
-    if (!tabId) throw new Error("Kuri did not return a tab id.");
-    await sleep(1000);
-    const openedUrl = await broker.currentUrl(tabId).catch(() => "");
-    if (!openedUrl || openedUrl === "about:blank") {
-      await broker.navigate(tabId, url);
-      await sleep(1000);
-    }
+    await broker.discover(chrome.port);
+    tabId = await findKuriTabIdForUrl(broker, page.id, url);
+    if (!tabId) throw new Error(`Kuri could not attach to the Chrome tab for ${url}.`);
     const confirmedUrl = await broker.currentUrl(tabId).catch(() => "");
     if (!confirmedUrl || confirmedUrl === "about:blank") {
-      throw new Error(`Kuri opened a blank tab instead of ${url}.`);
+      throw new Error(`Chrome opened a blank tab instead of ${url}.`);
     }
     await broker.networkEnable(tabId).catch(() => {});
     await broker.harStart(tabId).catch(() => {});
@@ -361,7 +364,27 @@ async function recordWorkflowWithKuri({ url, name, goal, headless = false, waitF
   } finally {
     if (tabId) await broker.closeTab(tabId).catch(() => {});
     await broker.stop();
+    chrome.child.kill();
   }
+}
+
+async function findKuriTabIdForUrl(broker, chromeTargetId, requestedUrl) {
+  const requested = safeUrl(requestedUrl);
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const tabs = await broker.tabs().catch(() => []);
+    const exactId = tabs.find((tab) => tab?.id === chromeTargetId);
+    if (exactId?.id) return exactId.id;
+    const matchingUrl = tabs.find((tab) => {
+      const tabUrl = safeUrl(tab?.url || "");
+      return tabUrl.href === requested.href
+        || (tabUrl.hostname === requested.hostname && tabUrl.pathname === requested.pathname)
+        || (tabUrl.hostname === requested.hostname && !/^about:blank$/i.test(tab?.url || ""));
+    });
+    if (matchingUrl?.id) return matchingUrl.id;
+    await broker.discover().catch(() => null);
+    await sleep(250);
+  }
+  return "";
 }
 
 function kuriRuntimeClient(broker, tabId) {
