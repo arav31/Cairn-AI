@@ -4,23 +4,49 @@ API Skill Builder is a local Node.js prototype that learns a website workflow on
 
 The main goal is to avoid repeating slow browser automation for every quote/search/form workflow. The first run uses Chrome to observe the website. Later runs ask the same user-facing questions and call the saved API, result URL, or replay strategy directly.
 
+## Current Route-Learning Stack
+
+The learner now has two layers:
+
+1. **Real Unbrowse route learning, when available**
+   - Checks `UNBROWSE_URL` for a running local Unbrowse runtime.
+   - If Bun is installed, the local `unbrowse` CLI can start that runtime.
+   - Calls Unbrowse `/v1/intent/resolve` to find cached or marketplace routes.
+   - If no route exists, opens `/v1/browse/go`; you complete the workflow in the Unbrowse-controlled browser; the app calls `/v1/browse/sync` and `/v1/browse/close`.
+   - Saves a local pointer skill containing Unbrowse `skill_id`, `endpoint_id`, endpoint metadata, and parameter questions.
+   - Future runs call `/v1/skills/:id/execute` instead of browser automation.
+
+2. **Local fallback recorder**
+   - If Unbrowse is unavailable, it falls back to the existing Kuri/Chrome CDP recorder plus Codex/OpenAI/NVIDIA analysis.
+   - This fallback is useful, but it is not the same as Unbrowse marketplace/cache execution.
+
+Check the active route backend:
+
+```bash
+node src/cli.js unbrowse-status
+```
+
+If it says Bun is missing, either install Bun and set `UNBROWSE_BUN_BIN`, or run a local Unbrowse server yourself and set `UNBROWSE_URL`.
+
 ## What It Does
 
 Given a website link, the CLI can:
 
 1. Check if a skill already exists for that site.
 2. Run the saved skill in a chatbot-style prompt.
-3. If no skill exists, open Chrome and record the user completing the workflow.
-4. Capture network requests, page fields, selected options, typed values, clicks, Playwright DOM/accessibility evidence, and final URL state.
-5. Rank useful endpoint candidates while ignoring static files, analytics, telemetry, fonts, CSS, images, and Cloudflare RUM noise.
-6. Optionally run a Codex/OpenAI/NVIDIA endpoint-engineering pass over the recording evidence.
-7. Generate a draft skill from the best available strategy.
-8. Promote the draft into `skills/*.json` for future runs.
+3. If no skill exists, try Unbrowse resolve/capture first when configured.
+4. If Unbrowse is unavailable or cannot learn the route, open Chrome and record the user completing the workflow through the local fallback recorder.
+5. Capture network requests, page fields, selected options, typed values, clicks, Playwright DOM/accessibility evidence, and final URL state.
+6. Rank useful endpoint candidates while ignoring static files, analytics, telemetry, fonts, CSS, images, and Cloudflare RUM noise.
+7. Optionally run a Codex/OpenAI/NVIDIA endpoint-engineering pass over the recording evidence.
+8. Generate a draft skill from the best available strategy.
+9. Promote the draft into `skills/*.json` for future runs.
 
-The saved strategy can be one of three modes:
+The saved strategy can be one of four modes:
 
 | Strategy | When Used | Runtime Path |
 | --- | --- | --- |
+| Unbrowse execute | Unbrowse has cached or learned a route with `skill_id` and `endpoint_id` | Local Unbrowse `/v1/skills/:id/execute` or optional remote SDK |
 | Direct API request | The site submits a real reusable JSON/query endpoint | Node `fetch` |
 | Browser result URL | The site calculates in the browser but encodes inputs in the URL | Chrome CDP navigation |
 | Browser workflow replay | No reusable endpoint or result URL exists, but fields/clicks were recorded | Chrome CDP replay |
@@ -42,9 +68,11 @@ This project bridges the two:
 - Google Chrome or Chromium installed.
 - Network access to the target websites.
 - Optional: local Codex CLI auth, `OPENAI_API_KEY`, or `NVIDIA_API_KEY` for contextual analyzer review during learning.
+- Optional: Bun plus the `unbrowse` npm package for real Unbrowse local route capture/execute. Without Bun or a running `UNBROWSE_URL`, the CLI reports Unbrowse as unavailable and uses the local fallback recorder.
 
 Run `npm install` before using the recorder. The package uses:
 
+- `unbrowse` for real route-cache/capture/execute integration when its runtime is available.
 - `playwright-core` to attach to the same Chrome session and capture richer UI/accessibility evidence.
 - `@flue/runtime` for the staged learning workflow entrypoint.
 
@@ -139,6 +167,13 @@ Useful environment variables:
 | `SKILL_BUILDER_CODEX_REQUIRED` | unset | Set to `1` to stop drafting when Codex fails, returns `manual_review`, or confidence is below threshold |
 | `SKILL_BUILDER_ANALYZER_REQUIRED` | unset | Provider-agnostic required-analysis flag |
 | `SKILL_BUILDER_ANALYSIS_MIN_CONFIDENCE` | `0.65` for required Codex | Minimum analyzer confidence when required mode is enabled |
+| `SKILL_BUILDER_UNBROWSE` | `auto` | `auto` tries real Unbrowse route learning before fallback recording; `off` skips Unbrowse |
+| `UNBROWSE_URL` | `http://localhost:6969` | Local Unbrowse runtime URL used for `/v1/intent/resolve`, `/v1/browse/go`, and `/v1/skills/:id/execute` |
+| `UNBROWSE_BUN_BIN` | unset | Path to `bun.exe` when Bun is not on `PATH`; needed by the npm Unbrowse runtime unless a local server is already running |
+| `UNBROWSE_TOS_ACCEPTED` | `1` in `.env.example` | Allows non-interactive local runtime startup |
+| `UNBROWSE_NON_INTERACTIVE` | `1` in `.env.example` | Keeps Unbrowse startup non-interactive |
+| `SKILL_BUILDER_UNBROWSE_REMOTE` | unset | Set to `1` to allow remote Unbrowse SDK resolve/execute using `UNBROWSE_API_KEY`; remote mode cannot open a local capture browser |
+| `UNBROWSE_API_KEY` | unset | Optional Unbrowse remote SDK/API key |
 | `OPENAI_API_KEY` | unset | Enables OpenAI Chat Completions analysis when using the OpenAI provider |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | OpenAI model used for recording analysis |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for OpenAI-compatible endpoints |
@@ -171,7 +206,7 @@ From this folder:
 npm install
 ```
 
-This installs the Playwright and Flue runtime packages used by the learner.
+This installs the Playwright, Flue, and Unbrowse packages used by the learner. The Unbrowse npm runtime still needs Bun for local server/browser capture unless you point `UNBROWSE_URL` at an already-running runtime.
 
 ## Run The Chat Menu
 
@@ -208,18 +243,21 @@ If a matching skill exists, it offers to run it. If not, it starts learning.
 
 ### 2. Learn A New Skill
 
-When learning starts, the tool launches Chrome with a temporary profile and Chrome DevTools Protocol enabled.
+When learning starts, the tool first tries Unbrowse if it is available:
 
-Complete the website workflow manually in the opened Chrome window. Use realistic placeholder values if you are just testing.
+- If Unbrowse has a cached route, a draft skill is created without opening a browser.
+- If Unbrowse needs first-time capture, it opens an Unbrowse-controlled browser session.
+- Complete the website workflow manually in that browser. Use realistic placeholder values if you are just testing.
+- When the final quote/result/search output is visible, return to the terminal and press Enter.
+- The app syncs/closes the Unbrowse session and saves a local pointer skill that calls Unbrowse execute on future runs.
 
-When the final quote/result/search output is visible, return to the terminal and press Enter.
-
-The recorder saves a JSON file under `recordings/`.
+If Unbrowse is unavailable or does not return a reusable route, the tool falls back to launching Chrome with a temporary profile and Chrome DevTools Protocol enabled. That fallback recorder saves a JSON file under `recordings/`.
 
 ### 3. Auto-Draft A Skill
 
 After recording, the learner:
 
+- Prefers Unbrowse endpoint metadata when Unbrowse returned a learned route.
 - Filters out static and telemetry traffic.
 - Builds a compact evidence packet from page text, fields, options, clicks, final URL, and endpoint candidates.
 - Uses optional analyzer endpoint engineering through Codex, OpenAI, or NVIDIA when configured.
@@ -297,21 +335,44 @@ Create a draft through the Flue-compatible workflow entrypoint:
 npm run workflow:learn -- recordings/example-form-2026-06-09T10-00-00-000Z.json --name example-form
 ```
 
-## How Recording Works
+## How Learning Works
 
-Recording is implemented in `src/recorder.js`, `src/kuri.js`, `src/cdp.js`, and `src/playwright-evidence.js`.
+Learning is coordinated by `src/cli.js`.
+
+- Real Unbrowse integration lives in `src/unbrowse-adapter.js`.
+- Local fallback recording lives in `src/recorder.js`, `src/kuri.js`, `src/cdp.js`, and `src/playwright-evidence.js`.
+
+### Unbrowse-First Learning
+
+When you paste a new website link, the CLI checks Unbrowse before using the fallback recorder.
+
+1. `node src/cli.js unbrowse-status` checks whether a local runtime is reachable at `UNBROWSE_URL`.
+2. If no runtime is running but Bun and the `unbrowse` CLI are available, the CLI can start the local runtime.
+3. The learner calls `POST /v1/intent/resolve` with the URL and goal.
+4. If Unbrowse returns an endpoint, the learner saves a local JSON skill with:
+   - `provider: "unbrowse"`
+   - `unbrowse.skillId`
+   - `unbrowse.endpointId`
+   - endpoint URL/method/description
+   - parameter questions derived from Unbrowse parameter specs/schema
+5. If no endpoint exists yet, the learner calls `POST /v1/browse/go`.
+6. You complete the workflow in the Unbrowse-controlled browser.
+7. The learner calls `POST /v1/browse/sync` and `POST /v1/browse/close`.
+8. It resolves again, then saves the endpoint-backed pointer skill.
+
+On later runs, `src/skill-runner.js` detects `provider: "unbrowse"` and calls `POST /v1/skills/:id/execute`. It does not rerun browser automation unless Unbrowse itself decides a route needs recapture or recovery.
 
 ### Browser Engine Selection
 
-The learner now uses a cache-first, Kuri-first workflow:
+The fallback learner uses a Kuri-first workflow:
 
 1. The CLI checks local saved skills before opening a browser.
-2. If a new skill must be learned, `SKILL_BUILDER_BROWSER_ENGINE=auto` tries Kuri first.
+2. If Unbrowse is unavailable or cannot produce a reusable route, `SKILL_BUILDER_BROWSER_ENGINE=auto` tries Kuri first.
 3. Kuri launches a local Chrome session, captures HAR/network evidence, page text, markdown, a snapshot, and the injected interaction log.
 4. The same endpoint-ranking and Codex/OpenAI/NVIDIA analyzer then reverse-engineer the reusable endpoint or choose browser replay.
 5. If Kuri is unavailable or fails in `auto` mode, the older Chrome CDP recorder is used as a fallback.
 
-Kuri is supplied by the `unbrowse` npm package under `node_modules/unbrowse/vendor/kuri/...`. The app calls the Kuri binary directly, so normal learning does not require the Unbrowse CLI, Bun, marketplace publishing, or payment setup.
+Kuri is supplied by the `unbrowse` npm package under `node_modules/unbrowse/vendor/kuri/...`. The fallback recorder can call the Kuri binary directly, but real Unbrowse route learning requires a running Unbrowse runtime or Bun-capable CLI.
 
 Set one of these when you need explicit control:
 
@@ -764,6 +825,7 @@ For replay skills, the runner:
 | File | Purpose |
 | --- | --- |
 | `src/cli.js` | Terminal menu, chat prompts, recording commands, draft promotion |
+| `src/unbrowse-adapter.js` | Real Unbrowse status, resolve, browser capture sync/close, draft pointer skill creation, and execute adapter |
 | `src/learning-workflow.js` | Staged learning wrapper used by the CLI and workflow entrypoint |
 | `src/workflows/learn-skill.js` | Flue-compatible workflow entrypoint for drafting from a recording |
 | `src/recorder.js` | CDP network capture, field extraction, interaction recording, candidate ranking, draft generation |
@@ -893,6 +955,7 @@ Syntax check:
 
 ```powershell
 node --check src/cli.js
+node --check src/unbrowse-adapter.js
 node --check src/recorder.js
 node --check src/skill-runner.js
 ```

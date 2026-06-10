@@ -3,6 +3,7 @@ import path from "node:path";
 import { CdpClient, getPageTarget, launchChrome, sleep } from "./cdp.js";
 import { getPath } from "./json-path.js";
 import { applyComputedInputs, renderTemplate } from "./templates.js";
+import { executeUnbrowseSkill } from "./unbrowse-adapter.js";
 
 export async function loadSkills(skillsDir = "skills") {
   const files = await fs.readdir(skillsDir).catch(() => []);
@@ -25,6 +26,9 @@ export async function loadSkill(skillId, skillsDir = "skills") {
 
 export async function runSkill(skill, rawInputs, options = {}) {
   const context = applyComputedInputs(skill, normalizeInputs(skill, rawInputs), options.now || new Date());
+  if (skill.provider === "unbrowse" || skill.unbrowse) {
+    return runUnbrowseBackedSkill(skill, context);
+  }
   await prepareProviderInputs(skill, context);
   const cookieJar = new CookieJar();
   const responses = {};
@@ -86,6 +90,55 @@ export async function runSkill(skill, rawInputs, options = {}) {
     saved,
     summary: summarize(skill, responses),
   };
+}
+
+async function runUnbrowseBackedSkill(skill, context) {
+  const params = {};
+  for (const input of skill.inputs || []) {
+    if (context[input.id] === undefined) continue;
+    params[input.unbrowseParam || input.id] = context[input.id];
+  }
+
+  const executed = await executeUnbrowseSkill(skill, params);
+  const responseRecord = makeResponseRecord({
+    id: "goal",
+    request: executed.request,
+    status: statusCodeFromUnbrowse(executed.result),
+    statusText: executed.result?.trace?.success === false ? "Unbrowse execution failed" : "OK",
+    ok: unbrowseResultOk(executed.result),
+    ms: executed.ms,
+    headers: { "content-type": "application/json" },
+    text: JSON.stringify(executed.result ?? null),
+  });
+  responseRecord.json = executed.result;
+
+  if (!responseRecord.ok) {
+    const error = new Error(`Step goal failed: ${responseRecord.status} ${responseRecord.statusText}`.trim());
+    error.response = responseRecord;
+    throw error;
+  }
+
+  const responses = { goal: responseRecord };
+  return {
+    skillId: skill.id,
+    inputs: context,
+    responses,
+    saved: {},
+    summary: summarize(skill, responses),
+  };
+}
+
+function unbrowseResultOk(result) {
+  if (!result) return false;
+  if (result.success === true) return true;
+  if (result.trace?.success === true) return true;
+  if (result.status === "ok") return true;
+  if (result.result?.error || result.error) return false;
+  return result.trace?.success !== false;
+}
+
+function statusCodeFromUnbrowse(result) {
+  return result?.status_code || result?.trace?.status_code || (unbrowseResultOk(result) ? 200 : 500);
 }
 
 function firstResolvedJsonPath(json, sourcePath) {

@@ -10,6 +10,7 @@
     "run": "node src/cli.js run",
     "inspect-recording": "node src/cli.js inspect-recording",
     "analyze-recording": "node src/cli.js analyze-recording",
+    "unbrowse:status": "node src/cli.js unbrowse-status",
     "workflow:learn": "node src/workflows/learn-skill.js"
   },
   "engines": {

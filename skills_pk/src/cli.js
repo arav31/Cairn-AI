@@ -12,6 +12,15 @@ import {
 import { loadEnvFile } from "./env.js";
 import { createDraftSkillWithLearningWorkflow } from "./learning-workflow.js";
 import { loadSkill, loadSkills, runSkill } from "./skill-runner.js";
+import {
+  closeUnbrowseCapture,
+  collectEndpoints,
+  createUnbrowseDraftSkill,
+  getUnbrowseStatus,
+  resolveUnbrowseIntent,
+  startUnbrowseCapture,
+  syncUnbrowseCapture,
+} from "./unbrowse-adapter.js";
 
 const envFile = loadEnvFile();
 
@@ -66,6 +75,9 @@ async function main() {
       break;
     case "promote-draft":
       await promoteDraftCommand(args[0]);
+      break;
+    case "unbrowse-status":
+      await printUnbrowseStatus({ verbose: true });
       break;
     default:
       printHelp();
@@ -149,14 +161,15 @@ async function handleUrlFlow(rl) {
   progress(2, "No registered skill found");
   console.log("");
   console.log("Learning flow:");
-  console.log("1. Browser automation opens the link and captures network traffic with Chrome DevTools Protocol.");
-  console.log("2. Complete the obvious workflow until the final result appears.");
-  console.log("3. Playwright attaches to the same Chrome session to capture visible controls/accessibility evidence.");
-  console.log("4. The recorder ranks endpoint candidates and captures visible fields/clicks.");
-  console.log("5. If OPENAI_API_KEY is set, an LLM reads the page/network evidence to infer intent, inputs, buttons, outputs, and best strategy.");
+  console.log("1. Try real Unbrowse resolve/execute first when a local runtime or configured remote SDK is available.");
+  console.log("2. If Unbrowse has no cached route, open an Unbrowse browser capture session and let you complete the workflow.");
+  console.log("3. Sync/close the Unbrowse session so it indexes reusable endpoint metadata.");
+  console.log("4. Save a local pointer skill that calls Unbrowse execute on future runs.");
+  console.log("5. If Unbrowse is unavailable, fall back to the local Kuri/CDP + Codex analyzer recorder.");
   console.log("6. Future runs ask website-like questions and use the fastest saved strategy available.");
   console.log("");
   console.log("For arbitrary sites, the first learning pass may need manual review because some forms use encrypted payloads, captchas, auth, or anti-bot checks.");
+  await printUnbrowseStatus();
   printLlmStatus();
 
   const start = await rl.question("Start browser learning now? [y/N]: ");
@@ -164,6 +177,18 @@ async function handleUrlFlow(rl) {
 
   const name = (await rl.question(`Skill name [${parsed.hostname}]: `)).trim() || parsed.hostname;
   const goal = (await rl.question("Goal, e.g. get quote/search price [get quote]: ")).trim() || "get quote";
+  const unbrowseStatus = await getUnbrowseStatus();
+  if (unbrowseStatus.enabled && process.env.SKILL_BUILDER_UNBROWSE !== "off") {
+    const useUnbrowse = await askYesNo(rl, "Use Unbrowse route learning first?", true);
+    if (useUnbrowse) {
+      const learned = await learnWithUnbrowse(rl, { url, name, goal });
+      if (learned) return;
+      const fallback = await askYesNo(rl, "Unbrowse did not produce a reusable skill. Fall back to local Kuri/Codex recording?", true);
+      if (!fallback) return;
+    }
+  } else {
+    console.log(`Unbrowse route learning unavailable: ${unbrowseStatus.reason}`);
+  }
 
   progress(3, "Launching browser recorder");
   const { file, recording } = await recordWorkflow({
@@ -190,6 +215,88 @@ async function handleUrlFlow(rl) {
   } else {
     console.log("It stays as a draft. Use menu option 5 or promote-draft when it is ready.");
   }
+}
+
+async function learnWithUnbrowse(rl, { url, name, goal }) {
+  progress(3, "Resolving with Unbrowse");
+  let resolveRun;
+  try {
+    resolveRun = await resolveUnbrowseIntent({ url, intent: goal, dryRun: true });
+  } catch (error) {
+    console.log(`Unbrowse resolve failed: ${error.message}`);
+    return false;
+  }
+  if (!resolveRun.ok) {
+    console.log(`Unbrowse unavailable: ${resolveRun.error}`);
+    return false;
+  }
+
+  let draft = await createUnbrowseDraftSkill({ url, name, goal, resolveResult: resolveRun });
+  if (!draft.ok) {
+    const endpoints = collectEndpoints(resolveRun);
+    if (endpoints.length) {
+      console.log(`Unbrowse returned ${endpoints.length} endpoint candidate(s), but none were safe enough to register automatically.`);
+    } else {
+      console.log("No cached Unbrowse endpoint matched yet.");
+    }
+    const capture = await askYesNo(rl, "Open an Unbrowse browser capture session now?", true);
+    if (!capture) return false;
+
+    progress(4, "Opening Unbrowse browser capture");
+    let sessionId = "";
+    let syncRun = null;
+    let closeRun = null;
+    try {
+      const goRun = await startUnbrowseCapture({ url });
+      if (!goRun.ok) {
+        console.log(`Unbrowse capture could not start: ${goRun.error}`);
+        return false;
+      }
+      sessionId = goRun.result?.session_id || "";
+      console.log(`Unbrowse session: ${sessionId || "(default)"}`);
+      if (goRun.result?.auth_hint) console.log(goRun.result.auth_hint);
+      console.log("Complete the target workflow in the Unbrowse-controlled Chrome window.");
+      await rl.question("When the final result/quote is visible, press Enter here...");
+
+      progress(4, "Syncing Unbrowse capture");
+      syncRun = await syncUnbrowseCapture({ sessionId });
+      if (syncRun.ok) {
+        const endpointCount = syncRun.result?.endpoint_count ?? collectEndpoints(syncRun).length;
+        console.log(`Unbrowse sync indexed ${endpointCount || 0} endpoint(s).`);
+      }
+    } catch (error) {
+      console.log(`Unbrowse capture failed: ${error.message}`);
+    } finally {
+      try {
+        closeRun = await closeUnbrowseCapture({ sessionId });
+      } catch (error) {
+        console.log(`Unbrowse close warning: ${error.message}`);
+      }
+    }
+
+    try {
+      resolveRun = await resolveUnbrowseIntent({ url, intent: goal, dryRun: true });
+    } catch (error) {
+      console.log(`Unbrowse re-resolve failed after capture: ${error.message}`);
+    }
+    draft = await createUnbrowseDraftSkill({ url, name, goal, resolveResult: resolveRun, syncResult: syncRun, closeResult: closeRun });
+  }
+
+  if (!draft.ok) {
+    console.log(`Unbrowse did not create a draft: ${draft.reason}`);
+    return false;
+  }
+
+  progress(5, "Creating Unbrowse draft skill");
+  console.log(`Draft skill created: ${draft.file}`);
+  await printDraftLearningSummary(draft.file);
+  const promote = await rl.question("Register this draft now? [y/N]: ");
+  if (promote.trim().toLowerCase() === "y") {
+    await promoteDraftCommand(draft.file);
+  } else {
+    console.log("It stays as a draft. Use menu option 5 or promote-draft when it is ready.");
+  }
+  return true;
 }
 
 async function listSkills() {
@@ -739,6 +846,22 @@ function printLlmStatus() {
   console.log(`Contextual LLM analysis: ${enabledText} (${status.reason}; provider=${status.provider}; model=${status.model}; ${envText}).`);
 }
 
+async function printUnbrowseStatus({ verbose = false } = {}) {
+  const status = await getUnbrowseStatus();
+  const enabledText = status.enabled ? "enabled" : "disabled";
+  console.log(`Unbrowse route learning: ${enabledText} (${status.reason})`);
+  if (!verbose) return;
+  console.log(JSON.stringify({
+    enabled: status.enabled,
+    mode: status.mode,
+    transport: status.transport,
+    baseUrl: status.baseUrl,
+    cliPath: status.cliPath || null,
+    bunPath: status.bunPath || null,
+    health: status.health || null,
+  }, null, 2));
+}
+
 async function printDraftLearningSummary(file) {
   const draft = JSON.parse(await fs.readFile(file, "utf8"));
   if (!draft.learning) return;
@@ -849,7 +972,8 @@ function printHelp() {
   node src/cli.js inspect-recording <recording-file>
   node src/cli.js analyze-recording <recording-file>
   node src/cli.js draft <recording-file> [candidate-index] --name <name>
-  node src/cli.js promote-draft <skills/name.draft.json>`);
+  node src/cli.js promote-draft <skills/name.draft.json>
+  node src/cli.js unbrowse-status`);
 }
 
 main().catch((error) => {
