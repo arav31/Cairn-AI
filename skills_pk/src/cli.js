@@ -139,7 +139,12 @@ async function handleUrlFlow(rl) {
 
   progress(1, "Checking saved skills");
   const skills = await loadSkills();
-  const matches = findSkillsForUrl(skills, parsed);
+  const allMatches = findSkillsForUrl(skills, parsed);
+  const brokenMatches = allMatches.filter(isBrokenSavedSkill);
+  const matches = allMatches.filter((skill) => !isBrokenSavedSkill(skill));
+  if (brokenMatches.length) {
+    console.log(`Ignored ${brokenMatches.length} broken saved skill(s) for this URL because their prompts were generated from page text, not website inputs.`);
+  }
 
   if (matches.length) {
     progress(2, "Registered skill found");
@@ -319,9 +324,15 @@ async function checkUrl(url) {
     throw new Error("Invalid URL.");
   }
   const skills = await loadSkills();
-  const matches = findSkillsForUrl(skills, parsed);
+  const allMatches = findSkillsForUrl(skills, parsed);
+  const brokenMatches = allMatches.filter(isBrokenSavedSkill);
+  const matches = allMatches.filter((skill) => !isBrokenSavedSkill(skill));
   if (!matches.length) {
-    console.log("No registered skill found.");
+    if (brokenMatches.length) {
+      console.log("Only broken saved skill(s) were found for this URL. Re-learn the skill with the current recorder.");
+    } else {
+      console.log("No registered skill found.");
+    }
     return;
   }
   console.log("Registered skill found:");
@@ -371,6 +382,12 @@ async function chooseAndRunSkill(rl) {
 
 async function runSkillChat(rl, skill) {
   console.log(`\n${skill.name}`);
+  if (isBrokenSavedSkill(skill)) {
+    console.log("This saved skill is broken: it was generated from page text/DOM options instead of real website inputs.");
+    console.log("Do not answer those prompts. Re-learn this website with the current version so the learner can use browser/Codex recording instead.");
+    return;
+  }
+
   const chat = buildSkillConversation(skill);
   if (chat.intro) console.log(chat.intro);
   if (skill.description && !chat.intro) console.log(skill.description);
@@ -425,6 +442,33 @@ function hasInputMappingWarning(skill) {
     ...(skill.learning?.endpointEngineering?.replayWarnings || []),
   ].join(" ");
   return /zero user-facing inputs|none were safely mapped|visible form interactions|replays? recorded constants/i.test(warnings);
+}
+
+function isBrokenSavedSkill(skill) {
+  if (skill?.provider !== "unbrowse") return false;
+  const inputs = Array.isArray(skill.inputs) ? skill.inputs : [];
+  if (!inputs.length) return false;
+  const badInputs = inputs.filter(isPageTextInputSpec);
+  const context = cleanPromptText([
+    skill.unbrowse?.endpointDescription,
+    skill.learning?.summary,
+    skill.learning?.endpointEngineering?.endpointPurpose,
+  ].filter(Boolean).join(" "));
+  if (badInputs.length === inputs.length) return true;
+  return badInputs.length / inputs.length >= 0.5 && /returns?\s+(?:options|fields)|course codeunitgrade|simulated gpa|please add courses/i.test(context);
+}
+
+function isPageTextInputSpec(spec) {
+  const question = cleanPromptText(spec?.question || "");
+  const param = cleanPromptText(spec?.unbrowseParam || spec?.id || "");
+  const numberCount = (question.match(/\b\d+\b/g) || []).length;
+  if (!question || !param) return true;
+  if (question.length > 180 || param.length > 180) return true;
+  if (/^\[\]/.test(question) || /^\[\]/.test(param)) return true;
+  if (numberCount > 12 && question.length > 80) return true;
+  if (/course\s*code.*unit.*grade.*simulated\s*gpa/i.test(question)) return true;
+  if (/please\s+add\s+courses\s+to\s+the\s+list/i.test(question)) return true;
+  return false;
 }
 
 async function run(args) {

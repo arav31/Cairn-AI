@@ -291,6 +291,16 @@ export async function createUnbrowseDraftSkill({ url, name, goal, resolveResult,
   }
 
   const inputs = inputSpecsFromEndpoint(endpoint);
+  const validation = validateUnbrowseEndpointForSkill(endpoint, inputs, { url, goal });
+  if (!validation.ok) {
+    return {
+      ok: false,
+      reason: validation.reason,
+      endpoints: collectEndpoints(resolveResult, syncResult, closeResult),
+      endpoint,
+    };
+  }
+
   const id = slugify(name || hostnameFromUrl(url) || "unbrowse-skill");
   const skill = {
     id,
@@ -429,6 +439,69 @@ function scoreEndpoint(endpoint, goal) {
     if (text.includes(token)) score += 4;
   }
   return score;
+}
+
+function validateUnbrowseEndpointForSkill(endpoint, inputs, { url, goal } = {}) {
+  const badInputs = inputs.filter(isGarbageUnbrowseInput);
+  if (inputs.length && badInputs.length === inputs.length) {
+    return {
+      ok: false,
+      reason: "Unbrowse exposed page-text option labels as endpoint parameters, not real user inputs. Falling back to browser/Codex recording.",
+    };
+  }
+
+  if (inputs.length && badInputs.length / inputs.length >= 0.5 && looksLikeDomOptionEndpoint(endpoint)) {
+    return {
+      ok: false,
+      reason: "Unbrowse returned a DOM option-list route with low-quality parameter names. Falling back to browser/Codex recording.",
+    };
+  }
+
+  if (looksLikeDomOptionEndpoint(endpoint) && likelyInteractiveGoal(goal) && isSamePageGet(endpoint, url)) {
+    return {
+      ok: false,
+      reason: "Unbrowse only produced a static DOM/page route for an interactive workflow. Falling back to browser/Codex recording.",
+    };
+  }
+
+  return { ok: true };
+}
+
+function isGarbageUnbrowseInput(input) {
+  const question = cleanText(input?.question || "");
+  const param = cleanText(input?.unbrowseParam || input?.id || "");
+  const numberCount = (question.match(/\b\d+\b/g) || []).length;
+  if (!question || !param) return true;
+  if (question.length > 180 || param.length > 180) return true;
+  if (/^\[\]/.test(question) || /^\[\]/.test(param)) return true;
+  if (numberCount > 12 && question.length > 80) return true;
+  if (/course\s*code.*unit.*grade.*simulated\s*gpa/i.test(question)) return true;
+  if (/please\s+add\s+courses\s+to\s+the\s+list/i.test(question)) return true;
+  return false;
+}
+
+function looksLikeDomOptionEndpoint(endpoint) {
+  const method = String(endpoint?.method || "GET").toUpperCase();
+  const url = String(endpoint?.url_template || endpoint?.url || "");
+  const text = cleanText(`${endpoint?.description || ""} ${endpoint?.description_out || ""}`).toLowerCase();
+  if (method !== "GET") return false;
+  if (/\/api\/|graphql|ajax|json|compute|calculate|quote|premium|price/i.test(url)) return false;
+  return /returns?\s+(?:options|fields)|option-list|dom|page\s+text|course codeunitgrade|simulated gpa/.test(text);
+}
+
+function likelyInteractiveGoal(goal) {
+  return /input|fill|submit|calculate|calculator|quote|price|premium|search|gpa|bmi|grade|form/i.test(String(goal || ""));
+}
+
+function isSamePageGet(endpoint, targetUrl) {
+  if (String(endpoint?.method || "GET").toUpperCase() !== "GET") return false;
+  try {
+    const endpointUrl = new URL(endpoint.url_template || endpoint.url || "");
+    const target = new URL(targetUrl || "");
+    return endpointUrl.origin === target.origin && endpointUrl.pathname === target.pathname;
+  } catch {
+    return false;
+  }
 }
 
 function inputSpecsFromEndpoint(endpoint) {
