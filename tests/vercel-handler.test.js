@@ -2,15 +2,39 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { EventEmitter } = require("node:events");
 const handler = require("../api/cairn");
+const rootHandler = require("../src/server");
 const { _internal } = handler;
 
-test("vercel adapter restores original rewritten route", () => {
+function request(method, url) {
   const req = new EventEmitter();
+  req.method = method;
+  req.url = url;
   req.headers = {
     host: "cairn.example",
     "x-forwarded-proto": "https"
   };
-  req.url = "/api/cairn?cairnPath=/api/catalog&search=insurance";
+  return req;
+}
+
+function response() {
+  const res = new EventEmitter();
+  res.headers = {};
+  res.writeHead = (status, headers = {}) => {
+    res.statusCode = status;
+    Object.assign(res.headers, headers);
+  };
+  res.setHeader = (key, value) => {
+    res.headers[key] = value;
+  };
+  res.end = (body = "") => {
+    res.body = body.toString();
+    res.emit("finish");
+  };
+  return res;
+}
+
+test("vercel adapter restores original rewritten route", () => {
+  const req = request("GET", "/api/cairn?cairnPath=/api/catalog&search=insurance");
 
   _internal.restoreOriginalPath(req);
 
@@ -29,27 +53,8 @@ test("vercel adapter derives request base url", () => {
 });
 
 test("vercel adapter serves rewritten marketplace API routes", async () => {
-  const req = new EventEmitter();
-  req.method = "GET";
-  req.url = "/api/cairn?cairnPath=/api/catalog";
-  req.headers = {
-    host: "cairn.example",
-    "x-forwarded-proto": "https"
-  };
-
-  const res = new EventEmitter();
-  res.headers = {};
-  res.writeHead = (status, headers = {}) => {
-    res.statusCode = status;
-    Object.assign(res.headers, headers);
-  };
-  res.setHeader = (key, value) => {
-    res.headers[key] = value;
-  };
-  res.end = (body = "") => {
-    res.body = body.toString();
-    res.emit("finish");
-  };
+  const req = request("GET", "/api/cairn?cairnPath=/api/catalog");
+  const res = response();
 
   await handler(req, res);
   const body = JSON.parse(res.body);
@@ -58,4 +63,14 @@ test("vercel adapter serves rewritten marketplace API routes", async () => {
   assert.equal(body.count, 2);
   assert.equal(body.listings[0].slug, "insurance/compare-insurance-prices");
   assert.equal(body.listings[1].slug, "real-estate/search-properties");
+});
+
+test("root server export works as Vercel entrypoint", async () => {
+  const req = request("GET", "/");
+  const res = response();
+
+  await rootHandler(req, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.match(res.body, /Cairn/);
 });

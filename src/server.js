@@ -1012,6 +1012,27 @@ function createApp() {
   return server;
 }
 
+let serverlessApp;
+
+function getServerlessBaseUrl(req) {
+  const configured = process.env.CAIRN_PUBLIC_URL;
+  if (configured) return configured;
+  return requestOrigin(req, "https://localhost");
+}
+
+function serverlessHandler(req, res) {
+  if (!serverlessApp) {
+    serverlessApp = createApp();
+  }
+  serverlessApp.setBaseUrl(getServerlessBaseUrl(req));
+  return new Promise((resolve, reject) => {
+    res.on("finish", resolve);
+    res.on("close", resolve);
+    res.on("error", reject);
+    serverlessApp.emit("request", req, res);
+  });
+}
+
 if (require.main === module) {
   const port = Number(process.env.PORT || 3000);
   const host = process.env.HOST || "127.0.0.1";
@@ -1023,4 +1044,5 @@ if (require.main === module) {
   });
 }
 
-module.exports = { createApp };
+module.exports = serverlessHandler;
+module.exports.createApp = createApp;
