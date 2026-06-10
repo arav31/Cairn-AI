@@ -78,6 +78,600 @@ https://cairn-ai-gamma.vercel.app
   - `api/cairn.js`
   - `vercel.json`
 
+## How Cairn Works
+
+Cairn converts a useful browser workflow into a productized API that agents can discover, pay for, and call. The current codebase is intentionally small enough to run locally as one Node HTTP server, but it already models the production system boundaries: account identity, credit wallets, marketplace listings, skill manifests, verification records, invocation logs, Stripe payment scaffolding, Postgres persistence, Vercel routing, and AWS artifact/worker infrastructure.
+
+The lifecycle is:
+
+1. A contributor submits or records a workflow that is stuck behind a browser UI.
+2. Cairn stores the raw evidence and generated artifacts in S3, with durable rows in Postgres.
+3. The compiler turns evidence into an operation definition: input schema, output schema, execution plan, selectors, allowed domains, success predicates, and OpenAPI.
+4. The verifier replays the operation against known input and expected output.
+5. A verified operation is wrapped as a skill manifest and published as a marketplace listing.
+6. Agents discover the listing through the UI, OpenAPI, MCP, SDK, CLI, or per-skill README endpoints.
+7. A buyer creates an account and funds credits, or authorizes direct payment.
+8. Invocation checks agent auth, wallet balance or payment authorization, listing policy, scopes, input constraints, and operation status.
+9. The workflow executes through deterministic replay or a worker-backed browser fallback.
+10. Credits are debited only after successful execution, usage is recorded, and the agent receives normalized JSON.
+11. Scheduled verification detects drift. Repair jobs generate a new operation version and publish only after verification passes.
+
+Core invariants:
+
+- Agents call typed contracts, not raw browser sessions.
+- Every marketplace listing points to a versioned operation, skill manifest, and verification record.
+- Published APIs must be verified before they are listed.
+- Session secrets, CSRF tokens, cookies, payment credentials, and browser state stay outside agent-visible schemas.
+- Account-scoped agent keys are hashed before storage.
+- Credits are previewed before execution and debited after success.
+- Invocation logs store hashes and metadata so usage is auditable without exposing full payloads by default.
+
+## Architecture Overview
+
+```mermaid
+flowchart TB
+  subgraph Clients["Clients"]
+    UI["Marketplace UI"]
+    SDK["Node SDK"]
+    CLI["npx cairn CLI"]
+    Agent["MCP or OpenAPI agent"]
+  end
+
+  subgraph App["Cairn app"]
+    Server["src/server.js"]
+    Vercel["api/cairn.js adapter"]
+    Catalog["marketplace.js"]
+    Accounts["accounts.js and agentAuth.js"]
+    Tokens["tokens.js"]
+    Pipeline["pipeline.js"]
+    Policy["policy.js"]
+    Executor["executor.js"]
+  end
+
+  subgraph Storage["Durable storage"]
+    Postgres["Postgres / RDS"]
+    S3["S3 artifacts"]
+    Secrets["Secrets Manager"]
+  end
+
+  subgraph Integrations["External systems"]
+    Stripe["Stripe Checkout, webhooks, meter events"]
+    Workers["ECS workers and Step Functions"]
+    Targets["Approved target websites"]
+  end
+
+  UI --> Server
+  SDK --> Server
+  CLI --> Server
+  Agent --> Server
+  Vercel --> Server
+  Server --> Accounts
+  Server --> Catalog
+  Server --> Tokens
+  Server --> Pipeline
+  Server --> Policy
+  Server --> Executor
+  Accounts --> Postgres
+  Catalog --> Postgres
+  Tokens --> Postgres
+  Pipeline --> Postgres
+  Pipeline --> S3
+  Executor --> Workers
+  Workers --> Targets
+  Workers --> S3
+  Workers --> Secrets
+  Server --> Stripe
+```
+
+The local demo can run without Postgres, AWS, or Stripe. In that mode state is held in memory and Stripe is stubbed. Production should configure `DATABASE_URL`, run migrations, store artifacts in S3, and sync AWS/Stripe environment values to Vercel.
+
+### Runtime Responsibilities
+
+| Area | Files | Responsibility |
+| --- | --- | --- |
+| HTTP server | `src/server.js` | Routing, static pages, JSON APIs, MCP surface, sandbox demo endpoints |
+| Vercel adapter | `api/cairn.js`, `vercel.json` | Runs the same Node app as a Vercel Function |
+| SDK and CLI | `src/sdk/client.js`, `bin/cairn.js` | Catalog, accounts, wallet, credits, README, and invocation commands |
+| Accounts and auth | `src/cairn/accounts.js`, `src/cairn/agentAuth.js` | Account creation, bearer key issuing, key hashing, request authentication |
+| Marketplace | `src/cairn/marketplace.js` | Listing creation, catalog APIs, OpenAPI generation, integration guides, quote and checkout helpers |
+| Credits | `src/cairn/tokens.js` | Token packs, wallets, ledger, checkout, debit preview, post-success spend |
+| Persistence | `src/cairn/database.js`, `migrations/001_initial_schema.sql` | Postgres schema, migrations, published API loading, wallet and usage persistence |
+| Pipeline | `src/cairn/pipeline.js` | Recording, synthesis, verification, publishing, invocation, reverify, repair |
+| Execution | `src/cairn/executor.js` | Input validation, deterministic replay, fixture execution, output matching, failure classification |
+| Policy | `src/cairn/policy.js` | Skill approval, scope checks, simple input limits, invocation audit records |
+| Synthesis and repair | `src/cairn/synthesizer.js`, `src/cairn/repair.js` | Demo compiler, fresh-token lifting, drift classification, repaired operation proposals |
+| AWS setup | `infra/aws/cloudshell-setup.sh`, `docs/AWS_STORAGE.md`, `docs/AWS_DATABASE.md` | RDS, S3, SQS, EventBridge, and Secrets Manager setup guidance |
+
+## UML Diagrams
+
+### Domain Model
+
+```mermaid
+classDiagram
+direction LR
+class Account {
+  string id
+  string status
+  object metadata
+}
+class AgentKey {
+  string id
+  string accountId
+  string keyHash
+  string prefix
+  string status
+}
+class ApiOperation {
+  string id
+  string name
+  string target
+  string version
+  object definition
+}
+class SkillManifest {
+  string id
+  string operationId
+  string owner
+  string riskTier
+  object manifest
+}
+class MarketplaceListing {
+  string id
+  string slug
+  string skillId
+  string operationId
+  string visibility
+  number priceCents
+  number tokenCost
+}
+class VerificationRecord {
+  string operationId
+  string target
+  string status
+  object record
+}
+class TokenWallet {
+  string accountId
+  number balance
+  number lifetimePurchased
+  number lifetimeSpent
+}
+class TokenLedgerEntry {
+  string id
+  string accountId
+  string type
+  number tokens
+  number balanceAfter
+}
+class Payment {
+  string id
+  string accountId
+  string provider
+  string status
+  object metadata
+}
+class UsageEvent {
+  string id
+  string accountId
+  string listingSlug
+  string paymentMethod
+  number tokenCost
+}
+class InvocationLog {
+  string id
+  string accountId
+  string listingSlug
+  string skillId
+  string status
+  string inputHash
+  string outputHash
+}
+class WorkflowSubmission {
+  string id
+  string accountId
+  string targetUrl
+  string goal
+  string status
+}
+class Artifact {
+  string bucket
+  string key
+  string kind
+  string checksum
+}
+
+Account "1" --> "*" AgentKey : owns
+Account "1" --> "1" TokenWallet : funds
+Account "1" --> "*" TokenLedgerEntry : records
+Account "1" --> "*" Payment : pays
+Account "1" --> "*" UsageEvent : generates
+Account "1" --> "*" InvocationLog : invokes
+Account "1" --> "*" WorkflowSubmission : submits
+ApiOperation "1" --> "1" SkillManifest : wrapped_by
+ApiOperation "1" --> "1" MarketplaceListing : listed_as
+ApiOperation "1" --> "*" VerificationRecord : verified_by
+ApiOperation "1" --> "*" Artifact : backed_by
+MarketplaceListing "1" --> "*" UsageEvent : metered_as
+SkillManifest "1" --> "*" InvocationLog : audited_as
+```
+
+### Publish A Workflow
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Contributor
+  participant API as Cairn API
+  participant Auth as Agent auth
+  participant DB as Postgres
+  participant S3 as S3 artifacts
+  participant Compiler as Compiler or recorder
+  participant Verifier
+  participant Market as Marketplace
+
+  Contributor->>API: POST /api/workflows/recordings
+  API->>Auth: authenticate bearer key
+  Auth-->>API: account id
+  API->>DB: create workflow submission
+  API->>S3: store recording bundle and traces
+  API->>Compiler: create operation candidate
+  Compiler-->>API: operation definition and skill manifest
+  API->>Verifier: replay expected input/output
+  Verifier-->>API: verification record
+  alt verification passed
+    API->>DB: upsert operation, skill, listing, verification
+    API->>Market: expose catalog, README, OpenAPI, MCP
+  else verification failed
+    API->>DB: mark submission needs review
+  end
+```
+
+### Invoke A Skill With Credits
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Agent
+  participant API as Cairn API
+  participant Auth as Agent auth
+  participant Catalog as Marketplace
+  participant Wallet as Credit wallet
+  participant Policy
+  participant Executor
+  participant Target as Workflow target
+  participant DB as Postgres
+
+  Agent->>API: POST /api/tools/:namespace/:slug/invoke
+  API->>Auth: validate bearer key
+  Auth-->>API: account id
+  API->>Catalog: find listing and operation
+  API->>Wallet: preview token debit
+  Wallet-->>API: ok or insufficient credits
+  API->>Policy: evaluate skill scopes and input limits
+  Policy-->>API: allow or block
+  API->>Executor: execute operation
+  Executor->>Target: deterministic replay or worker call
+  Target-->>Executor: raw workflow result
+  Executor-->>API: normalized JSON output
+  API->>Wallet: spend tokens after success
+  API->>DB: persist usage event and invocation log
+  API-->>Agent: result, debit, wallet summary
+```
+
+### Stripe Token Pack Checkout
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant Buyer
+  participant API as Cairn API
+  participant Auth as Agent auth
+  participant Stripe
+  participant Webhook as Stripe webhook
+  participant Wallet as Credit wallet
+  participant DB as Postgres
+
+  Buyer->>API: POST /api/tokens/checkout
+  API->>Auth: validate account bearer key
+  Auth-->>API: account id
+  alt STRIPE_SECRET_KEY set
+    API->>Stripe: create Checkout Session
+    Stripe-->>API: checkout URL
+    API-->>Buyer: requires_payment
+    Stripe->>Webhook: checkout.session.completed
+    Webhook->>DB: idempotently record payment
+    Webhook->>Wallet: grant purchased credits
+  else stub mode
+    API->>Wallet: grant test credits immediately
+    Wallet->>DB: persist ledger entry when configured
+    API-->>Buyer: test_authorized
+  end
+```
+
+### Operation Lifecycle
+
+```mermaid
+stateDiagram-v2
+  [*] --> Submitted
+  Submitted --> Captured: recording bundle stored
+  Captured --> Compiled: operation candidate generated
+  Compiled --> Verifying: replay test starts
+  Verifying --> Published: verification passed
+  Verifying --> NeedsReview: verification failed
+  Published --> Discoverable: listing is visible
+  Discoverable --> Invoked: agent call starts
+  Invoked --> Metered: execution succeeded
+  Invoked --> Failed: execution failed
+  Metered --> Discoverable
+  Failed --> Reverify
+  Discoverable --> Reverify: scheduled check
+  Reverify --> Discoverable: still valid
+  Reverify --> DriftDetected: route, schema, token, or selector failure
+  DriftDetected --> RepairCandidate
+  RepairCandidate --> Published: repair verifies
+  RepairCandidate --> NeedsReview: low confidence or expanded permission
+```
+
+### Target Production Deployment
+
+```mermaid
+flowchart TB
+  subgraph FrontDoor["Front door"]
+    Browser["Marketplace browser"]
+    Agent["Agent clients"]
+    Vercel["Vercel Function"]
+  end
+
+  subgraph AppPlane["Application plane"]
+    API["Cairn HTTP server"]
+    SDK["SDK and CLI"]
+    Auth["Account and agent auth"]
+    Catalog["Catalog and listings"]
+    Billing["Credits and Stripe"]
+  end
+
+  subgraph DataPlane["Data plane"]
+    RDS["RDS Postgres"]
+    Artifacts["S3 artifact buckets"]
+    KMS["KMS encryption"]
+    Secrets["Secrets Manager"]
+  end
+
+  subgraph WorkerPlane["Worker plane"]
+    Queues["SQS queues"]
+    Events["EventBridge"]
+    Steps["Step Functions"]
+    ECS["ECS Fargate workers"]
+  end
+
+  Browser --> Vercel
+  Agent --> Vercel
+  Vercel --> API
+  SDK --> API
+  API --> Auth
+  API --> Catalog
+  API --> Billing
+  Auth --> RDS
+  Catalog --> RDS
+  Billing --> RDS
+  Billing --> Stripe["Stripe"]
+  API --> Queues
+  Queues --> Steps
+  Events --> Steps
+  Steps --> ECS
+  ECS --> Artifacts
+  ECS --> Secrets
+  ECS --> RDS
+  Artifacts --> KMS
+```
+
+## Software Engineering Plan
+
+This plan describes how Cairn moves from the current marketplace and SDK foundation into a production workflow API platform.
+
+### Phase 0: Keep The Demo And Docs Honest
+
+Goal: keep the local and hosted app understandable while the platform grows.
+
+Deliverables:
+
+- Keep `npm start`, `npm test`, SDK commands, CLI commands, and Vercel routing working.
+- Keep the README aligned with the real code paths, database tables, AWS setup, and payment behavior.
+- Make demo fixture APIs opt-in through `CAIRN_ENABLE_DEMO_LISTINGS=true`.
+- Keep local stub mode useful when Postgres, Stripe, and AWS are not configured.
+
+Acceptance criteria:
+
+- A new developer can create an account, fund credits, invoke a demo skill, and inspect the relevant code from the README alone.
+- Tests pass locally with and without `DATABASE_URL`.
+
+### Phase 1: Harden Persistence And Idempotency
+
+Goal: make Postgres the source of truth for accounts, listings, wallets, ledgers, payments, usage, submissions, and verification records.
+
+Deliverables:
+
+- Migration coverage for all current tables plus indexes for account, listing slug, operation id, invocation id, and payment id.
+- Repository functions around marketplace publication, account auth, token grants, token debits, usage events, and invocation logs.
+- Idempotency keys for checkout completion, token grant, token debit, usage event, and invocation log writes.
+- Backfill and seed tooling for initial published APIs.
+
+Acceptance criteria:
+
+- Restarting the server does not lose account balances, listings, usage, or verification state.
+- Replaying the same webhook or invocation id does not double-credit or double-debit.
+
+### Phase 2: Define Artifact Contracts
+
+Goal: standardize the boundary between recording tools, compilers, workers, and the marketplace.
+
+Deliverables:
+
+- Versioned JSON schemas for recording bundles, operation definitions, skill manifests, verification records, repair proposals, and listing manifests.
+- S3 key layout for recordings, traces, screenshots, generated OpenAPI, generated README, and verification evidence.
+- Manifest checksum and source-commit metadata for preloaded skill packages.
+- Promotion API that accepts artifacts, verifies them, and upserts durable database rows.
+
+Acceptance criteria:
+
+- A skill package can be loaded from S3, checked against a manifest, and promoted without manual database edits.
+- The database stores small queryable records while S3 stores large immutable evidence and generated artifacts.
+
+### Phase 3: Workerize Execution
+
+Goal: move slow or risky work out of the Vercel request path.
+
+Deliverables:
+
+- SQS queues for recording, synthesis, verification, invocation, and repair.
+- Step Functions workflows for long-running jobs.
+- ECS Fargate workers for deterministic HTTP replay and browser replay.
+- Worker status events through EventBridge.
+- Timeouts, retries, cancellation, and failure classification for every worker job.
+
+Acceptance criteria:
+
+- API endpoints can enqueue work and return status without exceeding Vercel function limits.
+- Invocation failures return structured codes such as `auth_expired`, `changed_route`, `stale_token`, `selector_failure`, and `changed_response_schema`.
+
+### Phase 4: Publish And Discover Real Skills
+
+Goal: make marketplace supply real, searchable, installable, and verifiable.
+
+Deliverables:
+
+- Contributor profile and ownership model for listings.
+- Listing approval workflow with verification freshness and rollback controls.
+- Per-skill docs generated from the operation contract.
+- Search and filters for category, risk tier, price, health, verification status, and supported agent client.
+- Hosted MCP configuration and OpenAPI export per listing.
+
+Acceptance criteria:
+
+- A real published skill has a listing, README, OpenAPI schema, verification record, price, owner, scopes, health score, and rollback version.
+- Agents can discover and invoke the skill through SDK, CLI, MCP, or REST.
+
+### Phase 5: Complete Payments And Credits
+
+Goal: support low-friction agent payments while keeping accounting correct.
+
+Deliverables:
+
+- Stripe products and prices for token packs.
+- Optional Stripe products and prices for direct per-call APIs.
+- Verified webhook handling for token purchases.
+- Ledger adjustments, refunds, spend limits, and approval thresholds.
+- Usage billing meter events for larger accounts.
+
+Acceptance criteria:
+
+- Paid calls do not run without account authorization or payment authorization.
+- Credits are debited exactly once after a successful invocation.
+- Failed or blocked invocations do not spend credits.
+
+### Phase 6: Security And Governance
+
+Goal: make repeated agent calls safe for real organizations.
+
+Deliverables:
+
+- Account/team/tenant ownership for wallets, listings, submissions, and API keys.
+- Skill scopes, risk tiers, per-skill rate limits, and domain allowlists.
+- Secret references resolved only inside workers.
+- Trace redaction before LLM-assisted repair.
+- Audit exports for compliance reviewers.
+- Human approval for destructive workflows, new domains, payment-moving workflows, and permission expansion.
+
+Acceptance criteria:
+
+- Every invocation has an account, agent key, listing, skill, operation version, policy decision, payment state, and audit record.
+- Operation definitions never contain raw credentials, session cookies, or long-lived secrets.
+
+### Phase 7: Reliability And Drift Repair
+
+Goal: keep published skills healthy when target websites change.
+
+Deliverables:
+
+- Scheduled reverification for every published listing.
+- Health score based on pass rate, latency, freshness, and recent failures.
+- Repair proposals backed by trace diffs and confidence scores.
+- Rollback to last verified operation version.
+- Alerts for repeated drift, target outages, or high invocation failure rates.
+
+Acceptance criteria:
+
+- Drift is visible in the marketplace before users trust a stale listing.
+- Safe route or selector repairs can publish automatically after verification.
+- Low-confidence or risky repairs produce a human review packet.
+
+## Quality Plan
+
+Testing should grow in layers:
+
+- Unit tests for auth, policy, token math, payment metadata, failure classification, synthesis helpers, and repair decisions.
+- Contract tests for generated OpenAPI, MCP tool definitions, listing JSON, SDK request payloads, and S3 manifests.
+- Integration tests for account creation, token checkout, webhook reconciliation, quote, invoke, debit, usage, and invocation logging.
+- Database tests for migrations, idempotency, durable catalog load, and concurrent debits.
+- Golden replay tests for recorded workflows with fixed artifacts and expected outputs.
+- Worker tests for timeout, retry, cancellation, failure code mapping, and artifact writes.
+- Security tests for bearer key handling, account matching, scope enforcement, domain allowlists, input limits, and secret references.
+- Load tests for catalog browsing, wallet reads, MCP tool listing, and queued invocations.
+
+Production readiness gates:
+
+- Every public listing has passing verification evidence.
+- Every payment path is idempotent.
+- Every worker job writes status, logs, timeout state, and final artifact pointers.
+- Every secret is stored outside the operation contract.
+- Every listing exposes price, scopes, health, freshness, and rollback version.
+
+## Preloaded Skills And S3 Artifacts
+
+The `final-skill-operation` branch includes a preloaded skill package used for the insurance marketplace demo and learned JSON skills. Main production should treat those as importable artifacts, not as hardcoded marketplace supply.
+
+Recommended S3 layout:
+
+```text
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/manifest.json
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/skills/<skill-id>.json
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/marketplace/skills.json
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/marketplace/insurance-skills.json
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/marketplace/SKILL_OPERATION_README.md
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/public/insurance-marketplace.html
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/public/insurance-marketplace.css
+s3://cairn-api-artifacts-prod/preloaded-skills/<package-version>/public/insurance-marketplace.js
+```
+
+The manifest should include:
+
+- source repository, branch, commit, and generation time
+- package version and checksum
+- skill id, name, description, source URL, input count, step count, output count, execution strategy, and primary endpoint
+- object keys for every skill, marketplace listing, README, static asset, trace, and verification artifact
+- promotion status: draft, verified, published, deprecated, or rejected
+
+Promotion flow:
+
+1. Upload package artifacts to S3.
+2. Validate the manifest and checksums.
+3. Insert or update operation definitions, skill manifests, marketplace listings, and verification records.
+4. Mark listings as public only after verification passes.
+5. Keep the S3 package immutable and publish updates as a new package version.
+
+## Risk Register
+
+| Risk | Impact | Mitigation |
+| --- | --- | --- |
+| Target site changes route, token behavior, or response schema | Published skill fails or returns stale data | Scheduled verification, structured failure codes, repair jobs, rollback |
+| Credits are double spent or double granted | Accounting loss and user distrust | Idempotency keys, database constraints, webhook replay tests |
+| Agent key leaks | Unauthorized wallet or invocation access | Hash keys, prefix-only display, revocation, rate limits, short-lived future auth |
+| Secrets enter operation JSON or traces | Security incident | Secret handles only, worker-side resolution, trace redaction |
+| Browser replay becomes the default | Slow, expensive, brittle execution | Prefer deterministic endpoint replay, reserve browser replay for fallback |
+| Low-quality generated skill gets published | Marketplace trust loss | Verification gate, human review, quality scoring, rollback |
+| Vercel function times out on long jobs | Failed invocations and poor UX | Worker queues, Step Functions, async status events |
+| Demo listings are mistaken for real supply | Misleading marketplace | Keep demo listings opt-in and require stored published rows for production |
+
 ## Quickstart
 
 Install dependencies:
