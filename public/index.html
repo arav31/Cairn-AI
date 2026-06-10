@@ -3,150 +3,75 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Cairn API Marketplace</title>
+  <title>Cairn | Workflow APIs for AI agents</title>
   <link rel="stylesheet" href="/styles.css">
 </head>
-<body>
-  <div class="browser-frame">
-    <div class="browser-chrome" aria-hidden="true">
-      <span class="window-dot red"></span>
-      <span class="window-dot amber"></span>
-      <span class="window-dot green"></span>
-    </div>
+<body class="landing-body">
+  <header class="landing-nav">
+    <a class="landing-brand" href="/">
+      <span class="brand-symbol">C</span>
+      <span>Cairn</span>
+    </a>
+    <nav aria-label="Primary">
+      <a href="/marketplace">Marketplace</a>
+      <a href="/pricing">Pricing</a>
+      <a href="/openapi.json">OpenAPI</a>
+      <a href="/.well-known/cairn.json">Discovery</a>
+    </nav>
+  </header>
 
-    <div class="marketplace-app">
-      <aside class="sidebar" aria-label="Cairn navigation">
-        <a class="sidebar-brand" href="/">
-          <span class="brand-symbol">C</span>
-          <span>Cairn</span>
-        </a>
-        <nav class="sidebar-nav">
-          <a class="active" href="#catalog"><span>▣</span> Marketplace</a>
-          <a href="#detail-pane"><span>⌁</span> My Tools</a>
-          <a href="#detail-pane"><span>↳</span> Invocations</a>
-          <a href="#wallet"><span>▤</span> Wallet</a>
-          <a href="#activity"><span>◷</span> Activity</a>
-          <a href="#publish"><span>＋</span> Contribute</a>
-          <a href="/openapi.json"><span>▧</span> Docs & SDK</a>
-          <a href="/pricing"><span>◎</span> Pricing</a>
-        </nav>
+  <main>
+    <section class="landing-hero">
+      <div class="landing-copy">
+        <p class="eyebrow">Workflow APIs for AI agents</p>
+        <h1>Turn repeated web tasks into APIs your AI can use.</h1>
+        <p>Record a workflow once. Cairn turns it into a verified endpoint. Your agent can call it later, pay with tokens, and finish the task without clicking through every page again.</p>
+        <div class="landing-actions">
+          <a class="primary-link" href="/marketplace">Open marketplace</a>
+          <a class="secondary-link" href="/marketplace#publish">Submit a workflow</a>
+        </div>
+        <dl class="landing-metrics" aria-label="Cairn marketplace snapshot">
+          <div><dt>3</dt><dd>starter APIs</dd></div>
+          <div><dt>Tokens</dt><dd>or pay per run</dd></div>
+          <div><dt>MCP</dt><dd>ready for agents</dd></div>
+        </dl>
+      </div>
+      <figure class="landing-preview">
+        <img src="/marketplace-preview.png" alt="Cairn marketplace dashboard showing workflow API cards, token balance, and payment modes.">
+      </figure>
+    </section>
 
-        <section class="endpoint-card" aria-label="Agent endpoints">
-          <h2>Agent endpoints</h2>
-          <a href="/mcp"><span>MCP endpoint</span><code>/mcp</code></a>
-          <a href="/openapi.json"><span>OpenAPI</span><code>/openapi.json</code></a>
-          <a href="/.well-known/cairn.json"><span>Discovery</span><code>/.well-known/cairn.json</code></a>
-          <code id="integration-guide-url" class="hidden">/api/integrations</code>
-        </section>
-      </aside>
+    <section class="landing-section">
+      <div>
+        <p class="eyebrow">How it works</p>
+        <h2>Simple enough for normal users, structured enough for agents.</h2>
+      </div>
+      <div class="landing-steps">
+        <article>
+          <span>01</span>
+          <h3>Record the task</h3>
+          <p>Show Cairn a workflow you already do in a browser, like checking quotes or looking up renewal status.</p>
+        </article>
+        <article>
+          <span>02</span>
+          <h3>Get a verified API</h3>
+          <p>Cairn turns the workflow into a typed endpoint with a README, OpenAPI schema, and test result.</p>
+        </article>
+        <article>
+          <span>03</span>
+          <h3>Let agents use it</h3>
+          <p>Agents connect through MCP or HTTP, spend tokens after success, and keep a clear usage trail.</p>
+        </article>
+      </div>
+    </section>
 
-      <main class="market-stage" id="catalog">
-        <header class="market-header">
-          <div>
-            <p class="eyebrow">Verified workflow APIs</p>
-            <h1>Welcome to the Cairn Marketplace</h1>
-            <p>Find useful task APIs, connect them to your AI tool, and pay only when a workflow completes.</p>
-          </div>
-          <div class="stats-mini" aria-label="Marketplace stats">
-            <span><strong id="stat-tools">0</strong> APIs</span>
-            <span><strong id="stat-calls">0</strong> runs</span>
-            <span><strong id="stat-uptime">0%</strong> uptime</span>
-          </div>
-        </header>
-
-        <section class="toolbar" aria-label="Marketplace search and filters">
-          <div class="search-field">
-            <span aria-hidden="true">⌕</span>
-            <input id="search-input" aria-label="Search skills" placeholder="Search skills, like insurance, property, renewals">
-            <button id="clear-search" class="icon-button" type="button" aria-label="Clear search">×</button>
-          </div>
-          <select id="category-select" aria-label="Category">
-            <option>All categories</option>
-          </select>
-          <select id="sort-select" aria-label="Sort">
-            <option>Popular</option>
-            <option>Newest</option>
-            <option>Lowest token cost</option>
-          </select>
-        </section>
-
-        <div id="category-filters" class="filter-row" aria-label="Category filters"></div>
-
-        <section id="listing-grid" class="listing-grid" aria-label="Marketplace APIs"></section>
-
-        <section id="detail-pane" class="detail-pane" aria-label="Selected API"></section>
-
-        <section id="publish" class="contribute-strip">
-          <div class="contribute-icon" aria-hidden="true">◎</div>
-          <div>
-            <h2>Contribute your workflow</h2>
-            <p>Record a task you already do. Cairn can turn it into a verified API that any approved agent can use.</p>
-          </div>
-          <form id="contribute-form" class="contribute-form">
-            <input name="title" placeholder="Task name" aria-label="Task name" required>
-            <input name="targetUrl" placeholder="Website or starting point" aria-label="Website or starting point">
-            <textarea name="goal" placeholder="What should the API return?" aria-label="What should the API return?" required></textarea>
-            <button type="submit">Submit workflow</button>
-            <p id="contribute-status" class="form-status"></p>
-          </form>
-        </section>
-      </main>
-
-      <aside class="right-rail" aria-label="Wallet and payment controls">
-        <section id="wallet" class="rail-card wallet-card">
-          <div class="rail-card-title">
-            <span class="rail-icon">◉</span>
-            <h2>Tokens</h2>
-          </div>
-          <label>Account
-            <input id="account-id-input" value="demo-user" autocomplete="off">
-          </label>
-          <button id="use-account-button" class="secondary-button" type="button">Create or load</button>
-          <div class="balance-row">
-            <span>Balance</span>
-            <strong id="token-balance">0</strong>
-            <small>tokens</small>
-          </div>
-          <label>Buy tokens
-            <select id="token-pack-select"></select>
-          </label>
-          <button id="buy-tokens-button" type="button">Buy tokens</button>
-          <p id="token-status" class="form-status"></p>
-          <h3 id="activity">Recent activity</h3>
-          <ol id="token-ledger" class="token-ledger" aria-label="Recent wallet activity"></ol>
-        </section>
-
-        <section class="rail-card payment-card">
-          <div class="rail-card-title">
-            <span class="rail-icon">▭</span>
-            <h2>Payment modes</h2>
-          </div>
-          <div id="payment-mode-list" class="payment-mode-list">
-            <button class="payment-mode selected" data-payment-mode="tokens" type="button">
-              <span>◉</span>
-              <strong>Tokens</strong>
-              <small>Use credits from your wallet for instant access.</small>
-            </button>
-            <button class="payment-mode" data-payment-mode="direct" type="button">
-              <span>▣</span>
-              <strong>Pay per run</strong>
-              <small>Pay only after a successful workflow run.</small>
-            </button>
-            <button class="payment-mode" data-payment-mode="card" type="button">
-              <span>▤</span>
-              <strong>Card payments</strong>
-              <small>Use Stripe Checkout or an agent payment token.</small>
-            </button>
-          </div>
-        </section>
-
-        <section class="rail-card trust-card">
-          <span class="rail-icon">✓</span>
-          <p>Secure, policy-gated, and audited every step of the way.</p>
-        </section>
-      </aside>
-    </div>
-  </div>
-  <script src="/app.js"></script>
+    <section class="landing-band">
+      <div>
+        <h2>Start with the marketplace.</h2>
+        <p>Insurance quotes, property search, and business renewals are live starter skills. More workflows can be contributed from inside the app.</p>
+      </div>
+      <a class="primary-link" href="/marketplace">Browse APIs</a>
+    </section>
+  </main>
 </body>
 </html>

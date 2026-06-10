@@ -462,8 +462,23 @@ function serveStatic(req, res, pathname) {
     return false;
   }
   const ext = path.extname(filePath);
-  const type = ext === ".css" ? "text/css" : ext === ".js" ? "text/javascript" : "text/html";
-  send(res, 200, fs.readFileSync(filePath), { "Content-Type": `${type}; charset=utf-8` });
+  const typeByExt = {
+    ".css": "text/css",
+    ".js": "text/javascript",
+    ".json": "application/json",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".html": "text/html"
+  };
+  const type = typeByExt[ext] || "application/octet-stream";
+  const contentType = type.startsWith("text/") || type === "application/json"
+    ? `${type}; charset=utf-8`
+    : type;
+  send(res, 200, fs.readFileSync(filePath), { "Content-Type": contentType });
   return true;
 }
 

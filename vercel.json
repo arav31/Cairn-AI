@@ -1,43 +1,64 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "cleanUrls": true,
-  "functions": {
-    "api/cairn.js": {
-      "maxDuration": 10
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/cairn.js",
+      "use": "@vercel/node"
+    },
+    {
+      "src": "public/**",
+      "use": "@vercel/static"
     }
-  },
-  "rewrites": [
+  ],
+  "routes": [
     {
-      "source": "/pricing",
-      "destination": "/pricing.html"
+      "src": "/",
+      "dest": "/public/index.html"
     },
     {
-      "source": "/openapi.json",
-      "destination": "/api/cairn?cairnPath=/openapi.json"
+      "src": "/marketplace",
+      "dest": "/public/marketplace.html"
     },
     {
-      "source": "/mcp",
-      "destination": "/api/cairn?cairnPath=/mcp"
+      "src": "/pricing",
+      "dest": "/public/pricing.html"
     },
     {
-      "source": "/api/:path*",
-      "destination": "/api/cairn?cairnPath=/api/:path*"
+      "src": "/\\.well-known/cairn\\.json",
+      "dest": "/api/cairn?cairnPath=/.well-known/cairn.json"
     },
     {
-      "source": "/meridian",
-      "destination": "/api/cairn?cairnPath=/meridian"
+      "src": "/openapi.json",
+      "dest": "/api/cairn?cairnPath=/openapi.json"
     },
     {
-      "source": "/meridian/:path*",
-      "destination": "/api/cairn?cairnPath=/meridian/:path*"
+      "src": "/mcp",
+      "dest": "/api/cairn?cairnPath=/mcp"
     },
     {
-      "source": "/civic",
-      "destination": "/api/cairn?cairnPath=/civic"
+      "src": "/api/(.*)",
+      "dest": "/api/cairn?cairnPath=/api/$1"
     },
     {
-      "source": "/civic/:path*",
-      "destination": "/api/cairn?cairnPath=/civic/:path*"
+      "src": "/meridian",
+      "dest": "/api/cairn?cairnPath=/meridian"
+    },
+    {
+      "src": "/meridian/(.*)",
+      "dest": "/api/cairn?cairnPath=/meridian/$1"
+    },
+    {
+      "src": "/civic",
+      "dest": "/api/cairn?cairnPath=/civic"
+    },
+    {
+      "src": "/civic/(.*)",
+      "dest": "/api/cairn?cairnPath=/civic/$1"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/public/$1"
     }
   ]
 }
