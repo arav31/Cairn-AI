@@ -1,0 +1,43 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "cleanUrls": true,
+  "functions": {
+    "api/cairn.js": {
+      "maxDuration": 10
+    }
+  },
+  "rewrites": [
+    {
+      "source": "/pricing",
+      "destination": "/pricing.html"
+    },
+    {
+      "source": "/openapi.json",
+      "destination": "/api/cairn?cairnPath=/openapi.json"
+    },
+    {
+      "source": "/mcp",
+      "destination": "/api/cairn?cairnPath=/mcp"
+    },
+    {
+      "source": "/api/:path*",
+      "destination": "/api/cairn?cairnPath=/api/:path*"
+    },
+    {
+      "source": "/meridian",
+      "destination": "/api/cairn?cairnPath=/meridian"
+    },
+    {
+      "source": "/meridian/:path*",
+      "destination": "/api/cairn?cairnPath=/meridian/:path*"
+    },
+    {
+      "source": "/civic",
+      "destination": "/api/cairn?cairnPath=/civic"
+    },
+    {
+      "source": "/civic/:path*",
+      "destination": "/api/cairn?cairnPath=/civic/:path*"
+    }
+  ]
+}

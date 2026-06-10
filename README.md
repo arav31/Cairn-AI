@@ -57,6 +57,30 @@ npm test
 - `/.well-known/cairn.json` - discovery document for agents.
 - `/openapi.json` - OpenAPI document for marketplace tool invocation.
 
+## Vercel Deployment
+
+The app runs locally as a plain Node HTTP server with `npm start`. On Vercel, `api/cairn.js` adapts the same server to a Vercel Function, and `vercel.json` rewrites API-style routes into that function.
+
+Deploy from GitHub after pushing `main`, then set these Vercel environment variables:
+
+```bash
+HOST=0.0.0.0
+PORT=3000
+CAIRN_PUBLIC_URL=https://your-vercel-domain.vercel.app
+```
+
+Optional payment variables:
+
+```bash
+STRIPE_SECRET_KEY=sk_test_...
+STRIPE_WEBHOOK_SECRET=whsec_...
+STRIPE_PRICE_TOKENS_STARTER=price_...
+STRIPE_PRICE_TOKENS_BUILDER=price_...
+STRIPE_PRICE_TOKENS_TEAM=price_...
+```
+
+The current demo keeps marketplace state in memory. That is fine for a demo, but production should move listings, wallets, ledgers, verification records, and workflow submissions into Postgres because Vercel Function instances can be recreated between invocations.
+
 ## Current Seed APIs
 
 | API | Endpoint | Price | Token price |
@@ -345,6 +369,8 @@ public/pricing.html        Pricing page
 public/pricing.js          Pricing page behavior
 public/styles.css          Shared marketplace styling
 
+api/cairn.js               Vercel Function adapter for the Node server
+vercel.json                Vercel rewrites and function config
 src/server.js              HTTP server, routes, static pages, MCP surface
 src/cairn/marketplace.js   Seed listings, OpenAPI, checkout, usage billing
 src/cairn/tokens.js        Token packs, wallets, ledger, token checkout
