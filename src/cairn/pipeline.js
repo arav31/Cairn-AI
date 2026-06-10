@@ -13,6 +13,15 @@ function createState() {
     operations: {},
     skills: {},
     marketplaceListings: {},
+    marketplaceStorage: {
+      databaseConfigured: false,
+      mode: "memory",
+      source: "ephemeral",
+      loadedCount: 0,
+      demoSeeded: false,
+      demoSeededCount: 0,
+      listingCount: 0
+    },
     accounts: {},
     agentApiKeys: {},
     workflowSubmissions: {},

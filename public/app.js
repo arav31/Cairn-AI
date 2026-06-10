@@ -10,6 +10,7 @@ const app = {
   latestTokenPurchase: null,
   stripeConfig: null,
   tokenConfig: null,
+  catalogStorage: null,
   wallet: null,
   walletLedger: [],
   accountId: "demo-user",
@@ -78,12 +79,13 @@ function applyAgentAuth(payload) {
 function filteredListings() {
   const query = app.query.toLowerCase();
   const matches = app.listings.filter((listing) => {
+    const tags = Array.isArray(listing.tags) ? listing.tags : [];
     const haystack = [
       listing.title,
       listing.tagline,
       listing.category,
       listing.publisher,
-      listing.tags.join(" ")
+      tags.join(" ")
     ].join(" ").toLowerCase();
     const categoryMatches = app.category === "All" || listing.category === app.category;
     return categoryMatches && (!query || haystack.includes(query));
@@ -118,14 +120,10 @@ function latestOutput() {
 }
 
 async function fetchCatalog() {
-  let catalog = { listings: [] };
-  for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await fetch("/api/catalog");
-    catalog = await response.json();
-    if (catalog.listings.length > 0) break;
-    await new Promise((resolve) => setTimeout(resolve, 150));
-  }
+  const response = await fetch("/api/catalog");
+  const catalog = await response.json();
   app.listings = catalog.listings;
+  app.catalogStorage = catalog.storage || null;
   app.selectedSlug = app.selectedSlug || (app.listings[0] && app.listings[0].slug);
   const stripeResponse = await fetch("/api/payments/stripe-config");
   app.stripeConfig = await stripeResponse.json();
@@ -328,9 +326,9 @@ async function buySelectedTokenPack() {
 }
 
 function renderStats() {
-  const calls = app.listings.reduce((sum, listing) => sum + listing.stats.callCount, 0);
+  const calls = app.listings.reduce((sum, listing) => sum + ((listing.stats && listing.stats.callCount) || 0), 0);
   const uptime = app.listings.length
-    ? app.listings.reduce((sum, listing) => sum + listing.stats.uptimePct, 0) / app.listings.length
+    ? app.listings.reduce((sum, listing) => sum + ((listing.stats && listing.stats.uptimePct) || 0), 0) / app.listings.length
     : 0;
   $("stat-tools").textContent = app.listings.length;
   $("stat-calls").textContent = compactNumber(calls);
@@ -393,21 +391,21 @@ function renderListings() {
       <div class="listing-body">
         <h2>${escapeHtml(listing.title)}</h2>
         <p>${escapeHtml(listing.tagline)}</p>
-        <div class="tag-row">${listing.tags.slice(0, 3).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
+        <div class="tag-row">${(listing.tags || []).slice(0, 3).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
         <div class="verified-line">
           <span>Verified</span>
           <small>${escapeHtml(listing.operationVersion)}</small>
-          <small>${listing.stats.healthScore / 20 >= 4.8 ? "4.9" : "4.7"} (${Math.round(listing.stats.installCount / 4)})</small>
+          <small>${((listing.stats && listing.stats.healthScore) || 0) / 20 >= 4.8 ? "4.9" : "4.7"} (${Math.round(((listing.stats && listing.stats.installCount) || 0) / 4)})</small>
         </div>
         <div class="price-strip">
           <strong>${tokenLabel(listing.pricing.tokenCost)}</strong>
           <span>${money(listing.pricing.priceCents, listing.pricing.currency)} / run</span>
-          <span>${compactNumber(listing.stats.callCount)} runs</span>
+          <span>${compactNumber(listing.stats && listing.stats.callCount)} runs</span>
         </div>
       </div>
       <button class="detail-button" data-slug="${escapeHtml(listing.slug)}" type="button">View details</button>
     </article>
-  `).join("") || "<p class='empty'>No workflow APIs match this search.</p>";
+  `).join("") || emptyCatalogHtml();
 
   for (const button of document.querySelectorAll("[data-slug]")) {
     button.addEventListener("click", () => {
@@ -423,7 +421,13 @@ function renderListings() {
 function renderDetail() {
   const listing = selectedListing();
   if (!listing) {
-    $("detail-pane").innerHTML = "<p class='empty'>No API selected.</p>";
+    $("detail-pane").innerHTML = `
+      <section class="empty-panel">
+        <h2>No API selected</h2>
+        <p>Published workflow APIs will appear here after they are stored and verified.</p>
+        <a href="#publish">Submit the first workflow</a>
+      </section>
+    `;
     return;
   }
   const origin = window.location.origin;
@@ -508,6 +512,26 @@ const result = await cairn.invoke("${listing.slug}", {
   $("quote-button").addEventListener("click", quoteSelected);
   $("checkout-button").addEventListener("click", checkoutSelected);
   $("token-invoke-button").addEventListener("click", invokeSelectedWithTokens);
+}
+
+function emptyCatalogHtml() {
+  if (app.listings.length > 0) {
+    return "<p class='empty'>No workflow APIs match this search.</p>";
+  }
+  const storage = app.catalogStorage || {};
+  const storageLabel = storage.databaseConfigured
+    ? "The database is connected, but no APIs have been published yet."
+    : "Persistent database storage is not connected, so no published APIs are available.";
+  return `
+    <section class="empty-panel">
+      <h2>No APIs published yet</h2>
+      <p>${escapeHtml(storageLabel)}</p>
+      <div class="empty-actions">
+        <a href="#publish">Submit a workflow</a>
+        <a href="/api/catalog">View catalog API</a>
+      </div>
+    </section>
+  `;
 }
 
 function render() {

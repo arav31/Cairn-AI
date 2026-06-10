@@ -6,14 +6,14 @@ If a useful task is stuck behind a long browser workflow, someone can record tha
 
 Current product shape:
 
-- A Smithery-style marketplace for agent-ready workflow APIs.
+- A Smithery-style marketplace for agent-ready workflow APIs, backed by stored published listings.
 - A package, SDK, and CLI that agents or developers can install.
 - Account wallets with Cairn credits.
 - Credit purchase flow for token packs.
 - Skill invocation with credits deducted only after a successful completed workflow.
 - Per-skill README, OpenAPI, MCP, and integration guide endpoints.
 - Stub-mode Stripe locally, with real Stripe Checkout/webhook paths ready for configuration.
-- Optional Postgres persistence when `DATABASE_URL` is configured, including accounts, wallets, usage, API definitions, and verification records.
+- Optional Postgres persistence when `DATABASE_URL` is configured, including accounts, wallets, usage, API definitions, and verification records. Without stored published API rows, the marketplace catalog is intentionally empty.
 
 Production URL currently used by the SDK default:
 
@@ -25,9 +25,9 @@ https://cairn-ai-gamma.vercel.app
 
 - Marketplace homepage at `/`.
 - Pricing page at `/pricing`.
-- Seed API listings:
-  - Compare Insurance Prices.
-  - Search Properties.
+- Storage-backed API catalog:
+  - `/api/catalog` lists only stored, published APIs.
+  - Demo fixture APIs are available only when `CAIRN_ENABLE_DEMO_LISTINGS=true`.
 - Agent discovery:
   - `/.well-known/cairn.json`
   - `/openapi.json`
@@ -268,14 +268,22 @@ The successful response includes:
 }
 ```
 
-## Seed APIs
+## Demo Fixture APIs
 
 | API | Endpoint | Cash price | Credit price |
 | --- | --- | ---: | ---: |
 | Compare Insurance Prices | `/api/tools/insurance/compare-insurance-prices/invoke` | `$0.03` | `1 token` |
 | Search Properties | `/api/tools/real-estate/search-properties/invoke` | `$0.04` | `1 token` |
 
-These are synthetic demo workflows. They model the eventual shape of recorded automations where no public API exists or where browser automation is too slow to run every time.
+These are synthetic fixture workflows, not real hosted marketplace supply. They are hidden by default so the deployed marketplace does not pretend to have APIs before anything is published.
+
+Enable them only for local demos or tests:
+
+```bash
+CAIRN_ENABLE_DEMO_LISTINGS=true npm start
+```
+
+Real marketplace rows must come from storage: an operation definition, skill manifest, listing, and verification record in Postgres. S3 stores the larger immutable artifacts behind those rows.
 
 ## Pricing
 
@@ -527,7 +535,7 @@ Repair adapters:
 
 ## Database Setup
 
-Local demos run without a database. In that mode, wallets, ledgers, listings, and logs live in process memory.
+Local demos run without a database. In that mode, wallets, ledgers, and logs live in process memory, and the marketplace catalog starts empty unless `CAIRN_ENABLE_DEMO_LISTINGS=true`.
 
 Production should set `DATABASE_URL` and run:
 
@@ -544,8 +552,8 @@ migrations/001_initial_schema.sql
 When `DATABASE_URL` is set:
 
 - Accounts persist in the `accounts` table.
-- Marketplace listings are upserted into Postgres during bootstrap.
-- Seed API operations use stable operation IDs, so deploys and restarts update existing rows instead of creating a new operation every time.
+- Marketplace listings are loaded from Postgres during bootstrap.
+- Demo fixture APIs are not upserted unless explicitly enabled with `CAIRN_ENABLE_DEMO_LISTINGS=true`.
 - Published APIs are stored as operation definitions, skill manifests, marketplace listings, and verification records.
 - On boot, Cairn reloads published APIs from Postgres so hosted APIs can be listed, inspected, and checked again after a restart.
 - Token wallets persist by account ID.

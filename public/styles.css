@@ -498,6 +498,44 @@ main {
   color: var(--muted);
 }
 
+.empty-panel {
+  display: grid;
+  gap: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 18px;
+  background: #fff;
+}
+
+.empty-panel h2 {
+  margin: 0;
+  font-size: 22px;
+}
+
+.empty-panel p {
+  max-width: 560px;
+  margin: 0;
+  color: var(--muted);
+}
+
+.empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.empty-panel a,
+.empty-actions a {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border: 1px solid var(--green);
+  border-radius: 6px;
+  padding: 8px 11px;
+  color: var(--green);
+  font-weight: 850;
+}
+
 .tag-row {
   display: flex;
   flex-wrap: wrap;
@@ -1184,6 +1222,67 @@ body {
   display: block;
   width: 100%;
   height: auto;
+}
+
+.landing-preview-panel {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr);
+  min-height: 320px;
+}
+
+.preview-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 12px;
+  padding: 24px 18px;
+  color: #dce9e1;
+  background: #071822;
+}
+
+.preview-sidebar strong {
+  color: #fff;
+  font-size: 24px;
+}
+
+.preview-sidebar span {
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-weight: 800;
+}
+
+.preview-main {
+  display: grid;
+  align-content: center;
+  gap: 10px;
+  padding: 36px;
+}
+
+.preview-eyebrow {
+  color: var(--app-green);
+  font-size: 12px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.preview-main h2 {
+  margin: 0;
+  font-size: 34px;
+}
+
+.preview-main p {
+  max-width: 360px;
+  margin: 0;
+  color: var(--app-muted);
+}
+
+.preview-main a {
+  width: fit-content;
+  border: 1px solid var(--app-green);
+  border-radius: 6px;
+  padding: 10px 12px;
+  color: var(--app-green);
+  font-weight: 900;
 }
 
 .landing-section {
@@ -1977,6 +2076,14 @@ summary {
 
   .landing-copy h1 {
     font-size: 42px;
+  }
+
+  .landing-preview-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .preview-sidebar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .landing-band {

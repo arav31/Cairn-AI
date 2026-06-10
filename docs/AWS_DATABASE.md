@@ -66,7 +66,7 @@ Published APIs are also database backed:
 - `verification_records` stores verification history so an API can be checked again later.
 - `workflow_submissions` stores contributor requests by account.
 
-Cairn upserts the built-in seed APIs with stable operation IDs during bootstrap, then reloads published APIs from Postgres. That means Vercel/AWS restarts can recover the marketplace API definitions from the database instead of relying only on process memory.
+Cairn reloads published APIs from Postgres during bootstrap. Demo fixture APIs are hidden by default and are only seeded when `CAIRN_ENABLE_DEMO_LISTINGS=true`, so Vercel/AWS restarts recover the marketplace from stored API rows instead of hardcoded inventory.
 
 ## Security Notes
 

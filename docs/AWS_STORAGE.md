@@ -51,7 +51,7 @@ S3 is not the marketplace database. It stores large immutable artifacts. The sea
 - Stripe customer/payment references.
 - Invocation logs and audit metadata.
 
-Set `DATABASE_URL` once the Postgres database is created. Until then, the app still uses in-memory seed data.
+Set `DATABASE_URL` once the Postgres database is created. Until published API rows exist in Postgres, the marketplace catalog intentionally stays empty. Local fixture APIs are available only with `CAIRN_ENABLE_DEMO_LISTINGS=true`.
 
 ## App Env Mapping
 

@@ -178,6 +178,7 @@ async function listPublishedApis() {
        ORDER BY created_at DESC
        LIMIT 1
      ) latest ON true
+     WHERE listing.visibility IN ('public', 'internal')
      ORDER BY listing.created_at ASC`
   );
   return result.rows.map((row) => ({

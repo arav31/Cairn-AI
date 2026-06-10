@@ -59,7 +59,7 @@ async function send(app, method, url, body, headers = {}) {
 }
 
 test("account can buy credits and spend them only after workflow completion", async () => {
-  const app = createApp();
+  const app = createApp({ seedDemoListings: true });
   app.setBaseUrl("https://cairn.example");
   const accountId = "acct_flow_test";
 
@@ -115,7 +115,7 @@ test("account can buy credits and spend them only after workflow completion", as
 });
 
 test("integration guide exposes package, credit, REST, and MCP setup", async () => {
-  const app = createApp();
+  const app = createApp({ seedDemoListings: true });
   app.setBaseUrl("https://cairn.example");
 
   const guide = await send(app, "GET", "/api/integrations/insurance%2Fcompare-insurance-prices");

@@ -482,6 +482,7 @@ function publicState(state) {
     skills: Object.values(state.skills),
     marketplaceListings: listings,
     catalog: listings,
+    marketplaceStorage: state.marketplaceStorage,
     accounts: Object.values(state.accounts || {}),
     workflowSubmissions: Object.values(state.workflowSubmissions || {}),
     tokenWallets: Object.values(state.tokenWallets).map(publicWallet),
@@ -533,13 +534,19 @@ function serveStatic(req, res, pathname) {
   return true;
 }
 
-function createApp() {
+function createApp(options = {}) {
   const state = createState();
   const bus = new EventBus();
   const tokenStore = new Set();
   let baseUrl = "http://localhost:3000";
-  const ready = bootstrapMarketplace(state)
-    .then(() => bus.emit("marketplace.ready", { listings: Object.values(state.marketplaceListings).length }))
+  const bootstrapOptions = Object.prototype.hasOwnProperty.call(options, "seedDemoListings")
+    ? { seedDemo: options.seedDemoListings }
+    : {};
+  const ready = bootstrapMarketplace(state, bootstrapOptions)
+    .then((storage) => bus.emit("marketplace.ready", {
+      listings: Object.values(state.marketplaceListings).length,
+      storage
+    }))
     .catch((error) => bus.emit("marketplace.bootstrap_failed", { error: { message: error.message } }));
 
   const server = http.createServer(async (req, res) => {
@@ -576,6 +583,7 @@ function createApp() {
             tokenCheckout: `${origin}/api/tokens/checkout`,
             mode: process.env.STRIPE_SECRET_KEY ? "live_configured" : "stub_until_keys_configured"
           },
+          storage: state.marketplaceStorage,
           listings: listings.map((listing) => ({
             slug: listing.slug,
             title: listing.title,
@@ -603,7 +611,8 @@ function createApp() {
         json(res, 200, {
           listings,
           count: listings.length,
-          categories: [...new Set(listings.map((listing) => listing.category))]
+          categories: [...new Set(listings.map((listing) => listing.category))],
+          storage: state.marketplaceStorage
         });
         return;
       }
