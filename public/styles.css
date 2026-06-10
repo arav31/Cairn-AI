@@ -1855,9 +1855,11 @@ summary {
 
 .payment-mode {
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr) 20px;
+  grid-template-columns: 34px minmax(0, 1fr) 22px;
+  grid-template-rows: auto auto;
+  align-items: center;
   gap: 3px 10px;
-  min-height: 74px;
+  min-height: 78px;
   border: 1px solid var(--app-line);
   background: #fff;
   color: var(--app-ink);
@@ -1866,6 +1868,7 @@ summary {
 }
 
 .payment-mode span {
+  grid-column: 1;
   grid-row: span 2;
   display: inline-grid;
   place-items: center;
@@ -1877,15 +1880,24 @@ summary {
 }
 
 .payment-mode strong {
+  grid-column: 2;
+  grid-row: 1;
   font-size: 15px;
+  line-height: 1.2;
 }
 
 .payment-mode small {
+  grid-column: 2;
+  grid-row: 2;
+  min-width: 0;
   color: var(--app-muted);
+  line-height: 1.32;
 }
 
 .payment-mode::after {
   content: "";
+  grid-column: 3;
+  grid-row: 1 / span 2;
   align-self: center;
   justify-self: end;
   width: 17px;
