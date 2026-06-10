@@ -18,9 +18,18 @@ const {
   spendTokens
 } = require("../src/cairn/tokens");
 
-test("marketplace bootstraps verified workflow API listings", async () => {
+test("marketplace does not seed demo listings by default", async () => {
   const state = createState();
-  await bootstrapMarketplace(state);
+  const storage = await bootstrapMarketplace(state);
+
+  assert.equal(Object.keys(state.marketplaceListings).length, 0);
+  assert.equal(storage.demoSeeded, false);
+  assert.equal(storage.listingCount, 0);
+});
+
+test("marketplace can seed fixture workflow API listings for tests and demos", async () => {
+  const state = createState();
+  await bootstrapMarketplace(state, { seedDemo: true });
 
   const insurance = findListing(state, "insurance/compare-insurance-prices");
   const property = findListing(state, "searchProperties");
@@ -49,8 +58,8 @@ test("marketplace bootstraps verified workflow API listings", async () => {
 test("marketplace seed APIs use stable operation ids for database upserts", async () => {
   const firstState = createState();
   const secondState = createState();
-  await bootstrapMarketplace(firstState);
-  await bootstrapMarketplace(secondState);
+  await bootstrapMarketplace(firstState, { seedDemo: true });
+  await bootstrapMarketplace(secondState, { seedDemo: true });
 
   const firstInsurance = findListing(firstState, "insurance/compare-insurance-prices");
   const secondInsurance = findListing(secondState, "insurance/compare-insurance-prices");
@@ -63,7 +72,7 @@ test("marketplace seed APIs use stable operation ids for database upserts", asyn
 
 test("token wallet can buy a pack and spend tokens across marketplace skills", async () => {
   const state = createState();
-  await bootstrapMarketplace(state);
+  await bootstrapMarketplace(state, { seedDemo: true });
   const listing = findListing(state, "insurance/compare-insurance-prices");
   const accountId = "token-test-user";
   const emptyWallet = ensureWallet(state, accountId);
@@ -91,7 +100,7 @@ test("token wallet can buy a pack and spend tokens across marketplace skills", a
 
 test("marketplace payment gate accepts checkout authorization", async () => {
   const state = createState();
-  await bootstrapMarketplace(state);
+  await bootstrapMarketplace(state, { seedDemo: true });
   const listing = findListing(state, "insurance/compare-insurance-prices");
 
   assert.equal(hasPaymentAuthorization(listing, { input: listing.sampleInput }), false);

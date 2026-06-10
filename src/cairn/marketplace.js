@@ -1,5 +1,10 @@
 const { createSkill } = require("./policy");
-const { listPublishedApis, recordUsageEvent, upsertPublishedApi } = require("./database");
+const {
+  isDatabaseConfigured,
+  listPublishedApis,
+  recordUsageEvent,
+  upsertPublishedApi
+} = require("./database");
 const { id, now, stableHash } = require("./utils");
 const { checkBusinessRenewals, compareInsuranceQuotes, searchProperties } = require("../data/seed");
 
@@ -394,7 +399,8 @@ function createListing(skill, operation, workflow) {
     publisher: workflow.publisher,
     icon: workflow.icon,
     accent: workflow.accent,
-    visibility: "public_preview",
+    visibility: workflow.visibility || "demo_fixture",
+    source: workflow.source || "demo_fixture",
     qualityGate: "verified",
     verificationFreshness: "fresh",
     riskTier: skill.riskTier,
@@ -764,13 +770,15 @@ function hydratePublishedApi(state, published) {
 
 async function hydrateMarketplaceFromDatabase(state) {
   const publishedApis = await listPublishedApis();
+  state.marketplaceListings = {};
   for (const published of publishedApis) {
     hydratePublishedApi(state, published);
   }
   return publishedApis.length;
 }
 
-async function bootstrapMarketplace(state) {
+async function seedDemoMarketplace(state) {
+  let count = 0;
   for (const workflow of STARTER_WORKFLOWS) {
     const operation = operationFromWorkflow(workflow);
     state.operations[operation.id] = operation;
@@ -804,8 +812,35 @@ async function bootstrapMarketplace(state) {
       listing,
       verificationRecord: state.verificationRecords[operation.id]
     });
+    count += 1;
   }
-  await hydrateMarketplaceFromDatabase(state);
+  return count;
+}
+
+function demoMarketplaceEnabled(options = {}) {
+  if (Object.prototype.hasOwnProperty.call(options, "seedDemo")) {
+    return options.seedDemo === true;
+  }
+  return process.env.CAIRN_ENABLE_DEMO_LISTINGS === "true";
+}
+
+async function bootstrapMarketplace(state, options = {}) {
+  const databaseConfigured = isDatabaseConfigured();
+  const loadedCount = await hydrateMarketplaceFromDatabase(state);
+  let demoSeededCount = 0;
+  if (loadedCount === 0 && demoMarketplaceEnabled(options)) {
+    demoSeededCount = await seedDemoMarketplace(state);
+  }
+  state.marketplaceStorage = {
+    databaseConfigured,
+    mode: databaseConfigured ? "postgres" : "memory",
+    source: databaseConfigured ? "database" : "ephemeral",
+    loadedCount,
+    demoSeeded: demoSeededCount > 0,
+    demoSeededCount,
+    listingCount: Object.values(state.marketplaceListings).length
+  };
+  return state.marketplaceStorage;
 }
 
 function openApiDocument(listings, state) {
@@ -900,13 +935,11 @@ function integrationSnippet(baseUrl, listing) {
 function integrationGuide(baseUrl, listing = null) {
   const selected = listing || null;
   const sampleInput = selected ? selected.sampleInput : {
-    coverageType: "auto",
-    zipCode: "78701",
-    driverAge: 35,
-    vehicleYear: 2021
+    customerName: "Example Customer",
+    task: "Return the workflow result as JSON"
   };
-  const toolId = selected ? selected.slug : "insurance/compare-insurance-prices";
-  const toolName = selected ? selected.operationName : "compareInsurancePrices";
+  const toolId = selected ? selected.slug : "your-namespace/your-api";
+  const toolName = selected ? selected.operationName : "yourWorkflowApi";
   return {
     package: {
       currentInstall: "npm install github:arav31/Cairn-AI",
@@ -1041,5 +1074,6 @@ module.exports = {
   openApiDocument,
   publicTool,
   recordUsage,
+  seedDemoMarketplace,
   stripeConfig
 };

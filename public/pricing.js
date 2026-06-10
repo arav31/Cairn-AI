@@ -131,10 +131,10 @@ function renderTokenPacks(status = "") {
   `).join("");
   byId("pricing-token-grid").insertAdjacentHTML("beforeend", `
     <article class="pricing-card wallet-overview">
-      <p class="eyebrow">Demo wallet</p>
+      <p class="eyebrow">Your wallet</p>
       <h3>${walletBalance.toLocaleString()} tokens</h3>
       <p>Account: ${escapeHtml(pricingState.accountId)}</p>
-      <small>${escapeHtml(status || "Use the buttons to test token checkout locally.")}</small>
+      <small>${escapeHtml(status || "Use credits across published marketplace APIs.")}</small>
     </article>
   `);
   for (const button of document.querySelectorAll("[data-pack-id]")) {
@@ -143,6 +143,20 @@ function renderTokenPacks(status = "") {
 }
 
 function renderApiPrices() {
+  if (pricingState.listings.length === 0) {
+    byId("pricing-api-table").innerHTML = `
+      <div class="pricing-table-row">
+        <span>
+          <strong>No published API prices yet</strong>
+          <small>Prices appear here after workflow APIs are stored, verified, and published.</small>
+        </span>
+        <span>-</span>
+        <span>-</span>
+        <a href="/marketplace#publish">Submit</a>
+      </div>
+    `;
+    return;
+  }
   byId("pricing-api-table").innerHTML = `
     <div class="pricing-table-row heading">
       <span>API</span>
