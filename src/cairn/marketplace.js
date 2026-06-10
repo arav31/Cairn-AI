@@ -577,8 +577,14 @@ function formBody(entries) {
   return body;
 }
 
+function publicBaseUrl(value) {
+  return String(value || "http://localhost:3000")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
 async function createStripeCheckoutSession(listing, quote, buyer = {}) {
-  const publicUrl = buyer.returnBaseUrl || process.env[STRIPE_ENV.publicUrl] || "http://localhost:3000";
+  const publicUrl = publicBaseUrl(buyer.returnBaseUrl || process.env[STRIPE_ENV.publicUrl]);
   const lineItem = listing.pricing.stripePriceId
     ? {
         "line_items[0][price]": listing.pricing.stripePriceId,

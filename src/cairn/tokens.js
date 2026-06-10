@@ -176,9 +176,15 @@ function formBody(entries) {
   return body;
 }
 
+function publicBaseUrl(value) {
+  return String(value || "http://localhost:3000")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
 async function createStripeTokenCheckoutSession(quote, buyer = {}) {
   const pack = findPack(quote.packId);
-  const publicUrl = buyer.returnBaseUrl || process.env[TOKEN_ENV.publicUrl] || "http://localhost:3000";
+  const publicUrl = publicBaseUrl(buyer.returnBaseUrl || process.env[TOKEN_ENV.publicUrl]);
   const stripePriceId = process.env[pack.stripePriceEnv];
   const lineItem = stripePriceId
     ? {

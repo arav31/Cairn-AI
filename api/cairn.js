@@ -8,6 +8,12 @@ function requestBaseUrl(req) {
   return `${proto}://${host}`;
 }
 
+function normalizeBaseUrl(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\/+$/, "");
+}
+
 function restoreOriginalPath(req) {
   const baseUrl = requestBaseUrl(req);
   const url = new URL(req.url, baseUrl);
@@ -27,7 +33,7 @@ function getApp(baseUrl) {
 }
 
 module.exports = function handler(req, res) {
-  const baseUrl = process.env.CAIRN_PUBLIC_URL || requestBaseUrl(req);
+  const baseUrl = normalizeBaseUrl(process.env.CAIRN_PUBLIC_URL || requestBaseUrl(req));
   restoreOriginalPath(req);
   const server = getApp(baseUrl);
   return new Promise((resolve, reject) => {
@@ -39,6 +45,7 @@ module.exports = function handler(req, res) {
 };
 
 module.exports._internal = {
+  normalizeBaseUrl,
   requestBaseUrl,
   restoreOriginalPath
 };

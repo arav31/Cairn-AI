@@ -25,36 +25,40 @@
       "dest": "/public/pricing.html"
     },
     {
+      "src": "/favicon.ico",
+      "dest": "/public/favicon.svg"
+    },
+    {
       "src": "/\\.well-known/cairn\\.json",
-      "dest": "/api/cairn?cairnPath=/.well-known/cairn.json"
+      "dest": "/api/cairn.js?cairnPath=/.well-known/cairn.json"
     },
     {
       "src": "/openapi.json",
-      "dest": "/api/cairn?cairnPath=/openapi.json"
+      "dest": "/api/cairn.js?cairnPath=/openapi.json"
     },
     {
       "src": "/mcp",
-      "dest": "/api/cairn?cairnPath=/mcp"
+      "dest": "/api/cairn.js?cairnPath=/mcp"
     },
     {
       "src": "/api/(.*)",
-      "dest": "/api/cairn?cairnPath=/api/$1"
+      "dest": "/api/cairn.js?cairnPath=/api/$1"
     },
     {
       "src": "/meridian",
-      "dest": "/api/cairn?cairnPath=/meridian"
+      "dest": "/api/cairn.js?cairnPath=/meridian"
     },
     {
       "src": "/meridian/(.*)",
-      "dest": "/api/cairn?cairnPath=/meridian/$1"
+      "dest": "/api/cairn.js?cairnPath=/meridian/$1"
     },
     {
       "src": "/civic",
-      "dest": "/api/cairn?cairnPath=/civic"
+      "dest": "/api/cairn.js?cairnPath=/civic"
     },
     {
       "src": "/civic/(.*)",
-      "dest": "/api/cairn?cairnPath=/civic/$1"
+      "dest": "/api/cairn.js?cairnPath=/civic/$1"
     },
     {
       "src": "/(.*)",
