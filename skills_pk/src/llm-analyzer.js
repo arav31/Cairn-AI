@@ -1,7 +1,13 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { spawn } from "node:child_process";
+
 const DEFAULT_MODEL = "gpt-5.4-mini";
 const DEFAULT_BASE_URL = "https://api.openai.com/v1";
 const DEFAULT_NVIDIA_MODEL = "nvidia/nemotron-3-ultra-550b-a55b";
 const DEFAULT_NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+const DEFAULT_CODEX_MODEL = "gpt-5.4";
 
 const ANALYSIS_SCHEMA = {
   type: "object",
@@ -238,6 +244,22 @@ export function llmAnalysisStatus(env = process.env) {
       model,
     };
   }
+  if (provider === "codex") {
+    if (["off", "0", "false"].includes(String(env.SKILL_BUILDER_CODEX || "").toLowerCase())) {
+      return {
+        enabled: false,
+        reason: "disabled by SKILL_BUILDER_CODEX",
+        provider,
+        model,
+      };
+    }
+    return {
+      enabled: true,
+      reason: "uses local Codex CLI auth",
+      provider,
+      model,
+    };
+  }
   const apiKeyName = apiKeyNameForProvider(provider);
   if (!env[apiKeyName]) {
     return {
@@ -261,7 +283,7 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
   if (!status.enabled) return null;
 
   const provider = status.provider;
-  const evidence = buildRecordingEvidence(recording, candidates, { compact: provider === "nvidia" });
+  const evidence = buildRecordingEvidence(recording, candidates, { compact: ["nvidia", "codex"].includes(provider) });
   const timeoutMs = Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || defaultLlmTimeoutMs(provider));
   const response = provider === "nvidia"
     ? await callNvidiaChatJson({
@@ -272,6 +294,13 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
       env,
       timeoutMs,
     })
+    : provider === "codex"
+      ? await callCodexExecJson({
+        model: options.model || env.SKILL_BUILDER_CODEX_MODEL || DEFAULT_CODEX_MODEL,
+        evidence,
+        env,
+        timeoutMs,
+      })
     : provider === "openai_responses"
       ? await callOpenAiStructured({
         apiKey: env.OPENAI_API_KEY,
@@ -293,14 +322,17 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
     ...normalizeAnalysis(response, evidence),
     analyzer: provider === "nvidia"
       ? "nvidia-chat-completions-json-mode"
-      : provider === "openai_responses"
-        ? "openai-responses-structured-output"
-        : "openai-chat-completions-structured-output",
+      : provider === "codex"
+        ? "codex-exec-structured-output"
+        : provider === "openai_responses"
+          ? "openai-responses-structured-output"
+          : "openai-chat-completions-structured-output",
     provider,
   };
 }
 
 function defaultLlmTimeoutMs(provider) {
+  if (provider === "codex") return 240000;
   return provider === "nvidia" ? 30000 : 45000;
 }
 
@@ -710,6 +742,132 @@ async function callNvidiaChatJson({ apiKey, baseUrl, model, evidence, env, timeo
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function callCodexExecJson({ model, evidence, env, timeoutMs }) {
+  const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "api-skill-builder-codex-"));
+  try {
+    const schemaFile = path.join(tempDir, "skill-analysis.schema.json");
+    const outputFile = path.join(tempDir, "skill-analysis.output.json");
+    await fs.writeFile(schemaFile, JSON.stringify(ANALYSIS_SCHEMA, null, 2));
+
+    const command = env.SKILL_BUILDER_CODEX_COMMAND || defaultCodexCommand();
+    const args = [
+      "exec",
+      "--sandbox",
+      env.SKILL_BUILDER_CODEX_SANDBOX || "read-only",
+      "--skip-git-repo-check",
+      "--ephemeral",
+      "--output-schema",
+      schemaFile,
+      "-o",
+      outputFile,
+    ];
+    const cwd = env.SKILL_BUILDER_CODEX_CWD || process.cwd();
+    if (cwd) args.push("--cd", cwd);
+    if (model && model !== "default") args.push("--model", model);
+    args.push("-");
+
+    const prompt = [
+      codexAnalyzerPrompt(),
+      "",
+      "Recording evidence JSON:",
+      JSON.stringify(evidence),
+    ].join("\n");
+
+    const result = await runProcess(command, args, {
+      stdin: prompt,
+      timeoutMs,
+      env: {
+        ...process.env,
+        ...env,
+        NO_COLOR: "1",
+      },
+    });
+
+    if (result.code !== 0) {
+      throw new Error(`Codex analysis failed: exit ${result.code}. ${cleanText(result.stderr || result.stdout).slice(0, 900)}`);
+    }
+
+    const outputText = await fs.readFile(outputFile, "utf8").catch(() => "");
+    const text = outputText || result.stdout || "";
+    if (!text.trim()) {
+      throw new Error("Codex analysis did not produce structured output.");
+    }
+    return JSON.parse(extractJsonObjectText(text));
+  } finally {
+    if (env.SKILL_BUILDER_KEEP_CODEX_TEMP !== "1") {
+      await fs.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+    }
+  }
+}
+
+function codexAnalyzerPrompt() {
+  return [
+    "You are Codex acting as a senior endpoint reverse engineer for one recorded website workflow.",
+    "Use only the recording evidence below. Do not browse, do not run shell commands, and do not inspect local files.",
+    "Your job is to decide whether the skill can be replayed with direct API calls, a query/result URL, or browser replay.",
+    "Return only the final JSON object that matches the provided output schema.",
+    "",
+    analyzerInstructions(),
+    "",
+    "Extra review rules:",
+    "- Treat Chrome DevTools Protocol network requests as the source of truth for endpoints.",
+    "- Treat Playwright controls, accessibility names, recorded input/change/click events, labels, placeholders, and option text as the source of truth for user questions.",
+    "- Reject internal request fields unless visible website evidence proves the user knowingly entered or selected them.",
+    "- Prefer high confidence over overfitting. If the endpoint is unclear, choose browser_replay or manual_review.",
+    "- Make the chatbot flow feel like the website: grouped, ordered, and concise.",
+    "- Select important outputs only, such as quote plans/prices, BMI score/category, eligibility, distance/time, or result summary.",
+  ].join("\n");
+}
+
+function defaultCodexCommand() {
+  return process.platform === "win32" ? "codex.cmd" : "codex";
+}
+
+function runProcess(command, args, { stdin = "", timeoutMs, env } = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      env,
+      shell: process.platform === "win32",
+      windowsHide: true,
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      child.kill();
+      reject(new Error(`Codex analysis timed out after ${timeoutMs}ms.`));
+    }, timeoutMs);
+
+    child.stdout.setEncoding("utf8");
+    child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => {
+      stdout += chunk;
+      if (stdout.length > 20000) stdout = stdout.slice(-20000);
+    });
+    child.stderr.on("data", (chunk) => {
+      stderr += chunk;
+      if (stderr.length > 20000) stderr = stderr.slice(-20000);
+    });
+    child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      reject(new Error(`Could not start Codex command "${command}": ${error.message}`));
+    });
+    child.on("close", (code) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve({ code, stdout, stderr });
+    });
+
+    child.stdin.end(stdin);
+  });
 }
 
 function nvidiaAnalyzerPrompt() {
@@ -1124,21 +1282,25 @@ function normalizeOutputSource(source) {
 }
 
 function resolveLlmProvider(env) {
-  const configured = String(env.SKILL_BUILDER_LLM_PROVIDER || "").trim().toLowerCase();
+  const configured = String(env.SKILL_BUILDER_ANALYZER || env.SKILL_BUILDER_LLM_PROVIDER || "").trim().toLowerCase();
+  if (["codex", "codex-cli", "codex-exec"].includes(configured)) return "codex";
   if (["nvidia", "nemotron"].includes(configured)) return "nvidia";
   if (["openai", "chatgpt", "chat", "chat-completions", "openai-chat"].includes(configured)) return "openai";
   if (["responses", "openai-responses"].includes(configured)) return "openai_responses";
+  if (["1", "true", "on", "yes"].includes(String(env.SKILL_BUILDER_CODEX || "").toLowerCase())) return "codex";
   if (env.OPENAI_API_KEY) return "openai";
   if (env.NVIDIA_API_KEY) return "nvidia";
   return "openai";
 }
 
 function modelForProvider(provider, env) {
+  if (provider === "codex") return env.SKILL_BUILDER_CODEX_MODEL || DEFAULT_CODEX_MODEL;
   if (provider === "nvidia") return env.NVIDIA_MODEL || DEFAULT_NVIDIA_MODEL;
   return env.OPENAI_MODEL || DEFAULT_MODEL;
 }
 
 function apiKeyNameForProvider(provider) {
+  if (provider === "codex") return "";
   return provider === "nvidia" ? "NVIDIA_API_KEY" : "OPENAI_API_KEY";
 }
 

@@ -13,7 +13,7 @@ Given a website link, the CLI can:
 3. If no skill exists, open Chrome and record the user completing the workflow.
 4. Capture network requests, page fields, selected options, typed values, clicks, Playwright DOM/accessibility evidence, and final URL state.
 5. Rank useful endpoint candidates while ignoring static files, analytics, telemetry, fonts, CSS, images, and Cloudflare RUM noise.
-6. Optionally run a GPT endpoint-engineering pass over the recording evidence.
+6. Optionally run a Codex/OpenAI/NVIDIA endpoint-engineering pass over the recording evidence.
 7. Generate a draft skill from the best available strategy.
 8. Promote the draft into `skills/*.json` for future runs.
 
@@ -41,14 +41,14 @@ This project bridges the two:
 - Windows, macOS, or Linux with Node.js 20 or newer.
 - Google Chrome or Chromium installed.
 - Network access to the target websites.
-- Optional: `OPENAI_API_KEY` or `NVIDIA_API_KEY` for contextual LLM analysis during learning.
+- Optional: local Codex CLI auth, `OPENAI_API_KEY`, or `NVIDIA_API_KEY` for contextual analyzer review during learning.
 
 Run `npm install` before using the recorder. The package uses:
 
 - `playwright-core` to attach to the same Chrome session and capture richer UI/accessibility evidence.
 - `@flue/runtime` for the staged learning workflow entrypoint.
 
-## Optional GPT Endpoint Engineering
+## Optional Analyzer Endpoint Engineering
 
 The project works without an API key. In that mode it uses deterministic evidence:
 
@@ -57,9 +57,9 @@ The project works without an API key. In that mode it uses deterministic evidenc
 - final URL query parameters
 - recorded input/change/click events
 
-For better skill learning, configure an LLM provider. The learner uses OpenAI Chat Completions with Structured Outputs by default, or NVIDIA's OpenAI-compatible Chat Completions API with Nemotron JSON mode when explicitly selected. In both cases, the model behaves like an endpoint engineer reviewing the browser recording.
+For best skill learning, configure an analyzer provider. The recommended path is local Codex CLI review. The learner can also use OpenAI Chat Completions with Structured Outputs, or NVIDIA's OpenAI-compatible Chat Completions API with Nemotron JSON mode when explicitly selected. In all cases, the analyzer behaves like an endpoint engineer reviewing the browser recording.
 
-The GPT pass receives a compact, redacted evidence packet from the recording:
+The analyzer pass receives a compact, redacted evidence packet from the recording:
 
 - visible website text, labels, fields, options, typed interactions, and clicked buttons
 - Playwright DOM controls, forms, role counts, and accessibility names
@@ -83,13 +83,25 @@ It then infers:
 
 This is the part that is meant to approximate the manual Codex workflow of watching browser traffic, narrowing the useful request, inspecting payloads/responses, and turning that into a reusable API call.
 
-The LLM pass is optional and gated by environment variables. The CLI auto-loads `skills_pk/.env` on startup.
+The analyzer pass is optional and gated by environment variables. The CLI auto-loads `skills_pk/.env` on startup.
 
 ```powershell
 Copy-Item .env.example .env
 notepad .env
 node src/cli.js menu
 ```
+
+For Codex-assisted learning, fill `.env` like this:
+
+```env
+SKILL_BUILDER_LLM_PROVIDER=codex
+SKILL_BUILDER_CODEX_COMMAND=codex.cmd
+SKILL_BUILDER_CODEX_MODEL=gpt-5.4
+SKILL_BUILDER_CODEX_REQUIRED=1
+SKILL_BUILDER_ANALYSIS_MIN_CONFIDENCE=0.65
+```
+
+This uses your local Codex CLI login, or `CODEX_API_KEY` if you run Codex that way. On Windows, `codex.cmd` avoids PowerShell execution-policy issues with `codex.ps1`. `gpt-5.4` is set explicitly because older Codex CLI builds may fail if your global config points at a newer model.
 
 For OpenAI, fill `.env` like this:
 
@@ -119,7 +131,14 @@ Useful environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SKILL_BUILDER_LLM_PROVIDER` | auto | `openai`, `openai-responses`, or `nvidia`; auto uses OpenAI when `OPENAI_API_KEY` is set, otherwise NVIDIA when `NVIDIA_API_KEY` is set |
+| `SKILL_BUILDER_LLM_PROVIDER` | auto | `codex`, `openai`, `openai-responses`, or `nvidia`; auto uses OpenAI when `OPENAI_API_KEY` is set, otherwise NVIDIA when `NVIDIA_API_KEY` is set |
+| `SKILL_BUILDER_ANALYZER` | unset | Alias for `SKILL_BUILDER_LLM_PROVIDER`; useful when you want `codex` to be conceptually separate from API LLM providers |
+| `SKILL_BUILDER_CODEX_COMMAND` | `codex.cmd` on Windows, `codex` elsewhere | Command used for Codex-assisted learning |
+| `SKILL_BUILDER_CODEX_MODEL` | `gpt-5.4` | Codex model override |
+| `SKILL_BUILDER_CODEX_SANDBOX` | `read-only` | Sandbox passed to `codex exec` |
+| `SKILL_BUILDER_CODEX_REQUIRED` | unset | Set to `1` to stop drafting when Codex fails, returns `manual_review`, or confidence is below threshold |
+| `SKILL_BUILDER_ANALYZER_REQUIRED` | unset | Provider-agnostic required-analysis flag |
+| `SKILL_BUILDER_ANALYSIS_MIN_CONFIDENCE` | `0.65` for required Codex | Minimum analyzer confidence when required mode is enabled |
 | `OPENAI_API_KEY` | unset | Enables OpenAI Chat Completions analysis when using the OpenAI provider |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | OpenAI model used for recording analysis |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for OpenAI-compatible endpoints |
@@ -135,12 +154,14 @@ Useful environment variables:
 | `NVIDIA_ENABLE_THINKING` | unset | Sends Nemotron thinking controls only when set to `1`, `true`, `on`, or `yes` |
 | `NVIDIA_REASONING_BUDGET` | `4096` | Reasoning budget sent to NVIDIA when thinking is enabled |
 | `SKILL_BUILDER_LLM` | unset | Set to `off` or `0` to force-disable LLM analysis |
-| `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if GPT endpoint engineering fails |
-| `SKILL_BUILDER_LLM_TIMEOUT_MS` | `30000` | LLM analysis timeout |
+| `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if analyzer endpoint engineering fails |
+| `SKILL_BUILDER_LLM_TIMEOUT_MS` | `30000`; Codex default `240000` | Analyzer timeout |
 
-The default OpenAI provider uses Chat Completions with structured JSON output. It omits `temperature` unless you set `OPENAI_TEMPERATURE`, because some reasoning models reject unsupported sampling parameters. Set `SKILL_BUILDER_LLM_PROVIDER=openai-responses` only if you specifically want the older Responses implementation. The NVIDIA provider uses Chat Completions and sends compact prompts by default; Nemotron thinking controls are opt-in.
+The Codex provider runs `codex exec` non-interactively with a strict JSON Schema. It reads the compact recording evidence from stdin and writes a structured endpoint-engineering plan. It is meant to approximate the manual Codex workflow of inspecting the browser recording, endpoint candidates, request payloads, responses, and visible controls before a skill is drafted.
 
-The LLM request uses `store: false` and sends a compact evidence packet, not the full raw recording. The packet includes redacted page text, field metadata, selected options, click/input summaries, ranked request candidates, and JSON request shapes. Raw recordings can still contain sensitive data and should remain local.
+The OpenAI provider uses Chat Completions with structured JSON output. It omits `temperature` unless you set `OPENAI_TEMPERATURE`, because some reasoning models reject unsupported sampling parameters. Set `SKILL_BUILDER_LLM_PROVIDER=openai-responses` only if you specifically want the older Responses implementation. The NVIDIA provider uses Chat Completions and sends compact prompts by default; Nemotron thinking controls are opt-in.
+
+The OpenAI/NVIDIA API requests use compact evidence packets, not the full raw recording. The Codex provider also receives compact evidence through stdin. The packet includes redacted page text, field metadata, selected options, click/input summaries, ranked request candidates, and JSON request shapes. Raw recordings can still contain sensitive data and should remain local.
 
 ## Install
 
@@ -201,7 +222,7 @@ After recording, the learner:
 
 - Filters out static and telemetry traffic.
 - Builds a compact evidence packet from page text, fields, options, clicks, final URL, and endpoint candidates.
-- Uses optional GPT endpoint engineering through OpenAI Chat Completions when `OPENAI_API_KEY` is set.
+- Uses optional analyzer endpoint engineering through Codex, OpenAI, or NVIDIA when configured.
 - Looks for real form/search/quote endpoints.
 - Falls back to final URL query parameters when the site computes client-side.
 - Falls back to recorded browser replay when no endpoint exists.
@@ -258,7 +279,7 @@ Inspect a recording:
 node src/cli.js inspect-recording recordings/example-form-2026-06-09T10-00-00-000Z.json
 ```
 
-Run only the LLM contextual analysis for a recording:
+Run only the analyzer contextual analysis for a recording:
 
 ```powershell
 node src/cli.js analyze-recording recordings/example-form-2026-06-09T10-00-00-000Z.json
@@ -368,7 +389,7 @@ Flue is used for workflow structure, not as the browser recorder. The stack is:
 
 1. CDP records network traffic and page/runtime events.
 2. Playwright attaches to the same Chrome session and records richer UI/accessibility evidence.
-3. The optional OpenAI or NVIDIA provider interprets the evidence as an endpoint engineer.
+3. The optional Codex, OpenAI, or NVIDIA provider interprets the evidence as an endpoint engineer.
 4. The Flue-compatible workflow wraps candidate ranking, strategy selection, and draft writing as observable stages.
 
 That split avoids two automation systems fighting over the page while still giving the learner a stronger view of the website.
@@ -396,9 +417,9 @@ Requests are filtered or penalized when they look like:
 
 The CLI no longer asks the user to pick a random candidate during the normal menu flow. It auto-drafts from the best usable strategy.
 
-## How GPT Endpoint Engineering Works
+## How Analyzer Endpoint Engineering Works
 
-The optional GPT/Nemotron layer lives in `src/llm-analyzer.js`.
+The optional Codex/GPT/Nemotron analyzer layer lives in `src/llm-analyzer.js`.
 
 It does not drive the browser and does not execute requests. Browser recording is still handled by Chrome/CDP. The model interprets the recording evidence and returns strict structured JSON. The deterministic generator then compiles that JSON into the actual skill.
 
@@ -418,6 +439,7 @@ The evidence packet includes:
 
 The provider paths are:
 
+- Codex: `codex exec --output-schema ...` using the local Codex CLI
 - OpenAI: `POST /chat/completions` with `response_format.type=json_schema`
 - OpenAI Responses fallback: `POST /responses` with `text.format.type=json_schema` when `SKILL_BUILDER_LLM_PROVIDER=openai-responses`
 - NVIDIA: `POST /chat/completions` with `response_format.type=json_object`
@@ -451,17 +473,18 @@ The generator uses that result to:
 - attach a `learning` metadata block to the draft skill
 - print a learning summary in the CLI, including selected endpoint, payload type, input mappings, volatile fields, preflight hints, and warnings
 
-If the LLM call fails and `SKILL_BUILDER_LLM_REQUIRED` is not set, the tool logs the failure and falls back to deterministic drafting.
+If the analyzer call fails and no required flag is set, the tool logs the failure and falls back to deterministic drafting.
 
-If you want new skills to require GPT assistance instead of falling back silently, add this to `.env`:
+If you want new skills to require analyzer assistance instead of falling back silently, add this to `.env`:
 
 ```env
-SKILL_BUILDER_LLM_REQUIRED=1
+SKILL_BUILDER_CODEX_REQUIRED=1
+SKILL_BUILDER_ANALYSIS_MIN_CONFIDENCE=0.65
 ```
 
 ## How Draft Generation Works
 
-The draft generator tries strategies in order. When LLM analysis is available, it can influence the order, but it does not bypass the same safety filters.
+The draft generator tries strategies in order. When analyzer analysis is available, it can influence the order, but it does not bypass the same safety filters.
 
 ### Prompt Hygiene And Conversation Flow
 
@@ -474,7 +497,7 @@ Replay internals are kept in the request when they are needed, or marked as vola
 
 The generator also does not treat arbitrary non-empty API payload keys as questions. A key such as `policyId`, `tmpBasePremium`, `agentNumber`, or `isQuickQuote` stays a recorded constant unless it resolves to visible field/event evidence. This prevents internal request shapes from leaking into the chatbot.
 
-When the LLM provider is enabled, it must also return a `conversation` plan:
+When the analyzer provider is enabled, it must also return a `conversation` plan:
 
 - `intro`: one short sentence explaining what the skill will do
 - `inputGroups`: ordered groups of related inputs
@@ -483,7 +506,7 @@ When the LLM provider is enabled, it must also return a `conversation` plan:
 
 This is how a course/CAP calculator can ask for `Module Code`, `Module MCs`, and `Module Grade`, then ask `Do you want to add another module?`, instead of asking raw payload names.
 
-If GPT is unavailable, the deterministic generator still applies the same technical-field filters and infers simple groups from visible fields and recorded interactions.
+If the analyzer is unavailable, the deterministic generator still applies the same technical-field filters and infers simple groups from visible fields and recorded interactions.
 
 ### 1. Tally Form Strategy
 
@@ -523,12 +546,12 @@ At runtime, the template engine materializes the final URL.
 For JSON POST/PUT/PATCH endpoints, the generator:
 
 - Parses the recorded JSON body.
-- If GPT endpoint engineering is available, applies the model's payload mapping plan first.
+- If analyzer endpoint engineering is available, applies the model's payload mapping plan first.
 - Replaces only mapped user-controlled fields with template placeholders when possible.
 - Regenerates UUID-like volatile fields when the model marks them as generated values.
 - Omits volatile fields when the model says they should not be replayed.
 - Keeps unmapped constants from the recorded body for review.
-- Falls back to templating only non-technical, user-facing scalar fields when GPT is unavailable or no mapping plan exists.
+- Falls back to templating only non-technical, user-facing scalar fields when the analyzer is unavailable or no mapping plan exists.
 
 This is the fallback for reusable API endpoints that do not have a custom provider parser.
 
@@ -724,7 +747,7 @@ For replay skills, the runner:
 | `src/workflows/learn-skill.js` | Flue-compatible workflow entrypoint for drafting from a recording |
 | `src/recorder.js` | CDP network capture, field extraction, interaction recording, candidate ranking, draft generation |
 | `src/playwright-evidence.js` | Playwright DOM/accessibility evidence collection from the active Chrome session |
-| `src/llm-analyzer.js` | Optional OpenAI Structured Outputs analysis over compact recording evidence |
+| `src/llm-analyzer.js` | Optional Codex/OpenAI/NVIDIA analysis over compact recording evidence |
 | `src/skill-runner.js` | Executes direct HTTP, browser fallback, browser navigation, browser replay, file uploads |
 | `src/cdp.js` | Launches Chrome and provides a small CDP WebSocket client |
 | `src/templates.js` | Renders `{{input}}` templates and computed fields |
@@ -809,7 +832,7 @@ Record again and make sure you actually interact with the visible website form f
 
 If you see prompts such as `VIEWSTATE`, `EVENTVALIDATION`, `csrf`, `sessionUuid`, `respondentUuid`, `Value for $.payload.path`, or generated button/counter names, the skill was probably drafted before prompt hygiene was added or the recording did not expose enough visible-field evidence. Re-draft from the recording or re-learn the skill with the current version. Those fields should be replay internals, not questions.
 
-Enable `OPENAI_API_KEY` or `NVIDIA_API_KEY` for better contextual rewriting. The LLM pass is specifically asked to infer what the website is doing, write a short chatbot intro, group related questions, detect repeated entities, and keep hidden/generated transport fields out of the user prompt layer.
+Enable Codex, `OPENAI_API_KEY`, or `NVIDIA_API_KEY` for better contextual rewriting. The analyzer pass is specifically asked to infer what the website is doing, write a short chatbot intro, group related questions, detect repeated entities, and keep hidden/generated transport fields out of the user prompt layer.
 
 ### The skill learned CSS, images, or analytics
 
@@ -830,6 +853,14 @@ The default Chat Completions request omits `temperature`. If you set `OPENAI_TEM
 ### OpenAI insufficient quota
 
 If `.env` contains `SKILL_BUILDER_LLM_REQUIRED=1`, quota or billing errors stop draft generation. Add quota/billing for the API project, switch to a key with quota, or temporarily set `SKILL_BUILDER_LLM=off` to use deterministic fallback.
+
+### Codex command fails on Windows
+
+Use `SKILL_BUILDER_CODEX_COMMAND=codex.cmd`. PowerShell may block `codex.ps1` depending on execution policy, while `codex.cmd` is the npm shim that works from Node child processes.
+
+### Codex asks for manual review
+
+If `.env` contains `SKILL_BUILDER_CODEX_REQUIRED=1`, the learner stops when Codex returns `manual_review` or confidence below `SKILL_BUILDER_ANALYSIS_MIN_CONFIDENCE`. That is intentional: it prevents a bad skill from being registered when the endpoint or questions are unclear.
 
 ### File upload fields
 

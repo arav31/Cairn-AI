@@ -417,12 +417,31 @@ async function safeAnalyzeRecording(recording, candidates) {
   const status = llmAnalysisStatus();
   if (!status.enabled) return null;
   try {
-    return await analyzeRecordingWithLlm(recording, candidates);
+    const analysis = await analyzeRecordingWithLlm(recording, candidates);
+    validateAnalyzerResult(analysis, status);
+    return analysis;
   } catch (error) {
-    if (process.env.SKILL_BUILDER_LLM_REQUIRED === "1") throw error;
+    if (analysisRequired()) throw error;
     console.warn(`LLM contextual analysis skipped: ${error.message}`);
     return null;
   }
+}
+
+function validateAnalyzerResult(analysis, status) {
+  if (!analysisRequired() || !analysis) return;
+  const threshold = Number(process.env.SKILL_BUILDER_ANALYSIS_MIN_CONFIDENCE || (status.provider === "codex" ? 0.65 : 0));
+  if (threshold > 0 && Number(analysis.confidence || 0) < threshold) {
+    throw new Error(`Analyzer confidence ${analysis.confidence} is below required threshold ${threshold}. Re-record the workflow or inspect the draft manually.`);
+  }
+  if (analysis.strategy?.kind === "manual_review") {
+    throw new Error("Analyzer requested manual_review, so the skill was not auto-drafted.");
+  }
+}
+
+function analysisRequired() {
+  return process.env.SKILL_BUILDER_LLM_REQUIRED === "1"
+    || process.env.SKILL_BUILDER_CODEX_REQUIRED === "1"
+    || process.env.SKILL_BUILDER_ANALYZER_REQUIRED === "1";
 }
 
 async function createPreferredFallbackSkill({ recording, recordingFile, name, analysis }) {

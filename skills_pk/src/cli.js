@@ -355,8 +355,12 @@ async function analyzeRecording(args) {
   const status = llmAnalysisStatus();
   if (!status.enabled) {
     console.log(`LLM analysis is not enabled: ${status.reason}.`);
-    const keyName = status.provider === "nvidia" ? "NVIDIA_API_KEY" : "OPENAI_API_KEY";
-    console.log(`Set ${keyName} to enable contextual recording analysis.`);
+    if (status.provider === "codex") {
+      console.log("Set SKILL_BUILDER_LLM_PROVIDER=codex and make sure codex.cmd is available/logged in.");
+    } else {
+      const keyName = status.provider === "nvidia" ? "NVIDIA_API_KEY" : "OPENAI_API_KEY";
+      console.log(`Set ${keyName} to enable contextual recording analysis.`);
+    }
     return;
   }
   const analysis = await analyzeRecordingFile(file);
