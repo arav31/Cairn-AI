@@ -280,12 +280,21 @@ async function recordWorkflowWithKuri({ url, name, goal, headless = false, waitF
 
   let tabId = "";
   try {
-    tabId = await broker.newTab("about:blank");
+    tabId = await broker.newTab(url);
     if (!tabId) throw new Error("Kuri did not return a tab id.");
-    await broker.addInitScript(tabId, INTERACTION_RECORDER_SCRIPT).catch(() => {});
+    await sleep(1000);
+    const openedUrl = await broker.currentUrl(tabId).catch(() => "");
+    if (!openedUrl || openedUrl === "about:blank") {
+      await broker.navigate(tabId, url);
+      await sleep(1000);
+    }
+    const confirmedUrl = await broker.currentUrl(tabId).catch(() => "");
+    if (!confirmedUrl || confirmedUrl === "about:blank") {
+      throw new Error(`Kuri opened a blank tab instead of ${url}.`);
+    }
     await broker.networkEnable(tabId).catch(() => {});
     await broker.harStart(tabId).catch(() => {});
-    await broker.navigate(tabId, url);
+    await broker.addInitScript(tabId, INTERACTION_RECORDER_SCRIPT).catch(() => {});
     await broker.injectScript(tabId, INTERACTION_RECORDER_SCRIPT).catch(() => {});
 
     console.log("");

@@ -63,7 +63,6 @@ export async function startKuriBroker({ port = randomKuriPort(), headless = fals
     stdio: "ignore",
     windowsHide: true,
   });
-  child.unref();
 
   try {
     await waitForKuriHealth(port);
@@ -179,6 +178,7 @@ class KuriBroker {
         windowsHide: true,
       });
       await waitForProcessExit(killer, 5000);
+      if (this.child.exitCode === null) this.child.kill("SIGKILL");
       return;
     }
     this.child.kill("SIGKILL");
