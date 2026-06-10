@@ -374,7 +374,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
 
   const fallbackSkill =
     await maybeCreateFinalUrlQuerySkill({ recording, recordingFile, name }) ||
-    await maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
+    await maybeCreateBrowserReplaySkill({ recording, recordingFile, name, analysis });
 
   if (fallbackSkill) {
     const finalizedFallback = finalizeSkill(fallbackSkill, { analysis, recordingFile, recording });
@@ -450,7 +450,7 @@ async function createPreferredFallbackSkill({ recording, recordingFile, name, an
     return maybeCreateFinalUrlQuerySkill({ recording, recordingFile, name });
   }
   if (kind === "browser_replay") {
-    return maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
+    return maybeCreateBrowserReplaySkill({ recording, recordingFile, name, analysis });
   }
   return null;
 }
@@ -1014,7 +1014,10 @@ function normalizeBrowserValue(value) {
   return String(value ?? "").replace(/^(number|string|boolean):/, "");
 }
 
-async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name }) {
+async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name, analysis }) {
+  const analyzedSkill = await maybeCreateAnalyzedBrowserReplaySkill({ recording, recordingFile, name, analysis });
+  if (analyzedSkill) return analyzedSkill;
+
   const events = recording.pageFields?.events || [];
   const inputEvents = latestInputEvents(events);
   const clickEvents = events.filter((event) => event.type === "click" && event.selector);
@@ -1103,6 +1106,237 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
       },
     ],
   };
+}
+
+async function maybeCreateAnalyzedBrowserReplaySkill({ recording, recordingFile, name, analysis }) {
+  const mappings = (analysis?.endpointEngineering?.userInputMappings || [])
+    .filter((mapping) => mapping?.inputId && mapping?.question && mapping?.mapsTo?.length);
+  if (!mappings.length) return null;
+  if (!["browser_replay", "manual_review"].includes(analysis?.strategy?.kind) && analysis?.endpointEngineering?.payloadType !== "browser") {
+    return null;
+  }
+
+  const fields = await getPageFieldCatalog(recording);
+  const events = recording.pageFields?.events || [];
+  const usedInputIds = new Set();
+  const inputs = [];
+  const actions = [];
+
+  for (const mapping of mappings) {
+    const group = findBrowserReplayGroup(fields, mapping);
+    if (!group) continue;
+    const choices = browserReplayChoicesForGroup(group);
+    if (!choices.length) continue;
+    const inputId = uniqueInputId(slugify(mapping.inputId || mapping.question), usedInputIds);
+    inputs.push({
+      id: inputId,
+      question: cleanText(mapping.question),
+      type: mapping.type === "multi-choice" ? "multi-choice" : "choice",
+      optional: mapping.required === false,
+      choices,
+      ...(mapping.helpText ? { description: cleanText(mapping.helpText) } : {}),
+    });
+    actions.push({
+      type: "clickChoice",
+      value: `{{${inputId}}}`,
+      choices,
+      fallbackSelector: group.selected?.selector || choices[0]?.selector || "",
+    });
+  }
+
+  if (!inputs.length || inputs.length < Math.min(2, mappings.length)) return null;
+
+  const submit = findSubmitAction(events, fields);
+  if (submit?.selector) {
+    actions.push({ type: "click", selector: submit.selector });
+  }
+
+  return {
+    id: slugify(name || recording.name || "browser-replay-skill"),
+    name: name || recording.name || "Browser replay skill",
+    sourceUrl: recording.url,
+    description: `Draft generated from ${recordingFile}. Codex/analyzer mapped the visible browser questions; no reusable API endpoint was detected, so this skill replays the browser workflow.`,
+    inputs,
+    steps: [
+      {
+        id: "goal",
+        browserWorkflow: {
+          startUrl: recording.url,
+          actions,
+        },
+      },
+    ],
+    outputs: [
+      {
+        label: "Rendered result",
+        from: "goal",
+        path: "$",
+        extractor: "important",
+      },
+    ],
+  };
+}
+
+function findBrowserReplayGroup(fields, mapping) {
+  const choiceGroups = groupBrowserChoiceFields(fields);
+  const targets = mapping.mapsTo || [];
+  for (const target of targets) {
+    const parsed = parseBrowserTarget(target);
+    if (!parsed.name) continue;
+    const group = choiceGroups.find((candidate) => normalizeFieldName(candidate.name) === parsed.normalizedName);
+    if (group?.fields?.length >= 2) {
+      return {
+        target,
+        fields: group.fields,
+        selected: group.fields.find((field) => field.checked || String(field.value) === String(field.default)),
+      };
+    }
+  }
+
+  const targetQuestions = targets.map((target) => parseBrowserTarget(target).question).filter(Boolean);
+  const scoredGroups = [];
+  for (const question of [...targetQuestions, mapping.question]) {
+    for (const group of choiceGroups) {
+      const score = scoreBrowserFieldGroupForMapping(group, mapping, question);
+      if (score >= 0.45) {
+        scoredGroups.push({ group, score, question });
+      }
+    }
+  }
+
+  scoredGroups.sort((a, b) => b.score - a.score);
+  const best = scoredGroups[0];
+  if (best?.group?.fields?.length >= 2) {
+    return {
+      target: best.question || mapping.question,
+      fields: best.group.fields,
+      selected: best.group.fields.find((field) => field.checked || String(field.value) === String(field.default)),
+    };
+  }
+  return null;
+}
+
+function parseBrowserTarget(target) {
+  const raw = String(target || "");
+  const radioName = raw.match(/radio\[name=["']?([^"'\]]+)["']?\]/i)?.[1];
+  const cssName = raw.match(/\[name=["']?([^"'\]]+)["']?\]/i)?.[1];
+  const fieldsetQuestion = raw.match(/fieldset\[question=["']?([^"'\]]+)["']?\]/i)?.[1];
+  const genericQuestion = raw.match(/\bquestion=["']?([^"'\]]+)["']?/i)?.[1];
+  const name = cleanText(radioName || cssName || "");
+  return {
+    raw,
+    name,
+    question: cleanText(fieldsetQuestion || genericQuestion || ""),
+    normalizedName: normalizeFieldName(name),
+  };
+}
+
+function groupBrowserChoiceFields(fields) {
+  const groups = new Map();
+  for (const field of fields) {
+    if (!field.selector || !isChoiceField(field)) continue;
+    const name = cleanText(field.name || field.groupName || field.sectionText || field.groupLabel || field.promptText || field.selector);
+    const key = normalizeFieldName(name);
+    if (!key) continue;
+    if (!groups.has(key)) groups.set(key, { name, fields: [] });
+    groups.get(key).fields.push(field);
+  }
+  return [...groups.values()].filter((group) => group.fields.length >= 2);
+}
+
+function scoreBrowserFieldGroupForMapping(group, mapping, question) {
+  const prompt = cleanText(question || mapping.question || "");
+  const evidence = cleanText([
+    mapping.question,
+    mapping.helpText,
+    mapping.transform,
+    mapping.evidence,
+    ...(mapping.mapsTo || []),
+  ].filter(Boolean).join(" ")).toLowerCase();
+  const optionLabels = [...new Set(group.fields.map(choiceLabelForBrowserField).filter(Boolean))];
+  const optionHits = optionLabels.filter((label) => evidence.includes(label.toLowerCase())).length;
+  const optionScore = optionLabels.length ? optionHits / optionLabels.length : 0;
+  const nameScore = textOverlapScore(prompt, group.name);
+  const sectionScore = Math.max(...group.fields.map((field) => textOverlapScore(prompt, field.sectionText || "")), 0);
+  return (optionScore * 0.58) + (nameScore * 0.32) + (sectionScore * 0.10);
+}
+
+function isChoiceField(field) {
+  const type = String(field.type || "").toLowerCase();
+  const role = String(field.role || "").toLowerCase();
+  return ["radio", "checkbox"].includes(type) || ["radio", "checkbox", "option", "button"].includes(role);
+}
+
+function browserReplayChoicesForGroup(group) {
+  return cleanChoices(group.fields
+    .filter((field) => field.selector)
+    .map((field) => ({
+      label: choiceLabelForBrowserField(field),
+      value: field.value || field.label || field.text || field.promptText,
+      selector: field.selector,
+    })));
+}
+
+function choiceLabelForBrowserField(field) {
+  const label = cleanText(field.label || field.text || field.promptText || field.value);
+  const value = cleanText(field.value || "");
+  if (/^2147483647$/.test(value) && /more than/i.test(label)) return label;
+  if (/^(?:true|false)$/i.test(value) && /^(?:yes|no)$/i.test(label)) return label;
+  return label || value;
+}
+
+function findSubmitAction(events, fields) {
+  const event = [...events].reverse().find((item) => {
+    const type = String(item.inputType || item.type || "").toLowerCase();
+    const text = cleanText(item.text || item.label || item.promptText || "");
+    return item.selector && item.type === "click" && (
+      type === "submit" ||
+      /\b(get|show|calculate|submit|recommend|quote|search|apply|continue|next)\b/i.test(text)
+    );
+  });
+  if (event) return event;
+
+  return [...fields].reverse().find((field) => {
+    const type = String(field.type || "").toLowerCase();
+    const text = cleanText(field.text || field.label || field.promptText || "");
+    return field.selector && (
+      type === "submit" ||
+      /\b(get|show|calculate|submit|recommend|quote|search|apply|continue|next)\b/i.test(text)
+    );
+  }) || null;
+}
+
+function textOverlapScore(a, b) {
+  const left = new Set(tokenizeForOverlap(a));
+  const right = new Set(tokenizeForOverlap(b));
+  if (!left.size || !right.size) return 0;
+  let hits = 0;
+  for (const word of left) {
+    if (right.has(word) || [...right].some((candidate) => overlapTokenMatch(word, candidate))) hits += 1;
+  }
+  return hits / left.size;
+}
+
+function tokenizeForOverlap(value) {
+  return cleanText(value)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length > 2)
+    .map(stemOverlapToken);
+}
+
+function stemOverlapToken(word) {
+  if (word.length > 5 && word.endsWith("ies")) return `${word.slice(0, -3)}y`;
+  if (word.length > 5 && word.endsWith("ing")) return word.slice(0, -3);
+  if (word.length > 4 && word.endsWith("es")) return word.slice(0, -2);
+  if (word.length > 4 && word.endsWith("s")) return word.slice(0, -1);
+  return word;
+}
+
+function overlapTokenMatch(a, b) {
+  const min = Math.min(a.length, b.length);
+  if (min < 4) return false;
+  return a.slice(0, min) === b.slice(0, min);
 }
 
 function questionForRecordedEvent(event) {
@@ -1227,6 +1461,8 @@ function latestInputEvents(events) {
   const bySelector = new Map();
   for (const event of events) {
     if (!["input", "change"].includes(event.type)) continue;
+    const inputType = String(event.inputType || event.type || "").toLowerCase();
+    if (["radio", "checkbox", "button", "submit", "reset"].includes(inputType)) continue;
     if (!event.selector || event.value === undefined || event.value === "") continue;
     bySelector.set(event.selector, event);
   }
