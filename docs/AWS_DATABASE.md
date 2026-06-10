@@ -57,7 +57,15 @@ Production token behavior is database backed when `DATABASE_URL` is present:
 
 ## Security Notes
 
-The pilot script opens Postgres on port `5432` to `0.0.0.0/0` because Vercel serverless functions do not provide fixed outbound IPs by default. Keep the generated password private and require TLS through `?sslmode=require`.
+The pilot script creates a public RDS endpoint by default, but it does not open Postgres to the whole internet. It grants port `5432` only to `RDS_ALLOWED_CIDR`; if that variable is blank, the script tries to detect the current CloudShell public IP and uses that single `/32` address.
+
+Vercel serverless functions do not provide fixed outbound IPs by default, so Vercel will not be able to connect until you choose one of the production networking options below or explicitly widen the CIDR. Keep the generated password private and require TLS through `?sslmode=require`.
+
+Only for a throwaway pilot, you can opt into internet-wide database ingress by setting:
+
+```bash
+RDS_OPEN_TO_INTERNET=true bash infra/aws/cloudshell-setup.sh
+```
 
 For production, replace this with one of:
 

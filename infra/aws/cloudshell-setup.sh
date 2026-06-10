@@ -12,6 +12,9 @@ DB_STORAGE_GB="${RDS_ALLOCATED_STORAGE_GB:-20}"
 EVENT_BUS_NAME="${EVENTBRIDGE_BUS_NAME:-cairn-prod}"
 SECRET_NAME="${SECRETS_PREFIX:-/cairn/prod}/database-url"
 SECURITY_GROUP_NAME="${APP_NAME}-rds-${ENVIRONMENT}"
+RDS_PUBLICLY_ACCESSIBLE="${RDS_PUBLICLY_ACCESSIBLE:-true}"
+RDS_OPEN_TO_INTERNET="${RDS_OPEN_TO_INTERNET:-false}"
+RDS_ALLOWED_CIDR="${RDS_ALLOWED_CIDR:-}"
 
 echo "Using AWS region: ${AWS_REGION}"
 ACCOUNT_ID="$(aws sts get-caller-identity --query Account --output text)"
@@ -42,15 +45,28 @@ if [[ -z "${SECURITY_GROUP_ID}" || "${SECURITY_GROUP_ID}" == "None" ]]; then
     --output text)"
 fi
 
-# Vercel serverless functions do not have a stable outbound IP by default.
-# For a pilot, this opens Postgres to the internet with TLS and a generated password.
-# Tighten this later with fixed egress, Vercel Secure Compute, or by moving the API runtime into AWS.
+if [[ -z "${RDS_ALLOWED_CIDR}" ]]; then
+  CURRENT_IP="$(curl -fsS https://checkip.amazonaws.com 2>/dev/null || true)"
+  if [[ -n "${CURRENT_IP}" ]]; then
+    RDS_ALLOWED_CIDR="${CURRENT_IP}/32"
+  fi
+fi
+
+if [[ "${RDS_OPEN_TO_INTERNET}" == "true" ]]; then
+  RDS_ALLOWED_CIDR="0.0.0.0/0"
+fi
+
+if [[ -z "${RDS_ALLOWED_CIDR}" ]]; then
+  echo "Could not determine RDS_ALLOWED_CIDR. Set it to your fixed egress IP/CIDR and rerun."
+  exit 1
+fi
+
 aws ec2 authorize-security-group-ingress \
   --region "${AWS_REGION}" \
   --group-id "${SECURITY_GROUP_ID}" \
   --protocol tcp \
   --port 5432 \
-  --cidr 0.0.0.0/0 >/dev/null 2>&1 || true
+  --cidr "${RDS_ALLOWED_CIDR}" >/dev/null 2>&1 || true
 
 DB_EXISTS="$(aws rds describe-db-instances \
   --region "${AWS_REGION}" \
@@ -79,7 +95,7 @@ if [[ -z "${DB_EXISTS}" || "${DB_EXISTS}" == "None" ]]; then
     --master-username "${DB_USER}" \
     --master-user-password "${DB_PASSWORD}" \
     --vpc-security-group-ids "${SECURITY_GROUP_ID}" \
-    --publicly-accessible \
+    $(if [[ "${RDS_PUBLICLY_ACCESSIBLE}" == "true" ]]; then echo "--publicly-accessible"; else echo "--no-publicly-accessible"; fi) \
     --backup-retention-period 7 \
     --deletion-protection \
     --no-multi-az >/dev/null
@@ -145,6 +161,8 @@ DATABASE_POOL_MAX=3
 RDS_DB_INSTANCE_IDENTIFIER=${DB_IDENTIFIER}
 RDS_DB_NAME=${DB_NAME}
 RDS_MASTER_USERNAME=${DB_USER}
+RDS_PUBLICLY_ACCESSIBLE=${RDS_PUBLICLY_ACCESSIBLE}
+RDS_ALLOWED_CIDR=${RDS_ALLOWED_CIDR}
 SQS_RECORDING_QUEUE_URL=${SQS_RECORDING_QUEUE_URL}
 SQS_SYNTHESIS_QUEUE_URL=${SQS_SYNTHESIS_QUEUE_URL}
 SQS_VERIFICATION_QUEUE_URL=${SQS_VERIFICATION_QUEUE_URL}
@@ -158,5 +176,7 @@ chmod 600 cairn-prod.env
 
 echo "Created/verified AWS resources."
 echo "Database endpoint: ${DB_ENDPOINT}"
+echo "Database security group: ${SECURITY_GROUP_ID}"
+echo "Allowed Postgres CIDR: ${RDS_ALLOWED_CIDR}"
 echo "Database URL secret: ${SECRET_NAME}"
 echo "Environment file written in CloudShell: $(pwd)/cairn-prod.env"
