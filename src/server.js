@@ -995,7 +995,7 @@ function createApp() {
         return;
       }
 
-      if (req.method === "GET" && serveStatic(req, res, pathname)) {
+      if ((req.method === "GET" || req.method === "HEAD") && serveStatic(req, res, pathname)) {
         return;
       }
       json(res, 404, { error: "not_found", pathname });

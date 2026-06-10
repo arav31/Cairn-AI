@@ -74,3 +74,12 @@ test("root server export works as Vercel entrypoint", async () => {
   assert.equal(res.statusCode, 200);
   assert.match(res.body, /Cairn/);
 });
+
+test("root server export handles deployment HEAD checks", async () => {
+  const req = request("HEAD", "/");
+  const res = response();
+
+  await rootHandler(req, res);
+
+  assert.equal(res.statusCode, 200);
+});
