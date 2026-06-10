@@ -792,11 +792,12 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
 
   const usedInputIds = new Set();
   const inputs = inputEvents.map((event) => {
-    const inputId = uniqueInputId(slugify(event.label || event.name || event.id || "input"), usedInputIds);
+    const question = questionForRecordedEvent(event);
+    const inputId = uniqueInputId(slugify(question || event.name || event.id || "input"), usedInputIds);
     event.inputId = inputId;
     return {
       id: inputId,
-      question: cleanText(event.label || event.name || event.id || inputId),
+      question,
       type: inferInputTypeFromValues([event.value]),
       optional: false,
     };
@@ -839,6 +840,11 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
   };
 }
 
+function questionForRecordedEvent(event) {
+  const candidate = cleanText(event.label || event.placeholder || event.groupLabel || event.nearbyText || event.name || event.id || "Input");
+  return readableQuestionLabel(candidate, { name: event.name, id: event.id }, event.name || event.id || candidate);
+}
+
 function latestInputEvents(events) {
   const bySelector = new Map();
   for (const event of events) {
@@ -879,7 +885,7 @@ function buildEngineeredBodyTemplate(body, fields, analysis) {
         continue;
       }
       if (volatile.handling === "ask_user") {
-        if (technicalOrGenerated) continue;
+        if (technicalOrGenerated || !isUserFacingField(field)) continue;
         const input = inputFromMappingOrRow(null, row, fields, usedInputIds);
         inputs.push(input);
         setPathValue(template, row.path, `{{${input.id}}}`);
@@ -889,7 +895,8 @@ function buildEngineeredBodyTemplate(body, fields, analysis) {
 
     const mapping = findPathPlan(row.path, mappings);
     if (mapping) {
-      if (technicalOrGenerated) continue;
+      const mappingField = findFieldForMapping(fields, mapping, row);
+      if (technicalOrGenerated || !isUserFacingField(mappingField)) continue;
       const mappingKey = mapping.inputId || mapping.id || mapping.question || row.path;
       let inputId = inputIdByMapping.get(mappingKey);
       if (!inputId) {
@@ -1055,7 +1062,7 @@ function buildFormBodyTemplate(postData, fields, analysis, request) {
 
     if (volatile?.handling === "omit") continue;
     if (volatile?.handling === "ask_user") {
-      if (technicalOrGenerated) {
+      if (technicalOrGenerated || !isUserFacingField(field)) {
         appendFormTemplateValue(form, paramName, value);
         continue;
       }
@@ -1067,7 +1074,8 @@ function buildFormBodyTemplate(postData, fields, analysis, request) {
 
     const mapping = usePlan ? findPathPlan(row.path, mappings) : null;
     if (mapping) {
-      if (technicalOrGenerated) {
+      const mappingField = findFieldForMapping(fields, mapping, row);
+      if (technicalOrGenerated || !isUserFacingField(mappingField)) {
         appendFormTemplateValue(form, paramName, value);
         continue;
       }
@@ -1257,7 +1265,7 @@ function buildEngineeredQueryTemplate(url, fields, analysis) {
     const volatile = findPathPlan(row.path, plan.volatileFields || []);
     if (volatile?.handling === "omit") continue;
     if (volatile?.handling === "ask_user") {
-      if (technicalOrGenerated) {
+      if (technicalOrGenerated || !isUserFacingField(field)) {
         query[paramName] = values.length > 1 ? values : values[0];
         continue;
       }
@@ -1269,7 +1277,8 @@ function buildEngineeredQueryTemplate(url, fields, analysis) {
 
     const mapping = findPathPlan(row.path, mappings);
     if (mapping) {
-      if (technicalOrGenerated) {
+      const mappingField = findFieldForMapping(fields, mapping, row);
+      if (technicalOrGenerated || !isUserFacingField(mappingField)) {
         query[paramName] = values.length > 1 ? values : values[0];
         continue;
       }
@@ -1323,17 +1332,15 @@ function shouldSkipQueryParam(name, values, field) {
 }
 
 function shouldAskQueryParam(name, values, field) {
-  return shouldAskPayloadPath(name, values, field);
+  return shouldAskPayloadPath(name, values, field, { allowUnmatchedSearchParam: true });
 }
 
-function shouldAskPayloadPath(name, values, field) {
+function shouldAskPayloadPath(name, values, field, options = {}) {
   if (isTechnicalPayloadPath(name) || isTechnicalField(field)) return false;
   if (field) return isUserFacingField(field);
+  if (!options.allowUnmatchedSearchParam) return false;
   if (isNonUserControlName(name)) return false;
-  if (values.every((value) => value === "" || value === undefined || value === null)) {
-    return ["term", "q", "query", "search", "keyword", "keywords"].includes(baseParamName(lastPathName(name)).toLowerCase());
-  }
-  return !isTechnicalFieldName(name);
+  return ["term", "q", "query", "search", "keyword", "keywords"].includes(baseParamName(lastPathName(name)).toLowerCase());
 }
 
 function toQueryInputSpec(inputId, paramName, values, field) {
@@ -1354,7 +1361,18 @@ function toQueryInputSpec(inputId, paramName, values, field) {
 }
 
 function questionForField(paramName, field) {
-  return cleanText(field?.label || field?.placeholder || humanizeName(baseParamName(paramName))) || humanizeName(baseParamName(paramName));
+  const candidate = cleanText(field?.label || field?.placeholder || field?.groupLabel || field?.nearbyText || "");
+  if (candidate) return readableQuestionLabel(candidate, field, paramName);
+  return humanizeName(baseParamName(paramName));
+}
+
+function readableQuestionLabel(candidate, field, paramName) {
+  const normalizedCandidate = normalizeFieldName(candidate);
+  const rawFieldNames = [field?.name, field?.id, paramName].filter(Boolean).map(normalizeFieldName);
+  if (rawFieldNames.includes(normalizedCandidate) || /[_-]|[a-z][A-Z]/.test(candidate)) {
+    return humanizeName(candidate);
+  }
+  return candidate;
 }
 
 function cleanChoices(choices) {
@@ -1380,6 +1398,8 @@ function findFieldForParam(fields, paramName) {
       field.id,
       field.dataInput,
       field.dataSelect,
+      field.label,
+      field.groupLabel,
     ].filter(Boolean).map(normalizeFieldName);
     return names.includes(normalized);
   });
@@ -1387,10 +1407,89 @@ function findFieldForParam(fields, paramName) {
 
 async function getPageFieldCatalog(recording) {
   const recordedFields = recording.pageFields?.fields || [];
-  if (recordedFields.length) return recordedFields.map(normalizeFieldRecord);
+  const eventFields = fieldsFromRecordedEvents(recording.pageFields?.events || []);
+  if (recordedFields.length) return mergeFieldCatalogs(recordedFields.map(normalizeFieldRecord), eventFields);
 
   const htmlFields = await fetchPageFieldCatalog(recording.url).catch(() => []);
-  return htmlFields.map(normalizeFieldRecord);
+  return mergeFieldCatalogs(htmlFields.map(normalizeFieldRecord), eventFields);
+}
+
+function mergeFieldCatalogs(...catalogs) {
+  const merged = [];
+  const seen = new Set();
+  for (const field of catalogs.flat()) {
+    const normalized = normalizeFieldRecord(field);
+    const key = [
+      normalizeFieldName(normalized.name),
+      normalizeFieldName(normalized.id),
+      normalizeFieldName(normalized.dataInput),
+      normalizeFieldName(normalized.dataSelect),
+      normalized.selector,
+      normalizeFieldName(normalized.label),
+    ].filter(Boolean).join("|");
+    if (key && seen.has(key)) continue;
+    if (key) seen.add(key);
+    merged.push(normalized);
+  }
+  return merged;
+}
+
+function fieldsFromRecordedEvents(events) {
+  const byKey = new Map();
+  for (const event of events || []) {
+    if (!event || !["input", "change", "click"].includes(event.type)) continue;
+    const tag = event.tag || "";
+    const inputType = event.inputType || tag;
+    const label = cleanText(event.label || event.groupLabel || event.nearbyText || event.name || event.id || "");
+
+    if (["input", "change"].includes(event.type) && ["input", "select", "textarea"].includes(tag)) {
+      const key = event.selector || event.name || event.id || label;
+      if (!key) continue;
+      byKey.set(key, {
+        tag,
+        type: inputType,
+        name: event.name || "",
+        id: event.id || "",
+        selector: event.selector || "",
+        label,
+        placeholder: event.placeholder || "",
+        value: event.value || "",
+        checked: Boolean(event.checked),
+        visible: true,
+        source: "recorded-event",
+        nearbyText: event.nearbyText || "",
+        groupLabel: event.groupLabel || "",
+        sectionText: event.sectionText || "",
+        options: cleanChoices(event.options || []),
+      });
+      continue;
+    }
+
+    if (event.type === "click" && ["button", "a", "input"].includes(tag)) {
+      const groupLabel = cleanText(event.groupLabel || event.nearbyText || "");
+      const options = cleanChoices(event.options || []);
+      if (!groupLabel || options.length < 2) continue;
+      const key = `choice:${normalizeFieldName(groupLabel)}`;
+      byKey.set(key, {
+        tag: "select",
+        type: "choice",
+        name: slugify(groupLabel),
+        id: "",
+        selector: event.selector || "",
+        label: groupLabel,
+        placeholder: "",
+        value: cleanText(event.value || event.text || ""),
+        checked: false,
+        visible: true,
+        source: "recorded-click-group",
+        nearbyText: event.nearbyText || "",
+        groupLabel,
+        sectionText: event.sectionText || "",
+        options,
+      });
+    }
+  }
+  return [...byKey.values()].map(normalizeFieldRecord);
 }
 
 async function fetchPageFieldCatalog(url) {
@@ -1500,17 +1599,81 @@ async function installInteractionRecorder(client) {
 
 async function collectPageFields(client) {
   const expression = String.raw`(() => {
+    const compact = (value, limit = 300) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+    const cssEscape = (value) => {
+      if (window.CSS && CSS.escape) return CSS.escape(value);
+      return String(value).replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
+    };
+    const selectorFor = (element) => {
+      if (!element || !element.tagName) return "";
+      if (element.id) return "#" + cssEscape(element.id);
+      if (element.name) return element.tagName.toLowerCase() + "[name=\"" + String(element.name).replace(/"/g, "\\\"") + "\"]";
+      const parts = [];
+      let current = element;
+      while (current && current.nodeType === 1 && parts.length < 5) {
+        let part = current.tagName.toLowerCase();
+        const parent = current.parentElement;
+        if (parent) {
+          const siblings = Array.from(parent.children).filter((child) => child.tagName === current.tagName);
+          if (siblings.length > 1) part += ":nth-of-type(" + (siblings.indexOf(current) + 1) + ")";
+        }
+        parts.unshift(part);
+        current = parent;
+      }
+      return parts.join(" > ");
+    };
     const labelTextFor = (element) => {
       if (element.labels && element.labels.length) {
-        return Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" ").trim();
+        return compact(Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" "));
       }
       if (element.id) {
         const explicit = Array.from(document.querySelectorAll("label")).find((label) => label.htmlFor === element.id);
-        if (explicit) return (explicit.innerText || explicit.textContent || "").trim();
+        if (explicit) return compact(explicit.innerText || explicit.textContent || "");
       }
       const wrapping = element.closest("label");
-      if (wrapping) return (wrapping.innerText || wrapping.textContent || "").trim();
-      return element.getAttribute("aria-label") || "";
+      if (wrapping) return compact(wrapping.innerText || wrapping.textContent || "");
+      return compact(element.getAttribute("aria-label") || element.getAttribute("placeholder") || "");
+    };
+    const nearbyTextFor = (element) => {
+      const pieces = [];
+      let current = element;
+      while (current && current.parentElement && pieces.join(" ").length < 400) {
+        const siblings = Array.from(current.parentElement.children);
+        const index = siblings.indexOf(current);
+        for (const sibling of siblings.slice(Math.max(0, index - 4), index).reverse()) {
+          const text = compact(sibling.innerText || sibling.textContent || "", 160);
+          if (text) pieces.unshift(text);
+        }
+        current = current.parentElement;
+      }
+      return compact(pieces.join(" "), 400);
+    };
+    const groupLabelFor = (element) => {
+      const legend = element.closest("fieldset")?.querySelector("legend");
+      if (legend) return compact(legend.innerText || legend.textContent || "");
+      const group = element.closest("[role='radiogroup'], [role='group'], .form-group, .field, .question, .control-group");
+      const aria = group?.getAttribute("aria-label") || group?.getAttribute("aria-labelledby");
+      if (aria && !aria.includes(" ")) {
+        const labelled = document.getElementById(aria);
+        if (labelled) return compact(labelled.innerText || labelled.textContent || "");
+      }
+      if (aria) return compact(aria);
+      const nearby = nearbyTextFor(element);
+      return nearby ? compact(nearby.split(/[.?!]\s+/)[0], 120) : "";
+    };
+    const sectionTextFor = (element) => {
+      const section = element.closest("fieldset, form, section, article, [role='group'], [role='radiogroup']") || element.parentElement;
+      return compact(section?.innerText || section?.textContent || "", 600);
+    };
+    const optionGroupFor = (element) => {
+      const parent = element.closest("[role='radiogroup'], [role='group']") || element.parentElement;
+      if (!parent) return [];
+      const controls = Array.from(parent.querySelectorAll("button, [role='button'], input[type='button'], input[type='radio'], input[type='checkbox'], option"));
+      return controls.slice(0, 40).map((item) => ({
+        label: compact(item.innerText || item.textContent || item.getAttribute("aria-label") || item.value || "", 120),
+        value: item.value || compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 120),
+        selected: Boolean(item.checked || item.selected || item.getAttribute("aria-pressed") === "true" || item.getAttribute("aria-checked") === "true"),
+      })).filter((option) => option.label || option.value);
     };
     const isVisible = (element) => {
       const style = window.getComputedStyle(element);
@@ -1522,6 +1685,7 @@ async function collectPageFields(client) {
       type: element.getAttribute("type") || element.tagName.toLowerCase(),
       name: element.getAttribute("name") || "",
       id: element.id || "",
+      selector: selectorFor(element),
       label: labelTextFor(element),
       placeholder: element.getAttribute("placeholder") || "",
       value: element.value || "",
@@ -1530,13 +1694,16 @@ async function collectPageFields(client) {
       visible: isVisible(element),
       dataInput: element.getAttribute("data-input") || "",
       dataSelect: element.getAttribute("data-select") || "",
+      nearbyText: nearbyTextFor(element),
+      groupLabel: groupLabelFor(element),
+      sectionText: sectionTextFor(element),
       options: element.tagName.toLowerCase() === "select"
         ? Array.from(element.options).map((option) => ({
             label: option.textContent || "",
             value: option.value || "",
             selected: option.selected,
           }))
-        : [],
+        : optionGroupFor(element),
     }));
     return {
       url: location.href,
@@ -1558,6 +1725,7 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
   window.__apiSkillBuilderRecorderInstalled = true;
   window.__apiSkillBuilderEvents = window.__apiSkillBuilderEvents || [];
 
+  const compact = (value, limit = 300) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
   const cssEscape = (value) => {
     if (window.CSS && CSS.escape) return CSS.escape(value);
     return String(value).replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
@@ -1580,17 +1748,58 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
     }
     return parts.join(" > ");
   };
+  const nearbyTextFor = (element) => {
+    const pieces = [];
+    let current = element;
+    while (current && current.parentElement && pieces.join(" ").length < 400) {
+      const siblings = Array.from(current.parentElement.children);
+      const index = siblings.indexOf(current);
+      for (const sibling of siblings.slice(Math.max(0, index - 4), index).reverse()) {
+        const text = compact(sibling.innerText || sibling.textContent || "", 160);
+        if (text) pieces.unshift(text);
+      }
+      current = current.parentElement;
+    }
+    return compact(pieces.join(" "), 400);
+  };
+  const groupLabelFor = (element) => {
+    const legend = element.closest && element.closest("fieldset")?.querySelector("legend");
+    if (legend) return compact(legend.innerText || legend.textContent || "");
+    const group = element.closest && element.closest("[role='radiogroup'], [role='group'], .form-group, .field, .question, .control-group");
+    const aria = group?.getAttribute("aria-label") || group?.getAttribute("aria-labelledby");
+    if (aria && !aria.includes(" ")) {
+      const labelled = document.getElementById(aria);
+      if (labelled) return compact(labelled.innerText || labelled.textContent || "");
+    }
+    if (aria) return compact(aria);
+    const nearby = nearbyTextFor(element);
+    return nearby ? compact(nearby.split(/[.?!]\s+/)[0], 120) : "";
+  };
+  const sectionTextFor = (element) => {
+    const section = element.closest && (element.closest("fieldset, form, section, article, [role='group'], [role='radiogroup']") || element.parentElement);
+    return compact(section?.innerText || section?.textContent || "", 600);
+  };
+  const optionGroupFor = (element) => {
+    const parent = element.closest && (element.closest("[role='radiogroup'], [role='group']") || element.parentElement);
+    if (!parent) return [];
+    const controls = Array.from(parent.querySelectorAll("button, [role='button'], input[type='button'], input[type='radio'], input[type='checkbox'], option"));
+    return controls.slice(0, 40).map((item) => ({
+      label: compact(item.innerText || item.textContent || item.getAttribute("aria-label") || item.value || "", 120),
+      value: item.value || compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 120),
+      selected: Boolean(item.checked || item.selected || item.getAttribute("aria-pressed") === "true" || item.getAttribute("aria-checked") === "true"),
+    })).filter((option) => option.label || option.value);
+  };
   const labelFor = (element) => {
     if (element.labels && element.labels.length) {
-      return Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" ").trim();
+      return compact(Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" "));
     }
     if (element.id) {
       const explicit = Array.from(document.querySelectorAll("label")).find((label) => label.htmlFor === element.id);
-      if (explicit) return (explicit.innerText || explicit.textContent || "").trim();
+      if (explicit) return compact(explicit.innerText || explicit.textContent || "");
     }
     const label = element.closest && element.closest("label");
-    if (label) return (label.innerText || label.textContent || "").trim();
-    return element.getAttribute && (element.getAttribute("aria-label") || element.getAttribute("placeholder") || "");
+    if (label) return compact(label.innerText || label.textContent || "");
+    return element.getAttribute && compact(element.getAttribute("aria-label") || element.getAttribute("placeholder") || "");
   };
   const record = (type, element) => {
     if (!element || !element.tagName) return;
@@ -1605,9 +1814,14 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
       id: element.id || "",
       name: element.getAttribute("name") || "",
       label: labelFor(element),
-      text: (element.innerText || element.textContent || "").trim().slice(0, 200),
+      placeholder: element.getAttribute("placeholder") || "",
+      text: compact(element.innerText || element.textContent || "", 200),
       value: element.value || "",
       checked: Boolean(element.checked),
+      nearbyText: nearbyTextFor(element),
+      groupLabel: groupLabelFor(element),
+      sectionText: sectionTextFor(element),
+      options: optionGroupFor(element),
       url: location.href
     });
     if (window.__apiSkillBuilderEvents.length > 500) window.__apiSkillBuilderEvents.shift();
@@ -1627,9 +1841,14 @@ function normalizeFieldRecord(field) {
     ...field,
     label: cleanText(field.label || ""),
     placeholder: cleanText(field.placeholder || ""),
+    selector: field.selector || "",
     name: field.name || "",
     id: field.id || "",
     type: field.type || field.tag || "text",
+    nearbyText: cleanText(field.nearbyText || ""),
+    groupLabel: cleanText(field.groupLabel || ""),
+    sectionText: cleanText(field.sectionText || ""),
+    source: field.source || "",
     options: cleanChoices(field.options || []),
   };
 }

@@ -314,7 +314,7 @@ At the end of recording, the tool evaluates JavaScript in the page to collect:
 - Page title
 - Visible body text preview
 - All `input`, `select`, and `textarea` elements
-- Names, ids, labels, placeholders, values, checked state, options, and selected options
+- Names, ids, selectors, labels, placeholders, nearby text, group labels, values, checked state, options, and selected options
 
 This is how generated questions become `Age`, `Trip type`, `Destination`, or `Salary Range` instead of raw payload names.
 
@@ -327,8 +327,11 @@ The recorder injects a small script into the page before the workflow begins. Th
 - `click` events
 - CSS selector for the interacted element
 - Label, placeholder, id, name, visible text, value, checked state, and URL at the time of the event
+- Nearby text, group labels, section text, and sibling button/option choices when available
 
 This gives the learner a fallback when there is no useful API endpoint. For example, a pure client-side calculator may only need a result URL or a browser replay of typed fields and a final button click.
+
+For single-page apps, the final result screen may no longer contain the original form controls. The recorder therefore also turns recorded `input`, `change`, and well-labelled button-group `click` events into synthetic visible fields. Draft generation uses these recorded interactions as the source of prompts.
 
 ## How Endpoint Ranking Works
 
@@ -396,6 +399,7 @@ The generator uses that result to:
 - reorder candidate endpoints when the model identifies a better goal request
 - prefer result URL or browser replay when the model sees a client-side workflow
 - map JSON body fields and query parameters to website-style questions
+- require promptable inputs to be backed by visible field/event evidence
 - regenerate UUID-like payload fields when the model marks them volatile
 - omit volatile fields when the model says they should not be replayed
 - keep recorded constants that are part of the product/workflow rather than user input
@@ -426,6 +430,8 @@ The generator separates two kinds of request data:
 
 Replay internals are kept in the request when they are needed, or marked as volatile/preflight/computed values, but they are not saved as user questions. For example, ASP.NET fields such as `__VIEWSTATE`, `__VIEWSTATEGENERATOR`, and `__EVENTVALIDATION` stay inside the form payload and should never appear as chatbot prompts.
 
+The generator also does not treat arbitrary non-empty API payload keys as questions. A key such as `policyId`, `tmpBasePremium`, `agentNumber`, or `isQuickQuote` stays a recorded constant unless it resolves to visible field/event evidence. This prevents internal request shapes from leaking into the chatbot.
+
 When the LLM provider is enabled, it must also return a `conversation` plan:
 
 - `intro`: one short sentence explaining what the skill will do
@@ -435,7 +441,7 @@ When the LLM provider is enabled, it must also return a `conversation` plan:
 
 This is how a course/CAP calculator can ask for `Module Code`, `Module MCs`, and `Module Grade`, then ask `Do you want to add another module?`, instead of asking raw payload names.
 
-If GPT is unavailable, the deterministic generator still applies the same technical-field filters and infers simple groups from field names and visible labels.
+If GPT is unavailable, the deterministic generator still applies the same technical-field filters and infers simple groups from visible fields and recorded interactions.
 
 ### 1. Tally Form Strategy
 
