@@ -765,6 +765,10 @@ async function printDraftLearningSummary(file) {
     console.log("- Replay warnings:");
     endpoint.replayWarnings.slice(0, 5).forEach((warning) => console.log(`  - ${warning}`));
   }
+  if (draft.learning.replayWarnings?.length) {
+    console.log("- Draft warnings:");
+    draft.learning.replayWarnings.slice(0, 5).forEach((warning) => console.log(`  - ${warning}`));
+  }
 }
 
 function progress(step, label) {

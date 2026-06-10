@@ -644,12 +644,17 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
     headers: keepReplayHeaders(request.requestHeaders || {}),
     ...(form ? { form } : { body }),
   };
+  const replayWarnings = [];
+  if (!inputs.length && hasRecordedPromptableInteractions(recording)) {
+    replayWarnings.push("Recorded visible interactions were found, but none were safely mapped to this API payload. This draft replays recorded constants unless LLM analysis maps the fields.");
+  }
 
   const skill = {
     id: slugify(name || recording.name || "draft-skill"),
     name: name || recording.name || "Draft skill",
     sourceUrl: recording.url,
     description: `Draft generated from ${recordingFile}. Review before using.`,
+    ...(replayWarnings.length ? { learning: { replayWarnings } } : {}),
     ...(Object.keys(computed).length ? { computed } : {}),
     inputs,
     steps: [
@@ -668,6 +673,14 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
     ],
   };
   return skill;
+}
+
+function hasRecordedPromptableInteractions(recording) {
+  return (recording.pageFields?.events || []).some((event) => {
+    if (["input", "change"].includes(event.type) && event.value !== undefined && event.value !== "") return true;
+    if (event.type === "click" && cleanChoices(event.options || []).length > 1) return true;
+    return false;
+  });
 }
 
 function isDraftWorthyRequest(request) {
@@ -791,27 +804,62 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
   if (!inputEvents.length && !clickEvents.length) return null;
 
   const usedInputIds = new Set();
-  const inputs = inputEvents.map((event) => {
+  const inputs = [];
+  for (const event of inputEvents) {
     const question = questionForRecordedEvent(event);
     const inputId = uniqueInputId(slugify(question || event.name || event.id || "input"), usedInputIds);
     event.inputId = inputId;
-    return {
+    inputs.push({
       id: inputId,
       question,
       type: inferInputTypeFromValues([event.value]),
       optional: false,
-    };
-  });
+    });
+  }
+
+  const choiceClickEvents = latestChoiceClickEvents(clickEvents);
+  for (const event of choiceClickEvents) {
+    const question = questionForChoiceClickEvent(event);
+    const inputId = uniqueInputId(slugify(question || event.text || "choice"), usedInputIds);
+    event.inputId = inputId;
+    const rawChoices = cleanChoices(event.options || []);
+    const choices = rawChoices.some((choice) => choice.selector)
+      ? rawChoices
+      : [{ label: cleanText(event.text || "Selected option"), value: cleanText(event.value || event.text || "") }];
+    inputs.push({
+      id: inputId,
+      question,
+      type: "choice",
+      optional: false,
+      choices,
+    });
+  }
+
   const lastClick = [...events].reverse().find((event) => event.type === "click" && event.selector);
   const actions = inputEvents.map((event) => ({
     type: "fill",
     selector: event.selector,
     value: `{{${event.inputId}}}`,
   }));
+  for (const event of choiceClickEvents) {
+    actions.push({
+      type: "clickChoice",
+      value: `{{${event.inputId}}}`,
+      choices: (event.options || []).filter((option) => option.selector).map((option) => ({
+        label: cleanText(option.label || option.text || option.value),
+        value: option.value ?? option.label,
+        selector: option.selector || "",
+      })),
+      fallbackSelector: event.selector,
+    });
+  }
   if (inputEvents.length && lastClick) {
     actions.push({ type: "click", selector: lastClick.selector });
   } else if (!inputEvents.length) {
-    actions.push(...clickEvents.map((event) => ({ type: "click", selector: event.selector })));
+    const choiceSelectors = new Set(choiceClickEvents.map((event) => event.selector));
+    actions.push(...clickEvents
+      .filter((event) => !choiceSelectors.has(event.selector))
+      .map((event) => ({ type: "click", selector: event.selector })));
   }
 
   return {
@@ -843,6 +891,40 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
 function questionForRecordedEvent(event) {
   const candidate = cleanText(event.label || event.placeholder || event.groupLabel || event.nearbyText || event.name || event.id || "Input");
   return readableQuestionLabel(candidate, { name: event.name, id: event.id }, event.name || event.id || candidate);
+}
+
+function latestChoiceClickEvents(clickEvents) {
+  const byGroup = new Map();
+  for (const event of clickEvents) {
+    const choices = cleanChoices(event.options || []);
+    if (choices.length < 2) continue;
+    const key = normalizeFieldName(questionForChoiceClickEvent(event));
+    if (!key) continue;
+    byGroup.set(key, event);
+  }
+  return [...byGroup.values()];
+}
+
+function questionForChoiceClickEvent(event) {
+  const choices = cleanChoices(event.options || []);
+  const inferred = inferChoiceGroupQuestion(`${event.label || ""} ${event.groupLabel || ""} ${event.nearbyText || ""} ${event.sectionText || ""}`, choices);
+  return inferred || questionForRecordedEvent(event);
+}
+
+function inferChoiceGroupQuestion(contextText, choices) {
+  const text = cleanText(contextText);
+  if (!text || !choices.length) return "";
+  const labels = choices.map((choice) => cleanText(choice.label || choice.value)).filter(Boolean);
+  const indices = labels
+    .map((label) => ({ label, index: text.toLowerCase().indexOf(label.toLowerCase()) }))
+    .filter((item) => item.index >= 0)
+    .sort((a, b) => a.index - b.index);
+  if (!indices.length) return "";
+  const prefix = cleanText(text.slice(0, indices[0].index));
+  if (!prefix) return "";
+  const tail = prefix.split(/\s+/).slice(-10).join(" ");
+  const natural = tail.match(/\b(i am a(?:n)?|i need(?: a| an)?|looking to cover|select(?: your)?|choose(?: your)?|coverage for|travelling to|leaving .* on|arriving .* on)\b.*$/i);
+  return cleanText(natural?.[0] || tail);
 }
 
 function latestInputEvents(events) {
@@ -1385,7 +1467,7 @@ function cleanChoices(choices) {
     const key = `${label}\u0000${value}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    clean.push({ label, value });
+    clean.push({ label, value, ...(choice.selector ? { selector: choice.selector } : {}) });
   }
   return clean;
 }
@@ -1672,6 +1754,7 @@ async function collectPageFields(client) {
       return controls.slice(0, 40).map((item) => ({
         label: compact(item.innerText || item.textContent || item.getAttribute("aria-label") || item.value || "", 120),
         value: item.value || compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 120),
+        selector: selectorFor(item),
         selected: Boolean(item.checked || item.selected || item.getAttribute("aria-pressed") === "true" || item.getAttribute("aria-checked") === "true"),
       })).filter((option) => option.label || option.value);
     };
@@ -1786,6 +1869,7 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
     return controls.slice(0, 40).map((item) => ({
       label: compact(item.innerText || item.textContent || item.getAttribute("aria-label") || item.value || "", 120),
       value: item.value || compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 120),
+      selector: selectorFor(item),
       selected: Boolean(item.checked || item.selected || item.getAttribute("aria-pressed") === "true" || item.getAttribute("aria-checked") === "true"),
     })).filter((option) => option.label || option.value);
   };
@@ -2253,12 +2337,19 @@ function keepReplayHeaders(headers) {
     const lower = key.toLowerCase();
     if (
       ["accept", "content-type", "origin", "referer"].includes(lower) ||
+      isBrowserPublicReplayHeader(lower, value) ||
       lower.startsWith("x-")
     ) {
       keep[key] = value;
     }
   }
   return keep;
+}
+
+function isBrowserPublicReplayHeader(lower, value) {
+  if (["client_id", "client-id", "client_secret", "client-secret", "gi-tkn"].includes(lower)) return true;
+  if (lower === "token" && value && !/^bearer\s/i.test(String(value))) return true;
+  return false;
 }
 
 function inputIdFromPath(pathExpression) {

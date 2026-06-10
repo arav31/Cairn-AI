@@ -316,6 +316,22 @@ async function runBrowserWorkflowAction(client, action) {
       return true;
     })()`);
   }
+
+  if (action.type === "clickChoice") {
+    await evaluateInBrowser(client, `(() => {
+      const value = ${JSON.stringify(action.value ?? "")};
+      const choices = ${JSON.stringify(action.choices || [])};
+      const match = choices.find((choice) =>
+        String(choice.value ?? choice.label).toLowerCase() === String(value).toLowerCase() ||
+        String(choice.label ?? choice.value).toLowerCase() === String(value).toLowerCase()
+      );
+      const selector = match?.selector || ${JSON.stringify(action.fallbackSelector || "")};
+      const element = selector ? document.querySelector(selector) : null;
+      if (!element) throw new Error("Choice element not found: " + value);
+      element.click();
+      return true;
+    })()`);
+  }
 }
 
 async function navigateAndWait(client, url, timeoutMs) {
@@ -729,7 +745,7 @@ function extractImportantOutput(value, response, output, skill) {
 }
 
 function compactJsonResult(value) {
-  const importantKeys = /price|premium|quote|total|amount|cost|fare|result|score|status|category|plan|name|id|rate|discount|duration|distance|bmi|risk|range/i;
+  const importantKeys = /success|message|error|errors|price|premium|quote|total|amount|cost|fare|result|score|status|category|plan|name|id|rate|discount|duration|distance|bmi|risk|range/i;
   if (Array.isArray(value)) {
     return value.slice(0, 10).map(compactJsonResult);
   }

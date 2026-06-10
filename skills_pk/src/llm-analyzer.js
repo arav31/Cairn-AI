@@ -262,7 +262,7 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
 
   const evidence = buildRecordingEvidence(recording, candidates);
   const provider = status.provider;
-  const timeoutMs = Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || 30000);
+  const timeoutMs = Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || defaultLlmTimeoutMs(provider));
   const response = provider === "nvidia"
     ? await callNvidiaChatJson({
         apiKey: env.NVIDIA_API_KEY,
@@ -285,6 +285,10 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
     analyzer: provider === "nvidia" ? "nvidia-chat-completions-json-mode" : "openai-responses-structured-output",
     provider,
   };
+}
+
+function defaultLlmTimeoutMs(provider) {
+  return provider === "nvidia" ? 120000 : 45000;
 }
 
 export function buildRecordingEvidence(recording, candidates = []) {
