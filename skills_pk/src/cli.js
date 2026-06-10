@@ -267,6 +267,15 @@ async function runSkillChat(rl, skill) {
   if (skill.description && !chat.intro) console.log(skill.description);
   if (chat.warning) console.log(chat.warning);
   console.log("");
+
+  if (!chat.groups.length && hasInputMappingWarning(skill)) {
+    console.log("This saved skill has no user-facing questions, but its learning metadata says visible website inputs were not safely mapped.");
+    console.log("That usually means it would replay recorded constants instead of asking you for the real website inputs.");
+    const proceed = await askYesNo(rl, "Run it anyway?", false);
+    if (!proceed) return;
+    console.log("");
+  }
+
   progress(1, "Collecting required inputs");
 
   const inputs = {};
@@ -299,6 +308,14 @@ async function runSkillChat(rl, skill) {
   const result = await runSkill(skill, inputs);
   progress(3, "Done");
   printResult(result);
+}
+
+function hasInputMappingWarning(skill) {
+  const warnings = [
+    ...(skill.learning?.replayWarnings || []),
+    ...(skill.learning?.endpointEngineering?.replayWarnings || []),
+  ].join(" ");
+  return /zero user-facing inputs|none were safely mapped|visible form interactions|replays? recorded constants/i.test(warnings);
 }
 
 async function run(args) {

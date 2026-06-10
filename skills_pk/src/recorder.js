@@ -337,6 +337,7 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
   const recording = JSON.parse(await fs.readFile(recordingFile, "utf8"));
   const candidates = rankCandidates(recording.requests || [], recording.goal);
   const analysis = await safeAnalyzeRecording(recording, candidates);
+  const skippedDraftWarnings = [];
 
   const preferredFallback = await createPreferredFallbackSkill({ recording, recordingFile, name, analysis });
   if (preferredFallback) return writeDraftSkill(finalizeSkill(preferredFallback, { analysis, recordingFile, recording }));
@@ -353,7 +354,13 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
 
     const skill = await createSkillForRequest({ recording, request, recordingFile, name, analysis });
     if (skill) {
-      return writeDraftSkill(finalizeSkill(skill, { analysis, recordingFile, recording }));
+      const finalized = finalizeSkill(skill, { analysis, recordingFile, recording });
+      const quality = assessDraftQuality(finalized, recording);
+      if (!quality.ok) {
+        skippedDraftWarnings.push(quality.reason);
+        continue;
+      }
+      return writeDraftSkill(finalized);
     }
   }
 
@@ -362,10 +369,40 @@ export async function createDraftSkillFromRecording({ recordingFile, candidateIn
     await maybeCreateBrowserReplaySkill({ recording, recordingFile, name });
 
   if (fallbackSkill) {
-    return writeDraftSkill(finalizeSkill(fallbackSkill, { analysis, recordingFile, recording }));
+    const finalizedFallback = finalizeSkill(fallbackSkill, { analysis, recordingFile, recording });
+    if (skippedDraftWarnings.length) {
+      finalizedFallback.learning = {
+        ...(finalizedFallback.learning || {}),
+        replayWarnings: [
+          ...new Set([
+            ...(finalizedFallback.learning?.replayWarnings || []),
+            ...skippedDraftWarnings,
+          ]),
+        ],
+      };
+    }
+    return writeDraftSkill(finalizedFallback);
   }
 
   throw new Error("No reusable API endpoint, result URL, or browser input workflow was detected. Record the workflow again after interacting with the actual form/result controls.");
+}
+
+function assessDraftQuality(skill, recording) {
+  const visibleInputs = (skill.inputs || []).filter((inputSpec) => !isTechnicalInputSpec(inputSpec));
+  if (isApiOnlySkill(skill) && hasRecordedPromptableInteractions(recording) && !visibleInputs.length) {
+    return {
+      ok: false,
+      reason: "Skipped an API candidate because the recording contained visible form interactions, but the generated API skill had zero user-facing inputs. The learner will try another endpoint or browser replay instead of saving a misleading no-input skill.",
+    };
+  }
+  return { ok: true };
+}
+
+function isApiOnlySkill(skill) {
+  const steps = skill.steps || [];
+  if (!steps.length) return false;
+  if (steps.some((step) => step.browserWorkflow || step.browserMode)) return false;
+  return steps.some((step) => step.request);
 }
 
 async function safeAnalyzeRecording(recording, candidates) {
@@ -824,7 +861,7 @@ function recordedPayloadSpec(request) {
 function hasRecordedPromptableInteractions(recording) {
   return (recording.pageFields?.events || []).some((event) => {
     if (["input", "change"].includes(event.type) && event.value !== undefined && event.value !== "") return true;
-    if (event.type === "click" && cleanChoices(event.options || []).length > 1) return true;
+    if (isChoiceClickEvent(event) && cleanChoices(event.options || []).length > 1) return true;
     return false;
   });
 }
@@ -965,7 +1002,7 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
 
   const choiceClickEvents = latestChoiceClickEvents(clickEvents);
   for (const event of choiceClickEvents) {
-    const question = questionForChoiceClickEvent(event);
+    const question = questionForChoiceClickEvent(event, events);
     const inputId = uniqueInputId(slugify(question || event.text || "choice"), usedInputIds);
     event.inputId = inputId;
     const rawChoices = cleanChoices(event.options || []);
@@ -1036,7 +1073,7 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
 
 function questionForRecordedEvent(event) {
   const candidate = cleanText(event.promptText || event.label || event.placeholder || event.groupLabel || event.nearbyText || event.name || event.id || "Input");
-  return readableQuestionLabel(candidate, { name: event.name, id: event.id }, event.name || event.id || candidate);
+  return readableQuestionLabel(candidate, { name: event.name, id: event.id }, event.name || event.id || "");
 }
 
 function latestChoiceClickEvents(clickEvents) {
@@ -1758,6 +1795,9 @@ function questionForField(paramName, field) {
 function readableQuestionLabel(candidate, field, paramName) {
   const normalizedCandidate = normalizeFieldName(candidate);
   const rawFieldNames = [field?.name, field?.id, paramName].filter(Boolean).map(normalizeFieldName);
+  if (/\s/.test(candidate) && !/[_-]|[a-z][A-Z]/.test(candidate)) {
+    return candidate;
+  }
   if (rawFieldNames.includes(normalizedCandidate) || /[_-]|[a-z][A-Z]/.test(candidate)) {
     return humanizeName(candidate);
   }
@@ -1856,7 +1896,7 @@ function fieldsFromRecordedEvents(events) {
       continue;
     }
 
-    if (event.type === "click" && ["button", "a", "input"].includes(tag)) {
+    if (isChoiceClickEvent(event)) {
       const groupLabel = cleanText(questionForChoiceClickEvent(event, events));
       const options = cleanChoices(event.options || []);
       if (!groupLabel || options.length < 2) continue;
@@ -1882,6 +1922,13 @@ function fieldsFromRecordedEvents(events) {
     }
   }
   return [...byKey.values()].map(normalizeFieldRecord);
+}
+
+function isChoiceClickEvent(event) {
+  if (!event || event.type !== "click") return false;
+  const tag = String(event.tag || "").toLowerCase();
+  const role = String(event.role || "").toLowerCase();
+  return ["button", "a", "input"].includes(tag) || ["button", "radio", "checkbox", "option", "tab"].includes(role);
 }
 
 async function fetchPageFieldCatalog(url) {
@@ -2156,16 +2203,20 @@ async function collectPageFields(client) {
       const rect = element.getBoundingClientRect();
       return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
     };
-    const fields = Array.from(document.querySelectorAll("input, select, textarea")).map((element) => ({
+    const valueFor = (element) => element.value || element.getAttribute("aria-valuetext") || element.getAttribute("aria-value") || element.getAttribute("data-value") || element.getAttribute("value") || "";
+    const fields = Array.from(document.querySelectorAll("input, select, textarea, [role='combobox'], [role='radio'], [role='checkbox']"))
+      .filter((element, index, all) => all.indexOf(element) === index)
+      .map((element) => ({
       tag: element.tagName.toLowerCase(),
       type: element.getAttribute("type") || element.tagName.toLowerCase(),
+      role: element.getAttribute("role") || "",
       name: element.getAttribute("name") || "",
       id: element.id || "",
       selector: selectorFor(element),
       label: labelTextFor(element),
       promptText: promptTextFor(element),
       placeholder: element.getAttribute("placeholder") || "",
-      value: element.value || "",
+      value: valueFor(element),
       checked: Boolean(element.checked),
       multiple: Boolean(element.multiple),
       visible: isVisible(element),
@@ -2274,6 +2325,12 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
       selected: Boolean(item.checked || item.selected || item.getAttribute("aria-pressed") === "true" || item.getAttribute("aria-checked") === "true"),
     })).filter((option) => option.label || option.value);
   };
+  const isVisible = (element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.display !== "none" && style.visibility !== "hidden" && rect.width > 0 && rect.height > 0;
+  };
+  const valueFor = (element) => element.value || element.getAttribute("aria-valuetext") || element.getAttribute("aria-value") || element.getAttribute("data-value") || element.getAttribute("value") || "";
   const labelFor = (element) => {
     if (element.labels && element.labels.length) {
       return compact(Array.from(element.labels).map((label) => label.innerText || label.textContent || "").join(" "));
@@ -2356,15 +2413,35 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
     ].filter(Boolean);
     return bestQuestionCandidate(candidates);
   };
+  const localControlsFor = (element) => {
+    const root = groupContainerFor(element) || element.parentElement || document.body;
+    return Array.from(root.querySelectorAll(CONTROL_SELECTOR))
+      .filter((control, index, all) => all.indexOf(control) === index && isVisible(control))
+      .slice(0, 30)
+      .map((control) => ({
+        tag: control.tagName.toLowerCase(),
+        role: control.getAttribute("role") || "",
+        type: control.getAttribute("type") || "",
+        selector: selectorFor(control),
+        promptText: promptTextFor(control),
+        label: labelFor(control),
+        text: compact(control.innerText || control.textContent || "", 100),
+        value: valueFor(control),
+        checked: Boolean(control.checked || control.getAttribute("aria-checked") === "true" || control.getAttribute("aria-pressed") === "true"),
+      }))
+      .filter((control) => control.promptText || control.label || control.text || control.value);
+  };
   const record = (type, element) => {
     if (!element || !element.tagName) return;
     const tag = element.tagName.toLowerCase();
-    if (!["input", "select", "textarea", "button", "a"].includes(tag)) return;
+    const role = element.getAttribute("role") || "";
+    if (!["input", "select", "textarea", "button", "a"].includes(tag) && !element.matches(CONTROL_SELECTOR)) return;
     window.__apiSkillBuilderEvents.push({
       type,
       ts: Date.now(),
       selector: selectorFor(element),
       tag,
+      role,
       inputType: element.getAttribute("type") || tag,
       id: element.id || "",
       name: element.getAttribute("name") || "",
@@ -2372,12 +2449,13 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
       promptText: promptTextFor(element),
       placeholder: element.getAttribute("placeholder") || "",
       text: compact(element.innerText || element.textContent || "", 200),
-      value: element.value || "",
+      value: valueFor(element),
       checked: Boolean(element.checked),
       nearbyText: nearbyTextFor(element),
       groupLabel: groupLabelFor(element),
       sectionText: sectionTextFor(element),
       options: optionGroupFor(element),
+      localControls: localControlsFor(element),
       url: location.href
     });
     if (window.__apiSkillBuilderEvents.length > 500) window.__apiSkillBuilderEvents.shift();
@@ -2386,7 +2464,7 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
   document.addEventListener("change", (event) => record("change", event.target), true);
   document.addEventListener("click", (event) => {
     const target = event.target?.closest
-      ? event.target.closest("button,a,input,select,textarea") || event.target
+      ? event.target.closest(CONTROL_SELECTOR) || event.target
       : event.target?.parentElement;
     record("click", target);
   }, true);
@@ -2402,11 +2480,13 @@ function normalizeFieldRecord(field) {
     name: field.name || "",
     id: field.id || "",
     type: field.type || field.tag || "text",
+    role: field.role || "",
     nearbyText: cleanText(field.nearbyText || ""),
     groupLabel: cleanText(field.groupLabel || ""),
     sectionText: cleanText(field.sectionText || ""),
     source: field.source || "",
     options: cleanChoices(field.options || []),
+    localControls: Array.isArray(field.localControls) ? field.localControls : [],
   };
 }
 
