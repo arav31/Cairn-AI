@@ -82,24 +82,17 @@ export async function ensureUnbrowseRuntime() {
   if (initial.transport === "local-http" || initial.transport === "remote-sdk") return initial;
   if (initial.transport !== "cli-managed-local") return initial;
 
-  const run = await runUnbrowseCli(["health", "--pretty"], {
-    timeoutMs: 30000,
-    env: {
-      UNBROWSE_URL: initial.baseUrl,
-      UNBROWSE_TOS_ACCEPTED: process.env.UNBROWSE_TOS_ACCEPTED || "1",
-      UNBROWSE_NON_INTERACTIVE: process.env.UNBROWSE_NON_INTERACTIVE || "1",
-    },
-  });
-  if (!run.ok) {
+  const started = await startUnbrowseServe(initial);
+  if (!started.ok) {
     return {
       ...initial,
       enabled: false,
       transport: "unavailable",
-      reason: cleanCliFailure(run) || "Failed to start the local Unbrowse runtime.",
+      reason: started.error || "Failed to start the local Unbrowse runtime.",
     };
   }
 
-  const health = await fetchLocalHealth(initial.baseUrl, 5000);
+  const health = await waitForLocalHealth(initial.baseUrl, Number(process.env.UNBROWSE_START_TIMEOUT_MS || 20000));
   if (!health.ok) {
     return {
       ...initial,
@@ -115,6 +108,47 @@ export async function ensureUnbrowseRuntime() {
     health: health.data,
     reason: `Local Unbrowse runtime started at ${initial.baseUrl}.`,
   };
+}
+
+async function startUnbrowseServe(status) {
+  const runtime = resolveUnbrowseRuntimeEntrypoint();
+  if (!runtime) {
+    return { ok: false, error: "Could not find node_modules/unbrowse/runtime/cli.js. Run npm install in this folder." };
+  }
+  if (!status.bunPath) {
+    return { ok: false, error: "Bun is required to start the Unbrowse local runtime." };
+  }
+
+  const url = new URL(status.baseUrl);
+  const child = spawn(status.bunPath, [runtime, "serve"], {
+    cwd: process.cwd(),
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true,
+    env: {
+      ...process.env,
+      UNBROWSE_URL: status.baseUrl,
+      UNBROWSE_BUN_BIN: status.bunPath,
+      UNBROWSE_TOS_ACCEPTED: process.env.UNBROWSE_TOS_ACCEPTED || "1",
+      UNBROWSE_NON_INTERACTIVE: process.env.UNBROWSE_NON_INTERACTIVE || "1",
+      HOST: !url.hostname || url.hostname === "localhost" ? "127.0.0.1" : url.hostname,
+      PORT: url.port || (url.protocol === "https:" ? "443" : "80"),
+    },
+  });
+  child.unref();
+  return { ok: true, pid: child.pid };
+}
+
+async function waitForLocalHealth(baseUrl, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let last = null;
+  while (Date.now() < deadline) {
+    const health = await fetchLocalHealth(baseUrl, 1500);
+    if (health.ok) return health;
+    last = health;
+    await delay(500);
+  }
+  return last || { ok: false, error: "Timed out waiting for Unbrowse /health." };
 }
 
 export async function resolveUnbrowseIntent({ url, intent, params = {}, forceCapture = false, dryRun = true, timeoutMs } = {}) {
@@ -553,42 +587,48 @@ async function makeRemoteClient() {
   });
 }
 
-function runUnbrowseCli(args, { timeoutMs = 30000, env = {} } = {}) {
+async function runUnbrowseCli(args, { timeoutMs = 30000, env = {} } = {}) {
   const cli = findUnbrowseCli();
-  if (!cli) return Promise.resolve({ ok: false, code: 127, stdout: "", stderr: "Unbrowse CLI not found." });
-  return new Promise((resolve) => {
-    const child = spawn(cli, args, {
-      cwd: process.cwd(),
-      env: { ...process.env, ...env },
-      windowsHide: true,
-    });
-    let stdout = "";
-    let stderr = "";
-    const timer = setTimeout(() => {
-      child.kill();
-      resolve({ ok: false, code: null, stdout, stderr: `${stderr}\nTimed out after ${timeoutMs}ms.`.trim() });
-    }, timeoutMs);
-    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
-    child.stderr?.on("data", (chunk) => { stderr += chunk.toString(); });
-    child.on("error", (error) => {
-      clearTimeout(timer);
-      resolve({ ok: false, code: null, stdout, stderr: error.message });
-    });
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      let json = null;
-      try {
-        json = stdout.trim() ? JSON.parse(stdout.trim()) : null;
-      } catch {
-        json = null;
-      }
-      resolve({ ok: code === 0, code, stdout, stderr, json });
-    });
+  if (!cli) return { ok: false, code: 127, stdout: "", stderr: "Unbrowse CLI not found." };
+
+  const run = spawnSync(cli, args, {
+    cwd: process.cwd(),
+    env: { ...process.env, ...env },
+    shell: process.platform === "win32",
+    windowsHide: true,
+    encoding: "utf8",
+    timeout: timeoutMs,
   });
+  const stdout = run.stdout || "";
+  const stderr = run.stderr || "";
+  let json = null;
+  try {
+    json = stdout.trim() ? JSON.parse(stdout.trim()) : null;
+  } catch {
+    json = null;
+  }
+  return {
+    ok: run.status === 0 && !run.error,
+    code: run.status,
+    stdout,
+    stderr: run.error?.code === "ETIMEDOUT"
+      ? `${stderr}\nTimed out after ${timeoutMs}ms.`.trim()
+      : stderr || run.error?.message || "",
+    json,
+  };
 }
 
 function cleanCliFailure(run) {
   return cleanText(run.stderr || run.stdout || run.json?.error || "");
+}
+
+function resolveUnbrowseRuntimeEntrypoint() {
+  const local = path.join(process.cwd(), "node_modules", "unbrowse", "runtime", "cli.js");
+  if (fs.existsSync(local)) return local;
+  const packageRoot = path.dirname(path.dirname(findUnbrowseCli() || ""));
+  const sibling = path.join(packageRoot, "unbrowse", "runtime", "cli.js");
+  if (fs.existsSync(sibling)) return sibling;
+  return "";
 }
 
 function normalizedBaseUrl() {
@@ -685,4 +725,8 @@ function normalizeScore(value) {
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
