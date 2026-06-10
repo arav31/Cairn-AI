@@ -1,5 +1,5 @@
 const { parseDefinitionList, parseHidden, parseRows, stableHash, toQuery } = require("./utils");
-const { compareInsuranceQuotes, searchProperties } = require("../data/seed");
+const { checkBusinessRenewals, compareInsuranceQuotes, searchProperties } = require("../data/seed");
 
 class ExecutionError extends Error {
   constructor(message, code, details) {
@@ -136,6 +136,9 @@ async function executeOperation(operation, input, context) {
   }
   if (operation.target === "property") {
     return searchProperties(input);
+  }
+  if (operation.target === "business") {
+    return checkBusinessRenewals(input);
   }
   if (operation.target === "civic") {
     return executeCivic(operation, input, context);

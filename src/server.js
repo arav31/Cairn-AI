@@ -7,6 +7,11 @@ const http = require("node:http");
 const path = require("node:path");
 const { URL } = require("node:url");
 const { EventBus } = require("./cairn/eventBus");
+const { ensureAccountPersistent, normalizeAccountId } = require("./cairn/accounts");
+const {
+  accountUsageSummary,
+  recordWorkflowSubmission
+} = require("./cairn/database");
 const {
   createState,
   invokeSkill,
@@ -20,6 +25,7 @@ const {
   createQuote,
   findListing,
   hasPaymentAuthorization,
+  integrationGuide,
   integrationSnippet,
   openApiDocument,
   publicTool,
@@ -168,6 +174,18 @@ function tokenAccountFrom(body) {
     (body.payment && body.payment.tokenAccountId) ||
     (body.caller && body.caller.id) ||
     "demo-user"
+  );
+}
+
+function usageAccountFrom(body) {
+  return normalizeAccountId(
+    body.accountId ||
+    body.tokenAccountId ||
+    (body.payment && body.payment.accountId) ||
+    (body.payment && body.payment.tokenAccountId) ||
+    (body.buyer && body.buyer.accountId) ||
+    (body.caller && body.caller.id) ||
+    "marketplace-agent"
   );
 }
 
@@ -413,6 +431,8 @@ function publicState(state) {
     skills: Object.values(state.skills),
     marketplaceListings: listings,
     catalog: listings,
+    accounts: Object.values(state.accounts || {}),
+    workflowSubmissions: Object.values(state.workflowSubmissions || {}),
     tokenWallets: Object.values(state.tokenWallets).map(publicWallet),
     tokenLedger: state.tokenLedger.slice(0, 20),
     verificationRecords: Object.values(state.verificationRecords),
@@ -472,6 +492,10 @@ function createApp() {
           tools: `${origin}/api/tools`,
           mcp: `${origin}/mcp`,
           openapi: `${origin}/openapi.json`,
+          package: {
+            install: "npm install github:arav31/Cairn-AI",
+            integrationGuide: `${origin}/api/integrations`
+          },
           payments: {
             provider: "stripe",
             sharedPaymentTokens: true,
@@ -511,6 +535,20 @@ function createApp() {
         });
         return;
       }
+      if (req.method === "GET" && pathname === "/api/integrations") {
+        json(res, 200, integrationGuide(requestOrigin(req, baseUrl)));
+        return;
+      }
+      if (req.method === "GET" && pathname.startsWith("/api/integrations/")) {
+        const slug = pathAfter(pathname, "/api/integrations/");
+        const listing = findListing(state, slug);
+        if (!listing) {
+          json(res, 404, { error: "listing_not_found", slug });
+          return;
+        }
+        json(res, 200, integrationGuide(requestOrigin(req, baseUrl), listing));
+        return;
+      }
       if (req.method === "GET" && pathname.startsWith("/api/catalog/")) {
         const slug = pathAfter(pathname, "/api/catalog/");
         const listing = findListing(state, slug);
@@ -522,6 +560,7 @@ function createApp() {
         json(res, 200, {
           listing,
           operation,
+          verification: state.verificationRecords[operation.id] || null,
           snippets: integrationSnippet(requestOrigin(req, baseUrl), listing)
         });
         return;
@@ -539,6 +578,59 @@ function createApp() {
       }
       if (req.method === "GET" && pathname === "/api/tokens/config") {
         json(res, 200, tokenConfig());
+        return;
+      }
+      if (req.method === "POST" && pathname === "/api/accounts") {
+        const body = await parseBody(req);
+        const accountId = tokenAccountFrom(body);
+        const account = await ensureAccountPersistent(state, accountId, {
+          displayName: body.displayName || body.name,
+          source: "api_accounts"
+        });
+        const wallet = await ensureWalletPersistent(state, accountId);
+        const ledger = await walletLedgerPersistent(state, accountId);
+        json(res, 201, {
+          account,
+          wallet,
+          ledger,
+          next: {
+            buyCredits: `${requestOrigin(req, baseUrl)}/api/tokens/checkout`,
+            listSkills: `${requestOrigin(req, baseUrl)}/api/catalog`,
+            integrationGuide: `${requestOrigin(req, baseUrl)}/api/integrations`
+          }
+        });
+        return;
+      }
+      if (req.method === "GET" && pathname.startsWith("/api/accounts/") && pathname.endsWith("/usage")) {
+        const accountId = pathAfter(pathname, "/api/accounts/", "/usage");
+        const normalizedAccountId = normalizeAccountId(accountId);
+        const wallet = await ensureWalletPersistent(state, normalizedAccountId);
+        const databaseUsage = await accountUsageSummary(normalizedAccountId);
+        if (databaseUsage) {
+          json(res, 200, {
+            accountId: normalizedAccountId,
+            wallet,
+            usage: databaseUsage
+          });
+          return;
+        }
+        json(res, 200, {
+          accountId: normalizedAccountId,
+          wallet,
+          usage: {
+            ledger: await walletLedgerPersistent(state, normalizedAccountId),
+            usageEvents: state.invocationLogs
+              .filter((log) => log.callerId === normalizedAccountId)
+              .slice(0, 50),
+            payments: [],
+            invocationLogs: state.invocationLogs
+              .filter((log) => log.callerId === normalizedAccountId)
+              .slice(0, 50),
+            workflowSubmissions: Object.values(state.workflowSubmissions || {})
+              .filter((submission) => submission.accountId === normalizedAccountId)
+              .slice(0, 50)
+          }
+        });
         return;
       }
       if (req.method === "GET" && pathname === "/api/tokens/wallet") {
@@ -600,6 +692,22 @@ function createApp() {
         });
         return;
       }
+      if (req.method === "GET" && pathname.startsWith("/api/tools/") && pathname.endsWith("/verification")) {
+        const slug = pathAfter(pathname, "/api/tools/", "/verification");
+        const listing = findListing(state, slug);
+        if (!listing) {
+          json(res, 404, { error: "tool_not_found", slug });
+          return;
+        }
+        const operation = state.operations[listing.operationId];
+        json(res, 200, {
+          listing: listing.slug,
+          operationId: operation.id,
+          operationVersion: operation.version,
+          verification: state.verificationRecords[operation.id] || null
+        });
+        return;
+      }
       if (req.method === "GET" && pathname.startsWith("/api/tools/")) {
         const slug = pathAfter(pathname, "/api/tools/");
         const listing = findListing(state, slug);
@@ -610,6 +718,7 @@ function createApp() {
         json(res, 200, {
           tool: publicTool(listing, state.operations[listing.operationId]),
           listing,
+          verification: state.verificationRecords[listing.operationId] || null,
           snippets: integrationSnippet(requestOrigin(req, baseUrl), listing)
         });
         return;
@@ -634,7 +743,10 @@ function createApp() {
         }
         const body = await parseBody(req);
         const quote = body.quote || createQuote(listing, body.input || {});
-        const checkout = await createCheckout(listing, quote, body.buyer || {});
+        const checkout = await createCheckout(listing, quote, {
+          ...(body.buyer || {}),
+          accountId: body.accountId || (body.caller && body.caller.id) || (body.buyer && body.buyer.accountId)
+        });
         bus.emit("payment.checkout_created", { toolId: listing.slug, checkoutId: checkout.id, mode: checkout.mode });
         json(res, 200, { checkout });
         return;
@@ -649,6 +761,7 @@ function createApp() {
         const body = await parseBody(req);
         const tokenPayment = wantsTokenPayment(body);
         const tokenAccountId = tokenAccountFrom(body);
+        const usageAccountId = tokenPayment ? tokenAccountId : usageAccountFrom(body);
         const tokenPreview = tokenPayment ? await previewTokenDebitPersistent(state, tokenAccountId, listing) : null;
         if (tokenPayment && !tokenPreview.ok) {
           json(res, 402, {
@@ -677,10 +790,11 @@ function createApp() {
         const result = await invokeSkill({
           skillId: listing.skillId,
           input: body.input || {},
-          caller: body.caller || { id: "marketplace-agent", scopes: listing.scopes },
+          caller: body.caller || { id: usageAccountId, scopes: listing.scopes },
           state,
           bus,
-          baseUrl
+          baseUrl,
+          listingSlug: listing.slug
         });
         const tokenDebit = tokenPayment && result.allowed === true && result.output
           ? await spendTokensPersistent(state, tokenAccountId, listing, {
@@ -690,8 +804,11 @@ function createApp() {
           : null;
         const usage = !tokenPayment && result.allowed === true && result.output
           ? await recordUsage(listing, {
+              accountId: usageAccountId,
               stripeCustomerId: body.stripeCustomerId || (body.payment && body.payment.stripeCustomerId),
               identifier: result.log && result.log.id,
+              invocationId: result.log && result.log.id,
+              paymentMethod: "direct",
               value: 1
             })
           : null;
@@ -723,7 +840,12 @@ function createApp() {
           return;
         }
         const quote = body.quote || createQuote(listing, body.input || {});
-        json(res, 200, { checkout: await createCheckout(listing, quote, body.buyer || {}) });
+        json(res, 200, {
+          checkout: await createCheckout(listing, quote, {
+            ...(body.buyer || {}),
+            accountId: body.accountId || (body.caller && body.caller.id) || (body.buyer && body.buyer.accountId)
+          })
+        });
         return;
       }
       if (req.method === "POST" && pathname === "/api/payments/usage") {
@@ -735,9 +857,12 @@ function createApp() {
         }
         json(res, 200, {
           usage: await recordUsage(listing, {
+            accountId: body.accountId || (body.payment && body.payment.accountId) || (body.caller && body.caller.id),
             stripeCustomerId: body.stripeCustomerId,
             customerId: body.customerId,
             identifier: body.identifier,
+            invocationId: body.invocationId,
+            paymentMethod: body.paymentMethod || "direct",
             value: body.value || 1
           })
         });
@@ -775,14 +900,31 @@ function createApp() {
       }
       if (req.method === "POST" && pathname === "/api/workflows/recordings") {
         const body = await parseBody(req);
+        const submissionId = id("recording_upload");
+        const accountId = body.accountId || (body.caller && body.caller.id) || "anonymous";
+        const submission = {
+          id: submissionId,
+          accountId,
+          title: body.title || "Untitled workflow",
+          targetUrl: body.targetUrl || null,
+          goal: body.goal || "",
+          artifacts: Array.isArray(body.artifacts) ? body.artifacts : [],
+          status: "submitted"
+        };
+        state.workflowSubmissions[submissionId] = {
+          ...submission,
+          createdAt: new Date().toISOString()
+        };
+        await recordWorkflowSubmission(submission);
         json(res, 202, {
-          id: id("recording_upload"),
+          id: submissionId,
           status: "accepted",
           message: "Recording upload accepted. The recorder/compiler team can wire this to artifact storage and synthesis.",
           received: {
-            title: body.title || null,
-            targetUrl: body.targetUrl || null,
-            artifactCount: Array.isArray(body.artifacts) ? body.artifacts.length : 0
+            accountId,
+            title: submission.title,
+            targetUrl: submission.targetUrl,
+            artifactCount: submission.artifacts.length
           }
         });
         return;
@@ -841,11 +983,13 @@ function createApp() {
             sharedPaymentToken: params.sharedPaymentToken,
             paymentMethod: params.paymentMethod,
             tokenAccountId: params.tokenAccountId,
+            accountId: params.accountId,
             useTokens: params.useTokens,
             demo: params.demo
           };
           const tokenPayment = wantsTokenPayment(callBody);
           const tokenAccountId = tokenAccountFrom(callBody);
+          const usageAccountId = tokenPayment ? tokenAccountId : usageAccountFrom(callBody);
           const tokenPreview = tokenPayment ? await previewTokenDebitPersistent(state, tokenAccountId, listing) : null;
           if (tokenPayment && !tokenPreview.ok) {
             json(res, 200, {
@@ -886,10 +1030,11 @@ function createApp() {
           const result = await invokeSkill({
             skillId: listing.skillId,
             input: callBody.input,
-            caller: { id: "mcp-agent", scopes: listing.scopes },
+            caller: { id: usageAccountId || "mcp-agent", scopes: listing.scopes },
             state,
             bus,
-            baseUrl
+            baseUrl,
+            listingSlug: listing.slug
           });
           const tokenDebit = tokenPayment && result.allowed === true && result.output
             ? await spendTokensPersistent(state, tokenAccountId, listing, {
@@ -899,8 +1044,11 @@ function createApp() {
             : null;
           const usage = !tokenPayment && result.allowed === true && result.output
             ? await recordUsage(listing, {
+                accountId: usageAccountId,
                 stripeCustomerId: params.stripeCustomerId || (params.payment && params.payment.stripeCustomerId),
                 identifier: result.log && result.log.id,
+                invocationId: result.log && result.log.id,
+                paymentMethod: "direct",
                 value: 1
               })
             : null;

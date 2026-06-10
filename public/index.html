@@ -7,103 +7,145 @@
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
-  <div class="marketplace-shell">
-    <header class="topbar">
-      <a class="brand" href="/">
-        <span class="brand-mark">C</span>
-        <span>Cairn</span>
-      </a>
-      <nav class="topnav" aria-label="Marketplace sections">
-        <a href="#catalog">Find APIs</a>
-        <a href="/pricing">Pricing</a>
-        <a href="#publish">Add your task</a>
-        <a href="/.well-known/cairn.json">Discovery</a>
-        <a href="/openapi.json">OpenAPI</a>
-      </nav>
-    </header>
+  <div class="browser-frame">
+    <div class="browser-chrome" aria-hidden="true">
+      <span class="window-dot red"></span>
+      <span class="window-dot amber"></span>
+      <span class="window-dot green"></span>
+    </div>
 
-    <main>
-      <section class="market-hero">
-        <div class="hero-copy">
-          <p class="eyebrow">APIs for AI agents</p>
-          <h1>Give your AI a task. Let it call the right API.</h1>
-          <p class="hero-text">Find ready-made task APIs, connect them to ChatGPT or another AI tool, pay a few cents or spend prepaid tokens, and get the job done.</p>
-          <div class="search-box">
-            <input id="search-input" aria-label="Search APIs" placeholder="Search insurance, property, quotes, homes">
-            <button id="clear-search" class="ghost-button" type="button">Clear</button>
+    <div class="marketplace-app">
+      <aside class="sidebar" aria-label="Cairn navigation">
+        <a class="sidebar-brand" href="/">
+          <span class="brand-symbol">C</span>
+          <span>Cairn</span>
+        </a>
+        <nav class="sidebar-nav">
+          <a class="active" href="#catalog"><span>▣</span> Marketplace</a>
+          <a href="#detail-pane"><span>⌁</span> My Tools</a>
+          <a href="#detail-pane"><span>↳</span> Invocations</a>
+          <a href="#wallet"><span>▤</span> Wallet</a>
+          <a href="#activity"><span>◷</span> Activity</a>
+          <a href="#publish"><span>＋</span> Contribute</a>
+          <a href="/openapi.json"><span>▧</span> Docs & SDK</a>
+          <a href="/pricing"><span>◎</span> Pricing</a>
+        </nav>
+
+        <section class="endpoint-card" aria-label="Agent endpoints">
+          <h2>Agent endpoints</h2>
+          <a href="/mcp"><span>MCP endpoint</span><code>/mcp</code></a>
+          <a href="/openapi.json"><span>OpenAPI</span><code>/openapi.json</code></a>
+          <a href="/.well-known/cairn.json"><span>Discovery</span><code>/.well-known/cairn.json</code></a>
+          <code id="integration-guide-url" class="hidden">/api/integrations</code>
+        </section>
+      </aside>
+
+      <main class="market-stage" id="catalog">
+        <header class="market-header">
+          <div>
+            <p class="eyebrow">Verified workflow APIs</p>
+            <h1>Welcome to the Cairn Marketplace</h1>
+            <p>Find useful task APIs, connect them to your AI tool, and pay only when a workflow completes.</p>
           </div>
-        </div>
-
-        <aside class="connection-panel" aria-label="Connection endpoints">
-          <div class="endpoint-map">
-            <span class="node buyer">Agent</span>
-            <span class="line"></span>
-            <span class="node cairn">Cairn</span>
-            <span class="line"></span>
-            <span class="node pay">Stripe</span>
+          <div class="stats-mini" aria-label="Marketplace stats">
+            <span><strong id="stat-tools">0</strong> APIs</span>
+            <span><strong id="stat-calls">0</strong> runs</span>
+            <span><strong id="stat-uptime">0%</strong> uptime</span>
           </div>
-          <dl class="endpoint-list">
-            <dt>Discovery</dt><dd>/.well-known/cairn.json</dd>
-            <dt>MCP</dt><dd>/mcp</dd>
-            <dt>OpenAPI</dt><dd>/openapi.json</dd>
-          </dl>
-          <section class="wallet-card" aria-label="Token wallet">
-            <div>
-              <span>Token balance</span>
-              <strong id="token-balance">0</strong>
-            </div>
-            <label>Buy tokens
-              <select id="token-pack-select"></select>
-            </label>
-            <button id="buy-tokens-button" type="button">Buy tokens</button>
-            <p id="token-status" class="form-status"></p>
-          </section>
-        </aside>
-      </section>
+        </header>
 
-      <section class="stats-row" aria-label="Marketplace stats">
-        <article><strong id="stat-tools">0</strong><span>task APIs</span></article>
-        <article><strong id="stat-calls">0</strong><span>tool calls</span></article>
-        <article><strong id="stat-uptime">0%</strong><span>avg uptime</span></article>
-        <article><strong>Tokens</strong><span>or pay per run</span></article>
-      </section>
-
-      <section id="catalog" class="catalog-layout">
-        <section class="catalog-main">
-          <div class="section-heading">
-            <div>
-              <p class="eyebrow">Browse</p>
-              <h2>Task APIs</h2>
-            </div>
-            <div id="category-filters" class="filter-row"></div>
+        <section class="toolbar" aria-label="Marketplace search and filters">
+          <div class="search-field">
+            <span aria-hidden="true">⌕</span>
+            <input id="search-input" aria-label="Search skills" placeholder="Search skills, like insurance, property, renewals">
+            <button id="clear-search" class="icon-button" type="button" aria-label="Clear search">×</button>
           </div>
-          <div id="listing-grid" class="listing-grid"></div>
+          <select id="category-select" aria-label="Category">
+            <option>All categories</option>
+          </select>
+          <select id="sort-select" aria-label="Sort">
+            <option>Popular</option>
+            <option>Newest</option>
+            <option>Lowest token cost</option>
+          </select>
         </section>
 
-        <aside id="detail-pane" class="detail-pane" aria-label="Selected API"></aside>
-      </section>
+        <div id="category-filters" class="filter-row" aria-label="Category filters"></div>
 
-      <section id="publish" class="publish-band">
-        <div>
-          <p class="eyebrow">Contribute</p>
-          <h2>Add a task you want automated.</h2>
-          <p>Record a task you already do, such as checking prices, searching portals, or comparing websites. The workflow team turns it into an API, then agents can pay and use it.</p>
-        </div>
-        <form id="contribute-form" class="contribute-form">
-          <label>Task name
-            <input name="title" placeholder="Compare insurance prices" required>
+        <section id="listing-grid" class="listing-grid" aria-label="Marketplace APIs"></section>
+
+        <section id="detail-pane" class="detail-pane" aria-label="Selected API"></section>
+
+        <section id="publish" class="contribute-strip">
+          <div class="contribute-icon" aria-hidden="true">◎</div>
+          <div>
+            <h2>Contribute your workflow</h2>
+            <p>Record a task you already do. Cairn can turn it into a verified API that any approved agent can use.</p>
+          </div>
+          <form id="contribute-form" class="contribute-form">
+            <input name="title" placeholder="Task name" aria-label="Task name" required>
+            <input name="targetUrl" placeholder="Website or starting point" aria-label="Website or starting point">
+            <textarea name="goal" placeholder="What should the API return?" aria-label="What should the API return?" required></textarea>
+            <button type="submit">Submit workflow</button>
+            <p id="contribute-status" class="form-status"></p>
+          </form>
+        </section>
+      </main>
+
+      <aside class="right-rail" aria-label="Wallet and payment controls">
+        <section id="wallet" class="rail-card wallet-card">
+          <div class="rail-card-title">
+            <span class="rail-icon">◉</span>
+            <h2>Tokens</h2>
+          </div>
+          <label>Account
+            <input id="account-id-input" value="demo-user" autocomplete="off">
           </label>
-          <label>Website or starting point
-            <input name="targetUrl" placeholder="https://example.com/search">
+          <button id="use-account-button" class="secondary-button" type="button">Create or load</button>
+          <div class="balance-row">
+            <span>Balance</span>
+            <strong id="token-balance">0</strong>
+            <small>tokens</small>
+          </div>
+          <label>Buy tokens
+            <select id="token-pack-select"></select>
           </label>
-          <label>What should the API return?
-            <textarea name="goal" placeholder="Return the three cheapest quotes with provider names and monthly prices." required></textarea>
-          </label>
-          <button type="submit">Submit workflow</button>
-          <p id="contribute-status" class="form-status"></p>
-        </form>
-      </section>
-    </main>
+          <button id="buy-tokens-button" type="button">Buy tokens</button>
+          <p id="token-status" class="form-status"></p>
+          <h3 id="activity">Recent activity</h3>
+          <ol id="token-ledger" class="token-ledger" aria-label="Recent wallet activity"></ol>
+        </section>
+
+        <section class="rail-card payment-card">
+          <div class="rail-card-title">
+            <span class="rail-icon">▭</span>
+            <h2>Payment modes</h2>
+          </div>
+          <div id="payment-mode-list" class="payment-mode-list">
+            <button class="payment-mode selected" data-payment-mode="tokens" type="button">
+              <span>◉</span>
+              <strong>Tokens</strong>
+              <small>Use credits from your wallet for instant access.</small>
+            </button>
+            <button class="payment-mode" data-payment-mode="direct" type="button">
+              <span>▣</span>
+              <strong>Pay per run</strong>
+              <small>Pay only after a successful workflow run.</small>
+            </button>
+            <button class="payment-mode" data-payment-mode="card" type="button">
+              <span>▤</span>
+              <strong>Card payments</strong>
+              <small>Use Stripe Checkout or an agent payment token.</small>
+            </button>
+          </div>
+        </section>
+
+        <section class="rail-card trust-card">
+          <span class="rail-icon">✓</span>
+          <p>Secure, policy-gated, and audited every step of the way.</p>
+        </section>
+      </aside>
+    </div>
   </div>
   <script src="/app.js"></script>
 </body>

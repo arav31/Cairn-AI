@@ -1,5 +1,6 @@
 const { id, now, stableHash } = require("./utils");
 const { isDatabaseConfigured, withTransaction, query } = require("./database");
+const { ensureAccount, ensureAccountPersistent, normalizeAccountId } = require("./accounts");
 
 const TOKEN_ENV = {
   secretKey: "STRIPE_SECRET_KEY",
@@ -34,7 +35,7 @@ const TOKEN_PACKS = [
 ];
 
 function accountIdFrom(value) {
-  return String(value || "demo-user").trim() || "demo-user";
+  return normalizeAccountId(value);
 }
 
 function publicWallet(wallet) {
@@ -74,6 +75,7 @@ function ledgerFromRow(row) {
 
 function ensureWallet(state, accountId) {
   const normalized = accountIdFrom(accountId);
+  ensureAccount(state, normalized);
   if (!state.tokenWallets[normalized]) {
     state.tokenWallets[normalized] = {
       accountId: normalized,
@@ -102,6 +104,7 @@ async function ensureWalletPersistent(state, accountId) {
     return publicWallet(ensureWallet(state, accountId));
   }
   const normalized = accountIdFrom(accountId);
+  await ensureAccountPersistent(state, normalized, { source: "wallet" });
   const startingBalance = normalized === "demo-user" ? 50 : 0;
   const result = await query(
     `INSERT INTO token_wallets(account_id, balance, lifetime_purchased, lifetime_spent)
@@ -201,6 +204,7 @@ async function createStripeTokenCheckoutSession(quote, buyer = {}) {
       cancel_url: `${publicUrl}/?token_checkout=cancelled&pack=${encodeURIComponent(pack.id)}`,
       "metadata[kind]": "token_pack",
       "metadata[account_id]": quote.accountId,
+      "metadata[pack_id]": pack.id,
       "metadata[token_quote_id]": quote.id,
       "metadata[tokens]": quote.tokens,
       ...lineItem
@@ -219,6 +223,7 @@ async function createStripeTokenCheckoutSession(quote, buyer = {}) {
 
 async function createTokenCheckout(state, quote, buyer = {}) {
   const accountId = accountIdFrom(buyer.accountId || quote.accountId);
+  await ensureAccountPersistent(state, accountId, { source: "token_checkout" });
   if (process.env.STRIPE_SECRET_KEY) {
     const session = await createStripeTokenCheckoutSession({ ...quote, accountId }, buyer);
     if (!session.error) {
@@ -374,6 +379,7 @@ async function grantTokensPersistent(state, accountId, tokens, reason = "manual_
   const normalized = accountIdFrom(accountId);
   const amount = Math.max(0, Number(tokens || 0));
   const idempotencyKey = metadata.idempotencyKey || `${reason}:${stableHash({ normalized, amount, metadata })}`;
+  await ensureAccountPersistent(state, normalized, { source: "token_grant" });
   return withTransaction(async (client) => {
     await client.query(
       `INSERT INTO token_wallets(account_id, balance, lifetime_purchased, lifetime_spent)
@@ -500,6 +506,7 @@ async function spendTokensPersistent(state, accountId, listing, metadata = {}) {
   const normalized = accountIdFrom(accountId);
   const tokenCost = listing.pricing.tokenCost || 1;
   const idempotencyKey = metadata.idempotencyKey || `tool_invocation:${listing.slug}:${metadata.invocationId || stableHash(metadata)}`;
+  await ensureAccountPersistent(state, normalized, { source: "token_spend" });
   return withTransaction(async (client) => {
     await client.query(
       `INSERT INTO token_wallets(account_id, balance, lifetime_purchased, lifetime_spent)
@@ -621,6 +628,7 @@ module.exports = {
   fulfillTokenCheckoutSession,
   grantTokens,
   grantTokensPersistent,
+  accountIdFrom,
   previewTokenDebit,
   previewTokenDebitPersistent,
   publicWallet,

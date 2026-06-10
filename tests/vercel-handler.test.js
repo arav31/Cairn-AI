@@ -60,9 +60,10 @@ test("vercel adapter serves rewritten marketplace API routes", async () => {
   const body = JSON.parse(res.body);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(body.count, 2);
+  assert.equal(body.count, 3);
   assert.equal(body.listings[0].slug, "insurance/compare-insurance-prices");
   assert.equal(body.listings[1].slug, "real-estate/search-properties");
+  assert.equal(body.listings[2].slug, "business/check-business-renewals");
 });
 
 test("root server export works as Vercel entrypoint", async () => {

@@ -46,6 +46,19 @@ CREATE TABLE IF NOT EXISTS marketplace_listings (
 CREATE INDEX IF NOT EXISTS marketplace_listings_category_idx ON marketplace_listings(category);
 CREATE INDEX IF NOT EXISTS marketplace_listings_visibility_idx ON marketplace_listings(visibility);
 
+CREATE TABLE IF NOT EXISTS accounts (
+  id text PRIMARY KEY,
+  display_name text,
+  status text NOT NULL DEFAULT 'active',
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  last_seen_at timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS accounts_status_idx ON accounts(status);
+CREATE INDEX IF NOT EXISTS accounts_last_seen_idx ON accounts(last_seen_at DESC);
+
 CREATE TABLE IF NOT EXISTS verification_records (
   id bigserial PRIMARY KEY,
   operation_id text NOT NULL REFERENCES api_operations(id) ON DELETE CASCADE,
@@ -64,7 +77,9 @@ CREATE TABLE IF NOT EXISTS workflow_submissions (
   status text NOT NULL DEFAULT 'submitted',
   artifacts jsonb NOT NULL DEFAULT '[]'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT workflow_submissions_account_id_accounts_fk
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
 );
 
 CREATE TABLE IF NOT EXISTS token_wallets (
@@ -73,7 +88,9 @@ CREATE TABLE IF NOT EXISTS token_wallets (
   lifetime_purchased integer NOT NULL DEFAULT 0 CHECK (lifetime_purchased >= 0),
   lifetime_spent integer NOT NULL DEFAULT 0 CHECK (lifetime_spent >= 0),
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT token_wallets_account_id_accounts_fk
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS token_ledger (
@@ -99,7 +116,9 @@ CREATE TABLE IF NOT EXISTS usage_events (
   token_cost integer NOT NULL DEFAULT 0,
   stripe_customer_id text,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT usage_events_account_id_accounts_fk
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS usage_events_listing_created_idx ON usage_events(listing_slug, created_at DESC);
@@ -116,7 +135,9 @@ CREATE TABLE IF NOT EXISTS payments (
   tokens integer NOT NULL DEFAULT 0,
   metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
   created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now()
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  CONSTRAINT payments_account_id_accounts_fk
+    FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS payments_account_created_idx ON payments(account_id, created_at DESC);
@@ -135,6 +156,75 @@ CREATE TABLE IF NOT EXISTS invocation_logs (
 );
 
 CREATE INDEX IF NOT EXISTS invocation_logs_skill_created_idx ON invocation_logs(skill_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS invocation_logs_caller_created_idx ON invocation_logs(caller_id, created_at DESC);
+
+INSERT INTO accounts(id, status, metadata)
+SELECT DISTINCT account_id, 'active', '{"source":"wallet_backfill"}'::jsonb
+FROM token_wallets
+WHERE account_id IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO accounts(id, status, metadata)
+SELECT DISTINCT account_id, 'active', '{"source":"usage_backfill"}'::jsonb
+FROM usage_events
+WHERE account_id IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO accounts(id, status, metadata)
+SELECT DISTINCT account_id, 'active', '{"source":"payment_backfill"}'::jsonb
+FROM payments
+WHERE account_id IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO accounts(id, status, metadata)
+SELECT DISTINCT account_id, 'active', '{"source":"workflow_submission_backfill"}'::jsonb
+FROM workflow_submissions
+WHERE account_id IS NOT NULL
+ON CONFLICT (id) DO NOTHING;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'token_wallets_account_id_accounts_fk'
+  ) THEN
+    ALTER TABLE token_wallets
+      ADD CONSTRAINT token_wallets_account_id_accounts_fk
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE CASCADE;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'workflow_submissions_account_id_accounts_fk'
+  ) THEN
+    ALTER TABLE workflow_submissions
+      ADD CONSTRAINT workflow_submissions_account_id_accounts_fk
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'usage_events_account_id_accounts_fk'
+  ) THEN
+    ALTER TABLE usage_events
+      ADD CONSTRAINT usage_events_account_id_accounts_fk
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL;
+  END IF;
+END $$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'payments_account_id_accounts_fk'
+  ) THEN
+    ALTER TABLE payments
+      ADD CONSTRAINT payments_account_id_accounts_fk
+      FOREIGN KEY (account_id) REFERENCES accounts(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 INSERT INTO schema_migrations(version)
 VALUES ('001_initial_schema')

@@ -13,6 +13,8 @@ function createState() {
     operations: {},
     skills: {},
     marketplaceListings: {},
+    accounts: {},
+    workflowSubmissions: {},
     verificationRecords: {},
     repairJobs: {},
     invocationLogs: [],
@@ -157,13 +159,13 @@ async function recordSynthesizeVerify({ target, input, state, bus, baseUrl }) {
   return { run, recording, operation, verification };
 }
 
-async function invokeSkill({ skillId, input, caller, state, bus, baseUrl }) {
+async function invokeSkill({ skillId, input, caller, state, bus, baseUrl, listingSlug }) {
   const skill = state.skills[skillId];
   const decision = evaluateInvocation(skill, input, caller);
   if (!decision.allow) {
     const log = createInvocationLog({ skill, caller, input, decision, status: "blocked" });
     state.invocationLogs.unshift(log);
-    await recordInvocationLog(log);
+    await recordInvocationLog(log, listingSlug);
     bus.emit("invocation.blocked", { skillId, caller, reason: decision.reason, log });
     return { allowed: false, decision, log };
   }
@@ -173,7 +175,7 @@ async function invokeSkill({ skillId, input, caller, state, bus, baseUrl }) {
     const log = createInvocationLog({ skill, caller, input, decision, status: "succeeded", output });
     state.invocationLogs.unshift(log);
     state.marketplaceListings[skill.id].usageCount += 1;
-    await recordInvocationLog(log);
+    await recordInvocationLog(log, listingSlug);
     bus.emit("invocation.completed", { skillId, caller, output, log });
     return { allowed: true, decision, output, log };
   } catch (error) {
@@ -186,7 +188,7 @@ async function invokeSkill({ skillId, input, caller, state, bus, baseUrl }) {
       error: { code: error.code || "execution_error", message: error.message }
     });
     state.invocationLogs.unshift(log);
-    await recordInvocationLog(log);
+    await recordInvocationLog(log, listingSlug);
     bus.emit("invocation.failed", { skillId, caller, error: log.error, log });
     return { allowed: true, decision, error: log.error, log };
   }

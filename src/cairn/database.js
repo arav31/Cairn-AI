@@ -156,6 +156,182 @@ async function upsertPublishedApi({ operation, skill, listing, verificationRecor
   return true;
 }
 
+function rowJson(value) {
+  return value || null;
+}
+
+async function listPublishedApis() {
+  if (!isDatabaseConfigured()) return [];
+  const result = await query(
+    `SELECT
+       listing.listing,
+       operation.definition AS operation,
+       skill.manifest AS skill,
+       latest.record AS verification_record
+     FROM marketplace_listings listing
+     JOIN api_operations operation ON operation.id = listing.operation_id
+     JOIN skill_manifests skill ON skill.id = listing.skill_id
+     LEFT JOIN LATERAL (
+       SELECT record
+       FROM verification_records
+       WHERE operation_id = operation.id
+       ORDER BY created_at DESC
+       LIMIT 1
+     ) latest ON true
+     ORDER BY listing.created_at ASC`
+  );
+  return result.rows.map((row) => ({
+    listing: rowJson(row.listing),
+    operation: rowJson(row.operation),
+    skill: rowJson(row.skill),
+    verificationRecord: rowJson(row.verification_record)
+  }));
+}
+
+async function ensureAccountRow(accountId, metadata = {}) {
+  if (!isDatabaseConfigured() || !accountId) return false;
+  await query(
+    `INSERT INTO accounts(id, status, metadata)
+     VALUES ($1, 'active', $2)
+     ON CONFLICT (id) DO UPDATE SET
+       last_seen_at = now(),
+       updated_at = now(),
+       metadata = accounts.metadata || EXCLUDED.metadata`,
+    [accountId, JSON.stringify(metadata)]
+  );
+  return true;
+}
+
+async function recordUsageEvent({
+  id,
+  accountId,
+  listingSlug,
+  invocationId,
+  paymentMethod,
+  tokenCost = 0,
+  stripeCustomerId,
+  metadata = {}
+}) {
+  if (!isDatabaseConfigured() || !listingSlug) return false;
+  await ensureAccountRow(accountId, { source: "usage_event" });
+  await query(
+    `INSERT INTO usage_events(
+       id, account_id, listing_slug, invocation_id, payment_method,
+       token_cost, stripe_customer_id, metadata
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+     ON CONFLICT (id) DO UPDATE SET
+       account_id = COALESCE(EXCLUDED.account_id, usage_events.account_id),
+       listing_slug = EXCLUDED.listing_slug,
+       invocation_id = COALESCE(EXCLUDED.invocation_id, usage_events.invocation_id),
+       payment_method = EXCLUDED.payment_method,
+       token_cost = EXCLUDED.token_cost,
+       stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, usage_events.stripe_customer_id),
+       metadata = usage_events.metadata || EXCLUDED.metadata`,
+    [
+      id,
+      accountId || null,
+      listingSlug,
+      invocationId || null,
+      paymentMethod || "unknown",
+      tokenCost,
+      stripeCustomerId || null,
+      JSON.stringify(metadata)
+    ]
+  );
+  return true;
+}
+
+async function recordWorkflowSubmission({
+  id,
+  accountId,
+  title,
+  targetUrl,
+  goal,
+  artifacts = [],
+  status = "submitted"
+}) {
+  if (!isDatabaseConfigured()) return false;
+  await ensureAccountRow(accountId, { source: "workflow_submission" });
+  await query(
+    `INSERT INTO workflow_submissions(
+       id, account_id, title, target_url, goal, status, artifacts
+     )
+     VALUES ($1, $2, $3, $4, $5, $6, $7)
+     ON CONFLICT (id) DO UPDATE SET
+       account_id = COALESCE(EXCLUDED.account_id, workflow_submissions.account_id),
+       title = EXCLUDED.title,
+       target_url = EXCLUDED.target_url,
+       goal = EXCLUDED.goal,
+       status = EXCLUDED.status,
+       artifacts = EXCLUDED.artifacts,
+       updated_at = now()`,
+    [
+      id,
+      accountId || null,
+      title,
+      targetUrl || null,
+      goal,
+      status,
+      JSON.stringify(artifacts)
+    ]
+  );
+  return true;
+}
+
+async function accountUsageSummary(accountId, limit = 50) {
+  if (!isDatabaseConfigured() || !accountId) return null;
+  await ensureAccountRow(accountId, { source: "usage_summary" });
+  const [account, wallet, ledger, usage, payments, invocations, submissions] = await Promise.all([
+    query("SELECT * FROM accounts WHERE id = $1", [accountId]),
+    query("SELECT * FROM token_wallets WHERE account_id = $1", [accountId]),
+    query(
+      `SELECT * FROM token_ledger
+       WHERE account_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [accountId, limit]
+    ),
+    query(
+      `SELECT * FROM usage_events
+       WHERE account_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [accountId, limit]
+    ),
+    query(
+      `SELECT * FROM payments
+       WHERE account_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [accountId, limit]
+    ),
+    query(
+      `SELECT * FROM invocation_logs
+       WHERE caller_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [accountId, limit]
+    ),
+    query(
+      `SELECT * FROM workflow_submissions
+       WHERE account_id = $1
+       ORDER BY created_at DESC
+       LIMIT $2`,
+      [accountId, limit]
+    )
+  ]);
+  return {
+    account: account.rows[0] || null,
+    wallet: wallet.rows[0] || null,
+    ledger: ledger.rows,
+    usageEvents: usage.rows,
+    payments: payments.rows,
+    invocationLogs: invocations.rows,
+    workflowSubmissions: submissions.rows
+  };
+}
+
 async function recordInvocationLog(log, listingSlug) {
   if (!isDatabaseConfigured() || !log) return false;
   await query(
@@ -164,7 +340,9 @@ async function recordInvocationLog(log, listingSlug) {
        policy_decision, metadata
      )
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-     ON CONFLICT (id) DO NOTHING`,
+     ON CONFLICT (id) DO UPDATE SET
+       listing_slug = COALESCE(EXCLUDED.listing_slug, invocation_logs.listing_slug),
+       metadata = invocation_logs.metadata || EXCLUDED.metadata`,
     [
       log.id,
       log.skillId || null,
@@ -181,11 +359,16 @@ async function recordInvocationLog(log, listingSlug) {
 }
 
 module.exports = {
+  accountUsageSummary,
+  ensureAccountRow,
   getPool,
   isDatabaseConfigured,
+  listPublishedApis,
   migrate,
   query,
   recordInvocationLog,
+  recordUsageEvent,
+  recordWorkflowSubmission,
   upsertPublishedApi,
   withTransaction
 };

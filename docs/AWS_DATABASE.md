@@ -1,6 +1,6 @@
 # Cairn AWS Database Setup
 
-This setup gives Cairn a persistent marketplace database and durable token accounting.
+This setup gives Cairn a persistent marketplace database, first-class accounts, durable token accounting, account-scoped usage, and reloadable API definitions.
 
 ## Resources
 
@@ -47,13 +47,26 @@ The migration is idempotent and safe to run again.
 
 Production token behavior is database backed when `DATABASE_URL` is present:
 
+- Accounts live in `accounts`.
 - Token wallet balances live in `token_wallets`.
 - Every credit/debit is recorded in `token_ledger`.
 - Stripe token-pack checkout completion credits the buyer wallet once.
 - Successful token-paid API invocations debit the wallet once.
-- `usage_events` records which API consumed credits.
+- `usage_events` records which account used which API and how it was paid for.
 - `payments` records Stripe token-pack payments.
-- `invocation_logs` records tool calls and policy decisions.
+- `invocation_logs` records tool calls, listing context, caller account, and policy decisions.
+
+## API Persistence
+
+Published APIs are also database backed:
+
+- `api_operations` stores schemas, execution plans, OpenAPI definitions, success predicates, and target metadata.
+- `skill_manifests` stores scopes, approval state, owner, risk tier, and version pointers.
+- `marketplace_listings` stores listing cards, README content, pricing, sample input, stats, and supported clients.
+- `verification_records` stores verification history so an API can be checked again later.
+- `workflow_submissions` stores contributor requests by account.
+
+Cairn upserts the built-in seed APIs with stable operation IDs during bootstrap, then reloads published APIs from Postgres. That means Vercel/AWS restarts can recover the marketplace API definitions from the database instead of relying only on process memory.
 
 ## Security Notes
 
