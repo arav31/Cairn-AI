@@ -2,9 +2,10 @@ const REAL_SKILL_ID = "term-plan-insurance-comparison";
 
 const state = {
   skills: [],
-  installed: localStorage.getItem("cairn-installed-term-skill") === "1",
+  installedSkillIds: loadInstalledSkillIds(),
   activeSkillId: REAL_SKILL_ID,
   lastInputs: null,
+  recordingSessionId: null,
 };
 
 const elements = {
@@ -12,6 +13,13 @@ const elements = {
   skillsList: document.querySelector("#skillsList"),
   skillSearch: document.querySelector("#skillSearch"),
   refreshSkills: document.querySelector("#refreshSkills"),
+  newSkillButton: document.querySelector("#newSkillButton"),
+  registerSkillForm: document.querySelector("#registerSkillForm"),
+  recordWebsiteLink: document.querySelector("#recordWebsiteLink"),
+  recordDescription: document.querySelector("#recordDescription"),
+  startRecording: document.querySelector("#startRecording"),
+  finishRecording: document.querySelector("#finishRecording"),
+  cancelRecording: document.querySelector("#cancelRecording"),
   installState: document.querySelector("#installState"),
   activeSkillTitle: document.querySelector("#activeSkillTitle"),
   progressText: document.querySelector("#progressText"),
@@ -41,6 +49,10 @@ async function init() {
 function bindEvents() {
   elements.refreshSkills.addEventListener("click", loadSkills);
   elements.skillSearch.addEventListener("input", renderSkills);
+  elements.newSkillButton.addEventListener("click", toggleRegisterPanel);
+  elements.registerSkillForm.addEventListener("submit", startSkillRecording);
+  elements.finishRecording.addEventListener("click", finishSkillRecording);
+  elements.cancelRecording.addEventListener("click", cancelSkillRecording);
   elements.buySkill.addEventListener("click", installActiveSkill);
   elements.quoteForm.addEventListener("submit", (event) => {
     event.preventDefault();
@@ -57,11 +69,12 @@ async function loadSkills() {
     elements.serverStatus.textContent = "Online";
     elements.serverStatus.classList.add("live");
     renderSkills();
+    updateInstallState();
   } catch (error) {
     elements.serverStatus.textContent = "Offline";
     addMessage("agent", `Marketplace server is not reachable: ${error.message}`);
   } finally {
-    setProgress(state.installed ? 20 : 0, state.installed ? "Skill installed" : "Waiting for skill purchase");
+    setProgress(isActiveSkillInstalled() ? 20 : 0, isActiveSkillInstalled() ? "Skill installed" : "Waiting for skill purchase");
   }
 }
 
@@ -75,7 +88,7 @@ function renderSkills() {
   elements.skillsList.innerHTML = skills
     .map((skill) => {
       const active = skill.id === state.activeSkillId ? " active" : "";
-      const statusClass = skill.real ? "live" : "mock";
+      const statusClass = skill.real || skill.recorded ? "live" : "mock";
       return `
         <article class="skill-card${active}" data-skill-id="${escapeHtml(skill.id)}">
           <div class="skill-card-header">
@@ -86,7 +99,7 @@ function renderSkills() {
           <div class="skill-meta">
             <span>${escapeHtml(skill.category)}</span>
             <span>${escapeHtml(skill.price)}</span>
-            <span>${skill.real ? "endpoint-backed" : "mock"}</span>
+            <span>${skill.real ? "endpoint-backed" : skill.recorded ? "recorded" : "mock"}</span>
           </div>
         </article>
       `;
@@ -102,6 +115,9 @@ function renderSkills() {
       updateInstallState();
       if (skill?.real) {
         addMessage("agent", "This is the learned insurance skill. Install it, answer the quote fields, and I will call the direct endpoints without opening a browser.");
+      } else if (skill?.recorded) {
+        addMessage("agent", "This recorded skill has learned questions and ranked endpoint candidates from the browser recording.");
+        renderRecordedSkill(skill);
       } else {
         addMessage("agent", "This marketplace skill is a dummy listing for the demo. Only the term insurance comparison skill has a working endpoint adapter right now.");
       }
@@ -116,13 +132,14 @@ async function installActiveSkill() {
   setProgress(30, "Buying marketplace skill");
   try {
     const data = await postJson("/api/marketplace/install", { skillId: skill.id });
-    if (skill.real) {
-      state.installed = true;
-      localStorage.setItem("cairn-installed-term-skill", "1");
+    if (skill.real || skill.recorded) {
+      state.installedSkillIds.add(skill.id);
+      saveInstalledSkillIds();
     }
     updateInstallState();
     addMessage("agent", data.message);
-    setProgress(skill.real ? 45 : 20, skill.real ? "Ready for quote questions" : "Mock skill installed");
+    setProgress(skill.real ? 45 : 20, skill.real ? "Ready for quote questions" : skill.recorded ? "Recorded skill ready" : "Mock skill installed");
+    if (skill.recorded) renderRecordedSkill(skill);
   } catch (error) {
     addMessage("agent", `Install failed: ${error.message}`);
     setProgress(0, "Install failed");
@@ -132,10 +149,15 @@ async function installActiveSkill() {
 async function runComparison(forceCached) {
   const skill = state.skills.find((item) => item.id === state.activeSkillId);
   if (!skill?.real) {
-    addMessage("agent", "Select the Term Plan Insurance Comparison skill first. The other listings are marketplace placeholders.");
+    if (skill?.recorded) {
+      addMessage("agent", "This recorded skill is learned and summarized. Generic endpoint execution is not enabled yet, so I am showing the learned questions and endpoint candidates.");
+      renderRecordedSkill(skill);
+    } else {
+      addMessage("agent", "Select the Term Plan Insurance Comparison skill first. The other listings are marketplace placeholders.");
+    }
     return;
   }
-  if (!state.installed) {
+  if (!isActiveSkillInstalled()) {
     addMessage("agent", "Buy the insurance comparison skill first, then I can run the endpoint workflow.");
     return;
   }
@@ -212,6 +234,61 @@ function renderResults(result) {
   `;
 }
 
+function renderRecordedSkill(skill) {
+  const questions = skill.questions || skill.analysis?.userQuestions || [];
+  const endpoints = skill.importantEndpoints || skill.analysis?.importantEndpoints || [];
+  const replayPlan = skill.replayPlan || skill.analysis?.replayPlan || {};
+  elements.results.innerHTML = `
+    <section class="recommendation">
+      <h3>${escapeHtml(skill.name || "Recorded skill")}</h3>
+      <p>${escapeHtml(skill.description || skill.goal || "")}</p>
+      <p class="small-note">
+        Source: ${escapeHtml(skill.source || "")}.
+        Confidence: ${escapeHtml(String(skill.confidence ?? "-"))}.
+        Strategy: ${escapeHtml(replayPlan.strategy || "manual_review")}.
+      </p>
+    </section>
+
+    <section class="endpoint-table">
+      <h3>Questions learned from the website</h3>
+      ${questions.length ? questions.map(renderQuestionRow).join("") : "<p class=\"small-note\">No visible user questions were inferred from the recording.</p>"}
+    </section>
+
+    <section class="endpoint-table">
+      <h3>Endpoint candidates from the recording</h3>
+      ${endpoints.length ? endpoints.map(renderRecordedEndpointRow).join("") : "<p class=\"small-note\">No reusable endpoint candidate was found. This skill may need browser replay.</p>"}
+    </section>
+  `;
+}
+
+function renderQuestionRow(question) {
+  const options = question.options?.length ? ` Options: ${question.options.map(escapeHtml).join(", ")}` : "";
+  return `
+    <div class="endpoint-row">
+      <div>
+        <strong>${escapeHtml(question.label || question.question)}</strong><br />
+        <p class="small-note">${escapeHtml(question.question || "")}${options}</p>
+        <p class="small-note">${escapeHtml(question.sourceEvidence || "")}</p>
+      </div>
+      <span>${escapeHtml(question.inputType || "text")}</span>
+    </div>
+  `;
+}
+
+function renderRecordedEndpointRow(endpoint) {
+  return `
+    <div class="endpoint-row">
+      <div>
+        <strong>${escapeHtml(endpoint.purpose || "Candidate endpoint")}</strong><br />
+        <code>${escapeHtml(endpoint.method || "GET")} ${escapeHtml(endpoint.url || "")}</code>
+        <p class="small-note">${escapeHtml(endpoint.whyRelevant || "")}</p>
+        <p class="small-note">${escapeHtml(endpoint.requestShape || "")}</p>
+      </div>
+      <span>${escapeHtml(String(endpoint.confidence ?? "-"))}</span>
+    </div>
+  `;
+}
+
 function renderQuoteCard(quote) {
   const hasPrice = Number.isFinite(Number(quote.yearlyPremium));
   return `
@@ -253,12 +330,93 @@ function renderEndpointRow(endpoint) {
 
 function updateInstallState() {
   const skill = state.skills.find((item) => item.id === state.activeSkillId);
-  const isReal = !skill || skill.id === REAL_SKILL_ID;
-  elements.installState.textContent = state.installed && isReal ? "Installed" : "Not installed";
-  elements.installState.classList.toggle("live", state.installed && isReal);
-  elements.buySkill.disabled = state.installed && isReal;
-  elements.runCompare.disabled = !state.installed || !isReal;
-  elements.runCached.disabled = !state.installed || !isReal;
+  const installed = isActiveSkillInstalled();
+  const runnable = skill?.real || skill?.recorded;
+  elements.installState.textContent = installed ? "Installed" : "Not installed";
+  elements.installState.classList.toggle("live", installed);
+  elements.buySkill.disabled = installed || !runnable;
+  elements.runCompare.disabled = !installed || !runnable;
+  elements.runCached.disabled = !installed || !skill?.real;
+  elements.runCompare.textContent = skill?.recorded ? "Show learned skill" : "Compare quotes";
+}
+
+function toggleRegisterPanel() {
+  elements.registerSkillForm.hidden = !elements.registerSkillForm.hidden;
+  if (!elements.registerSkillForm.hidden) {
+    elements.recordWebsiteLink.focus();
+    addMessage("agent", "Send me the website link and what the skill should do. I will open Chrome and record your workflow.");
+  }
+}
+
+async function startSkillRecording(event) {
+  event.preventDefault();
+  const websiteLink = elements.recordWebsiteLink.value.trim();
+  const description = elements.recordDescription.value.trim();
+  if (!websiteLink || !description) {
+    addMessage("agent", "Website link and description are both required before I can record a skill.");
+    return;
+  }
+
+  elements.startRecording.disabled = true;
+  elements.finishRecording.disabled = true;
+  elements.cancelRecording.disabled = false;
+  setProgress(18, "Starting browser recorder");
+  addMessage("user", `Register a new skill for ${websiteLink}: ${description}`);
+
+  try {
+    const result = await postJson("/api/skills/record/start", { websiteLink, description });
+    state.recordingSessionId = result.sessionId;
+    elements.finishRecording.disabled = false;
+    setProgress(45, "Recording skill in Chrome");
+    addMessage("agent", result.message || "I am recording the skill. Complete the workflow in Chrome, then click Finish recording here.");
+  } catch (error) {
+    elements.startRecording.disabled = false;
+    setProgress(0, "Recording failed to start");
+    addMessage("agent", `Recording failed to start: ${error.message}`);
+  }
+}
+
+async function finishSkillRecording() {
+  if (!state.recordingSessionId) return;
+  elements.finishRecording.disabled = true;
+  setProgress(72, "Analyzing recording with NVIDIA Nemotron 3");
+  addMessage("agent", "I am reading the recorded actions, visible page fields, network requests, and response snippets. Nemotron will turn that into clean skill questions and endpoint candidates.");
+
+  try {
+    const result = await postJson("/api/skills/record/finish", { sessionId: state.recordingSessionId });
+    state.recordingSessionId = null;
+    elements.startRecording.disabled = false;
+    elements.cancelRecording.disabled = false;
+    setProgress(100, "Skill registered");
+    addMessage("agent", result.message);
+    await loadSkills();
+    state.activeSkillId = result.skill.id;
+    state.installedSkillIds.add(result.skill.id);
+    saveInstalledSkillIds();
+    elements.activeSkillTitle.textContent = result.skill.name;
+    renderSkills();
+    updateInstallState();
+    renderRecordedSkill(result.skill);
+  } catch (error) {
+    elements.startRecording.disabled = false;
+    setProgress(0, "Analysis failed");
+    addMessage("agent", `Recording analysis failed: ${error.message}`);
+  }
+}
+
+async function cancelSkillRecording() {
+  elements.registerSkillForm.hidden = true;
+  if (!state.recordingSessionId) return;
+  try {
+    await postJson("/api/skills/record/cancel", { sessionId: state.recordingSessionId });
+  } catch {
+    // best effort
+  }
+  state.recordingSessionId = null;
+  elements.startRecording.disabled = false;
+  elements.finishRecording.disabled = true;
+  setProgress(0, "Recording cancelled");
+  addMessage("agent", "Recording cancelled.");
 }
 
 function setProgress(percent, text) {
@@ -273,6 +431,25 @@ function addMessage(role, text) {
   node.textContent = text;
   elements.chatLog.appendChild(node);
   elements.chatLog.scrollTop = elements.chatLog.scrollHeight;
+}
+
+function isActiveSkillInstalled() {
+  return state.installedSkillIds.has(state.activeSkillId);
+}
+
+function loadInstalledSkillIds() {
+  const ids = new Set();
+  try {
+    for (const id of JSON.parse(localStorage.getItem("cairn-installed-skills") || "[]")) ids.add(id);
+  } catch {
+    // ignore
+  }
+  if (localStorage.getItem("cairn-installed-term-skill") === "1") ids.add(REAL_SKILL_ID);
+  return ids;
+}
+
+function saveInstalledSkillIds() {
+  localStorage.setItem("cairn-installed-skills", JSON.stringify([...state.installedSkillIds]));
 }
 
 async function getJson(url) {

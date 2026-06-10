@@ -4,6 +4,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { compareTermPlans, getInsuranceMarketplaceSkills } from "./insurance-quote-engine.js";
 import { loadEnvFile } from "./env.js";
+import {
+  cancelSkillRecording,
+  finishSkillRecording,
+  getRegisteredMarketplaceSkill,
+  listRegisteredMarketplaceSkills,
+  startSkillRecording,
+} from "./marketplace-skill-recorder.js";
 
 const PROJECT_ROOT = fileURLToPath(new URL("..", import.meta.url));
 const PUBLIC_DIR = path.join(PROJECT_ROOT, "public");
@@ -24,20 +31,49 @@ const server = http.createServer(async (request, response) => {
     }
 
     if (request.method === "GET" && url.pathname === "/api/marketplace/skills") {
-      return sendJson(response, 200, { skills: getInsuranceMarketplaceSkills() });
+      return sendJson(response, 200, { skills: getAllMarketplaceSkills() });
     }
 
     if (request.method === "POST" && url.pathname === "/api/marketplace/install") {
       const body = await readJsonBody(request);
-      const skill = getInsuranceMarketplaceSkills().find((item) => item.id === body.skillId);
+      const skill = getAllMarketplaceSkills().find((item) => item.id === body.skillId);
       if (!skill) return sendJson(response, 404, { error: "Skill not found" });
       return sendJson(response, 200, {
         installed: true,
         skill,
         message: skill.real
           ? "Skill installed. The chatbot can now call the learned direct endpoints."
-          : "Mock skill installed for marketplace demonstration.",
+          : skill.recorded
+            ? "Recorded skill installed. I can show the learned questions and endpoint candidates from the recording."
+            : "Mock skill installed for marketplace demonstration.",
       });
+    }
+
+    if (request.method === "GET" && url.pathname.startsWith("/api/marketplace/skills/")) {
+      const skillId = decodeURIComponent(url.pathname.split("/").pop() || "");
+      const skill =
+        getInsuranceMarketplaceSkills().find((item) => item.id === skillId) ||
+        getRegisteredMarketplaceSkill(skillId);
+      if (!skill) return sendJson(response, 404, { error: "Skill not found" });
+      return sendJson(response, 200, { skill });
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/skills/record/start") {
+      const body = await readJsonBody(request);
+      const result = await startSkillRecording(body);
+      return sendJson(response, 200, result);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/skills/record/finish") {
+      const body = await readJsonBody(request);
+      const result = await finishSkillRecording(body.sessionId);
+      return sendJson(response, 200, result);
+    }
+
+    if (request.method === "POST" && url.pathname === "/api/skills/record/cancel") {
+      const body = await readJsonBody(request);
+      const result = await cancelSkillRecording(body.sessionId);
+      return sendJson(response, 200, result);
     }
 
     if (request.method === "POST" && url.pathname === "/api/insurance/compare") {
@@ -61,6 +97,10 @@ const server = http.createServer(async (request, response) => {
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`Insurance marketplace running at http://127.0.0.1:${PORT}`);
 });
+
+function getAllMarketplaceSkills() {
+  return [...getInsuranceMarketplaceSkills(), ...listRegisteredMarketplaceSkills()];
+}
 
 function serveStatic(response, pathname) {
   const cleanPath = pathname === "/" ? "/insurance-marketplace.html" : pathname;

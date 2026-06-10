@@ -14,13 +14,41 @@
             <p class="eyebrow">Cairn AI Marketplace</p>
             <h1>Agent Skills</h1>
           </div>
-          <span class="status-pill" id="serverStatus">Connecting</span>
+          <div class="topbar-actions">
+            <button id="newSkillButton" class="icon-button" type="button" aria-label="Register new skill">+</button>
+            <span class="status-pill" id="serverStatus">Connecting</span>
+          </div>
         </div>
 
         <div class="search-row">
           <input id="skillSearch" type="search" placeholder="Search skills" autocomplete="off" />
           <button id="refreshSkills" type="button">Refresh</button>
         </div>
+
+        <form id="registerSkillForm" class="register-panel" hidden>
+          <div>
+            <h3>Register new skill</h3>
+            <p>Enter the website and what you want the workflow to do. I will open Chrome and record your run.</p>
+          </div>
+          <label>
+            Website link
+            <input id="recordWebsiteLink" name="websiteLink" type="url" placeholder="https://example.com/quote" />
+          </label>
+          <label>
+            Description
+            <textarea
+              id="recordDescription"
+              name="description"
+              rows="4"
+              placeholder="Example: fill the quote form and return the plan prices"
+            ></textarea>
+          </label>
+          <div class="actions compact">
+            <button id="startRecording" type="submit">Start recording</button>
+            <button id="finishRecording" type="button" class="secondary" disabled>Finish recording</button>
+            <button id="cancelRecording" type="button" class="secondary">Cancel</button>
+          </div>
+        </form>
 
         <div id="skillsList" class="skills-list" aria-live="polite"></div>
       </section>

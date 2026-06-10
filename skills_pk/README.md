@@ -75,6 +75,36 @@ The UI shows a mock skill marketplace, lets you "buy" the insurance skill, asks 
 
 By default, plan comparison is deterministic so the endpoint/cache speed difference is obvious. To enable the optional LLM-written comparison summary, set `INSURANCE_USE_LLM=1` and provide `OPENAI_API_KEY` or `NVIDIA_API_KEY`.
 
+### Registering a New Skill From the UI
+
+Click the `+` button in the marketplace header to register a new skill.
+
+The UI asks for:
+
+- Website link
+- Description of what you want the workflow to do
+
+When you press **Start recording**, the server opens a visible Chrome window. Complete the target workflow in that browser. When the final result is visible, return to the marketplace and press **Finish recording**.
+
+The recorder captures:
+
+- Visible fields, buttons, headings, and final page text
+- Your clicks, inputs, changes, submits, and navigations
+- Fetch/XHR/document requests and response snippets
+- Ranked endpoint candidates, with static assets and analytics filtered out
+
+After recording, the backend sends the cleaned evidence to NVIDIA Nemotron 3 using:
+
+```env
+NVIDIA_API_KEY=nvapi-your-key-here
+NVIDIA_MODEL=nvidia/nemotron-3-ultra-550b-a55b
+NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
+```
+
+Nemotron returns the skill name, user-facing questions, endpoint candidates, important outputs, and replay strategy. The learned skill is saved into `skills/marketplace-recorded-skills.json` and appears as a custom marketplace card.
+
+If `NVIDIA_API_KEY` is missing, recording still works but uses a deterministic fallback analysis. That fallback is useful for debugging but less accurate than Nemotron for understanding the workflow.
+
 ## Why This Exists
 
 Browser automation is flexible but slow. Direct API calls are fast but hard to discover by hand.

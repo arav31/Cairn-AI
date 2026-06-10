@@ -28,7 +28,8 @@ body {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -66,6 +67,15 @@ button:disabled {
   opacity: 0.55;
 }
 
+.icon-button {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  padding: 0;
+  font-size: 24px;
+  line-height: 1;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
@@ -93,6 +103,12 @@ button:disabled {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .eyebrow {
@@ -157,7 +173,8 @@ h3 {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 6px;
@@ -167,9 +184,41 @@ select {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--accent);
   outline: 3px solid rgba(15, 118, 110, 0.14);
+}
+
+textarea {
+  min-height: 96px;
+  resize: vertical;
+}
+
+.register-panel {
+  display: grid;
+  gap: 12px;
+  border: 1px solid rgba(15, 118, 110, 0.26);
+  border-radius: 8px;
+  background: #f7fbfa;
+  margin: 0 0 18px;
+  padding: 14px;
+}
+
+.register-panel[hidden] {
+  display: none;
+}
+
+.register-panel p {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+  margin-bottom: 0;
+}
+
+.actions.compact {
+  justify-content: flex-start;
+  flex-wrap: wrap;
 }
 
 .skills-list {
