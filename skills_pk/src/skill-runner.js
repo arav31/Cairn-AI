@@ -75,7 +75,7 @@ export async function runSkill(skill, rawInputs, options = {}) {
       saved[step.save.bodyText] = responseRecord.text;
     }
     for (const [name, sourcePath] of Object.entries(step.save?.json || {})) {
-      saved[name] = getPath(responseRecord.json, sourcePath);
+      saved[name] = firstResolvedJsonPath(responseRecord.json, sourcePath);
     }
   }
 
@@ -86,6 +86,15 @@ export async function runSkill(skill, rawInputs, options = {}) {
     saved,
     summary: summarize(skill, responses),
   };
+}
+
+function firstResolvedJsonPath(json, sourcePath) {
+  if (!Array.isArray(sourcePath)) return getPath(json, sourcePath);
+  for (const pathExpression of sourcePath) {
+    const value = getPath(json, pathExpression);
+    if (value !== undefined && value !== null && value !== "") return value;
+  }
+  return undefined;
 }
 
 async function fetchStepRequest(step, request, cookieJar) {
@@ -745,7 +754,10 @@ function extractImportantOutput(value, response, output, skill) {
 }
 
 function compactJsonResult(value) {
-  const importantKeys = /success|message|error|errors|price|premium|quote|total|amount|cost|fare|result|score|status|category|plan|name|id|rate|discount|duration|distance|bmi|risk|range/i;
+  const quoteSummary = compactQuotePlans(value);
+  if (quoteSummary) return quoteSummary;
+
+  const importantKeys = /success|message|error|errors|price|premium|quote|total|amount|cost|fare|result|score|status|category|plan|name|id|rate|discount|duration|distance|bmi|risk|range|benefit|coverage|limit|suminsured/i;
   if (Array.isArray(value)) {
     return value.slice(0, 10).map(compactJsonResult);
   }
@@ -764,6 +776,128 @@ function compactJsonResult(value) {
     if (child === null || ["string", "number", "boolean"].includes(typeof child)) output[key] = child;
   }
   return Object.keys(output).length ? output : value;
+}
+
+function compactQuotePlans(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const planRows = collectPlanRows(value);
+  if (!planRows.length) return null;
+  return {
+    ...(Object.hasOwn(value, "success") ? { success: value.success } : {}),
+    ...(value.message ? { message: value.message } : {}),
+    plans: planRows.slice(0, 12).map(compactPlanRow),
+  };
+}
+
+function collectPlanRows(value, rows = []) {
+  if (!value || typeof value !== "object") return rows;
+  if (Array.isArray(value)) {
+    for (const item of value) collectPlanRows(item, rows);
+    return rows;
+  }
+
+  if (Array.isArray(value.premiumDetails)) {
+    rows.push(...value.premiumDetails);
+  }
+  if (Array.isArray(value.plans)) {
+    rows.push(...value.plans);
+  }
+  if (Array.isArray(value.planDetails)) {
+    rows.push(...value.planDetails);
+  }
+
+  for (const [key, child] of Object.entries(value)) {
+    if (Array.isArray(child) && /premium|plan/i.test(key) && child.some(looksLikePlanRow)) {
+      rows.push(...child);
+    }
+    if (child && typeof child === "object") collectPlanRows(child, rows);
+  }
+  return dedupePlanRows(rows);
+}
+
+function looksLikePlanRow(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const keys = Object.keys(value).join(" ");
+  return /productName|planName|productCode|planCode/i.test(keys) && /premium|amount|price|total|discount/i.test(keys);
+}
+
+function dedupePlanRows(rows) {
+  const byKey = new Map();
+  for (const row of rows) {
+    const key = [
+      row?.productCode,
+      row?.planCode,
+      row?.productName,
+      row?.planName,
+    ].filter(Boolean).join("|");
+    if (!key) continue;
+    const existing = byKey.get(key);
+    if (!existing || planRowRichness(row) > planRowRichness(existing)) byKey.set(key, row);
+  }
+  return [...byKey.values()];
+}
+
+function planRowRichness(row) {
+  if (!row || typeof row !== "object") return 0;
+  let score = 0;
+  for (const key of Object.keys(row)) {
+    if (/premium|amount|discount|gst|benefit|coverage|limit|suminsured/i.test(key) && row[key] !== null && row[key] !== undefined) {
+      score += Array.isArray(row[key]) ? row[key].length + 1 : 1;
+    }
+  }
+  return score + Object.keys(row).length / 100;
+}
+
+function compactPlanRow(row) {
+  const output = pickExisting(row, [
+    "productName",
+    "planName",
+    "productCode",
+    "planCode",
+    "premiumAfterDiscountNoAddOn",
+    "premiumBeforeDiscountNoAddOn",
+    "premiumAfterDiscount",
+    "premiumAfterDiscountGST",
+    "premiumValueBeforeDiscountWithGst",
+    "totalFinalPremium",
+    "totalPremium",
+    "grossPremium",
+    "promoCodeDisAmount",
+    "totalGst",
+    "discount",
+  ]);
+  const benefits = collectBenefitRows(row).slice(0, 8).map((benefit) => pickExisting(benefit, [
+    "benefitName",
+    "name",
+    "description",
+    "sumInsured",
+    "limit",
+    "amount",
+    "coverage",
+  ]));
+  if (benefits.length) output.benefits = benefits;
+  return Object.keys(output).length ? output : compactJsonResult(row);
+}
+
+function collectBenefitRows(value, rows = []) {
+  if (!value || typeof value !== "object") return rows;
+  if (Array.isArray(value)) {
+    for (const item of value) collectBenefitRows(item, rows);
+    return rows;
+  }
+  for (const [key, child] of Object.entries(value)) {
+    if (Array.isArray(child) && /benefit|coverage/i.test(key)) rows.push(...child.filter((item) => item && typeof item === "object"));
+    else if (child && typeof child === "object") collectBenefitRows(child, rows);
+  }
+  return rows;
+}
+
+function pickExisting(source, keys) {
+  const output = {};
+  for (const key of keys) {
+    if (source?.[key] !== undefined && source[key] !== null && source[key] !== "") output[key] = source[key];
+  }
+  return output;
 }
 
 function extractByOutputHints(text, output) {

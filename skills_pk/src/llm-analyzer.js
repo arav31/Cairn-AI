@@ -260,8 +260,8 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
   const status = llmAnalysisStatus(env);
   if (!status.enabled) return null;
 
-  const evidence = buildRecordingEvidence(recording, candidates);
   const provider = status.provider;
+  const evidence = buildRecordingEvidence(recording, candidates, { compact: provider === "nvidia" });
   const timeoutMs = Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || defaultLlmTimeoutMs(provider));
   const response = provider === "nvidia"
     ? await callNvidiaChatJson({
@@ -288,21 +288,22 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
 }
 
 function defaultLlmTimeoutMs(provider) {
-  return provider === "nvidia" ? 120000 : 45000;
+  return provider === "nvidia" ? 30000 : 45000;
 }
 
-export function buildRecordingEvidence(recording, candidates = []) {
+export function buildRecordingEvidence(recording, candidates = [], options = {}) {
+  const compact = Boolean(options.compact);
   const page = recording.pageFields || {};
   return {
     sourceUrl: recording.url || "",
     finalUrl: page.url || recording.url || "",
     title: cleanText(page.title || ""),
     userGoal: cleanText(recording.goal || ""),
-    pageText: redactSensitiveText(cleanText(page.text || "").slice(0, 4000)),
-    fields: summarizeFields(page.fields || []),
-    events: summarizeEvents(page.events || []),
-    candidateRequests: summarizeCandidates(candidates),
-    requestShapes: summarizeRequestShapes(recording.requests || [], candidates),
+    pageText: redactSensitiveText(cleanText(page.text || "").slice(0, compact ? 800 : 4000)),
+    fields: summarizeFields(page.fields || [], { compact }),
+    events: summarizeEvents(page.events || [], { compact }),
+    candidateRequests: summarizeCandidates(candidates, { compact }),
+    requestShapes: summarizeRequestShapes(recording.requests || [], candidates, { compact }),
   };
 }
 
@@ -318,7 +319,9 @@ export function applyLlmAnalysisToSkill(skill, analysis) {
     summary: cleanText(analysis.summary),
     inferredGoal: cleanText(analysis.goal),
     confidence: clampConfidence(analysis.confidence),
-    strategy: analysis.strategy,
+    strategy: improved.learning?.strategy?.kind === "direct_api_with_preflight"
+      ? improved.learning.strategy
+      : analysis.strategy,
     endpointEngineering: analysis.endpointEngineering,
     outputs: analysis.outputs,
     risks: analysis.risks,
@@ -348,10 +351,11 @@ export function orderCandidatesByAnalysis(candidates, analysis) {
   ];
 }
 
-function summarizeFields(fields) {
+function summarizeFields(fields, options = {}) {
+  const compact = Boolean(options.compact);
   return fields
     .filter((field) => field && field.visible !== false)
-    .slice(0, 80)
+    .slice(0, compact ? 30 : 80)
     .map((field) => ({
       tag: field.tag || "",
       type: field.type || "",
@@ -361,12 +365,12 @@ function summarizeFields(fields) {
       placeholder: cleanText(field.placeholder || ""),
       nearbyText: cleanText(field.nearbyText || ""),
       groupLabel: cleanText(field.groupLabel || ""),
-      sectionText: cleanText(field.sectionText || "").slice(0, 300),
+      sectionText: cleanText(field.sectionText || "").slice(0, compact ? 80 : 300),
       source: field.source || "",
       value: valuePreview(field.value),
       checked: Boolean(field.checked),
       multiple: Boolean(field.multiple),
-      options: (field.options || []).slice(0, 60).map((option) => ({
+      options: (field.options || []).slice(0, compact ? 12 : 60).map((option) => ({
         label: cleanText(option.label || option.text || ""),
         value: valuePreview(option.value),
         selected: Boolean(option.selected),
@@ -374,10 +378,11 @@ function summarizeFields(fields) {
     }));
 }
 
-function summarizeEvents(events) {
+function summarizeEvents(events, options = {}) {
+  const compact = Boolean(options.compact);
   return events
     .filter((event) => event && ["input", "change", "click"].includes(event.type))
-    .slice(-120)
+    .slice(compact ? -30 : -120)
     .map((event) => ({
       type: event.type,
       selector: event.selector || "",
@@ -388,11 +393,11 @@ function summarizeEvents(events) {
       label: cleanText(event.label || ""),
       nearbyText: cleanText(event.nearbyText || ""),
       groupLabel: cleanText(event.groupLabel || ""),
-      sectionText: cleanText(event.sectionText || "").slice(0, 300),
+      sectionText: cleanText(event.sectionText || "").slice(0, compact ? 100 : 300),
       text: cleanText(event.text || ""),
       value: valuePreview(event.value),
       checked: Boolean(event.checked),
-      options: (event.options || []).slice(0, 20).map((option) => ({
+      options: (event.options || []).slice(0, compact ? 8 : 20).map((option) => ({
         label: cleanText(option.label || option.text || ""),
         value: valuePreview(option.value),
         selected: Boolean(option.selected),
@@ -401,8 +406,9 @@ function summarizeEvents(events) {
     }));
 }
 
-function summarizeCandidates(candidates) {
-  return candidates.slice(0, 25).map((candidate, index) => ({
+function summarizeCandidates(candidates, options = {}) {
+  const compact = Boolean(options.compact);
+  return candidates.slice(0, compact ? 8 : 25).map((candidate, index) => ({
     index,
     id: candidate.id || "",
     score: candidate.score || 0,
@@ -413,27 +419,28 @@ function summarizeCandidates(candidates) {
     durationMs: candidate.durationMs || 0,
     mimeType: candidate.mimeType || "",
     hasPostData: Boolean(candidate.hasPostData),
-    postDataPreview: redactSensitiveText(candidate.postDataPreview || "").slice(0, 300),
-    responseBodyPreview: redactSensitiveText(candidate.responseBodyPreview || "").slice(0, 500),
+    postDataPreview: redactSensitiveText(candidate.postDataPreview || "").slice(0, compact ? 100 : 300),
+    responseBodyPreview: redactSensitiveText(candidate.responseBodyPreview || "").slice(0, compact ? 140 : 500),
   }));
 }
 
-function summarizeRequestShapes(requests, candidates) {
-  const candidateIds = new Set(candidates.slice(0, 25).map((candidate) => candidate.id));
+function summarizeRequestShapes(requests, candidates, options = {}) {
+  const compact = Boolean(options.compact);
+  const candidateIds = new Set(candidates.slice(0, compact ? 8 : 25).map((candidate) => candidate.id));
   return requests
     .filter((request) => candidateIds.has(request.id))
-    .slice(0, 25)
+    .slice(0, compact ? 8 : 25)
     .map((request) => ({
       id: request.id || "",
       method: request.method || "",
       url: request.url || "",
       query: queryShape(request.url),
-      postDataShape: postDataShape(request.postData),
-      postDataPreview: redactSensitiveText(request.postData || "").slice(0, 1200),
-      responseBodyShape: postDataShape(request.responseBodyPreview),
-      responseBodyPreview: redactSensitiveText(request.responseBodyPreview || "").slice(0, 1200),
-      requestHeaderNames: Object.keys(request.requestHeaders || {}).filter(isSafeHeaderName).slice(0, 30),
-      responseHeaderNames: Object.keys(request.responseHeaders || {}).filter(isSafeHeaderName).slice(0, 30),
+      postDataShape: postDataShape(request.postData, { compact }),
+      postDataPreview: redactSensitiveText(request.postData || "").slice(0, compact ? 220 : 1200),
+      responseBodyShape: postDataShape(request.responseBodyPreview, { compact }),
+      responseBodyPreview: redactSensitiveText(request.responseBodyPreview || "").slice(0, compact ? 220 : 1200),
+      requestHeaderNames: Object.keys(request.requestHeaders || {}).filter(isSafeHeaderName).slice(0, compact ? 10 : 30),
+      responseHeaderNames: Object.keys(request.responseHeaders || {}).filter(isSafeHeaderName).slice(0, compact ? 10 : 30),
     }));
 }
 
@@ -449,22 +456,23 @@ function queryShape(url) {
   }
 }
 
-function postDataShape(postData) {
+function postDataShape(postData, options = {}) {
+  const compact = Boolean(options.compact);
   if (!postData) return "";
   try {
-    return JSON.stringify(shapeOf(JSON.parse(postData))).slice(0, 2000);
+    return JSON.stringify(shapeOf(JSON.parse(postData), 0, compact)).slice(0, compact ? 450 : 2000);
   } catch {
-    return redactSensitiveText(String(postData)).slice(0, 1000);
+    return redactSensitiveText(String(postData)).slice(0, compact ? 220 : 1000);
   }
 }
 
-function shapeOf(value, depth = 0) {
-  if (depth > 4) return typeof value;
-  if (Array.isArray(value)) return value.length ? [shapeOf(value[0], depth + 1)] : [];
+function shapeOf(value, depth = 0, compact = false) {
+  if (depth > (compact ? 3 : 4)) return typeof value;
+  if (Array.isArray(value)) return value.length ? [shapeOf(value[0], depth + 1, compact)] : [];
   if (!value || typeof value !== "object") return typeof value;
   const output = {};
-  for (const [key, child] of Object.entries(value).slice(0, 60)) {
-    output[key] = shapeOf(child, depth + 1);
+  for (const [key, child] of Object.entries(value).slice(0, compact ? 18 : 60)) {
+    output[key] = shapeOf(child, depth + 1, compact);
   }
   return output;
 }
@@ -533,24 +541,21 @@ async function callNvidiaChatJson({ apiKey, baseUrl, model, evidence, env, timeo
         {
           role: "user",
           content: [
-            "Analyze this recording evidence and return one JSON object only.",
-            "The JSON must match this schema shape. Use empty strings, empty arrays, false, or 0 when evidence is missing.",
-            JSON.stringify(ANALYSIS_SCHEMA),
-            "",
+            nvidiaAnalyzerPrompt(),
             "Recording evidence:",
             JSON.stringify(evidence),
           ].join("\n"),
         },
       ],
       response_format: { type: "json_object" },
-      temperature: numberFromEnv(env.NVIDIA_TEMPERATURE, 1),
-      top_p: numberFromEnv(env.NVIDIA_TOP_P, 0.95),
-      max_tokens: numberFromEnv(env.NVIDIA_MAX_TOKENS, 16384),
+      temperature: numberFromEnv(env.NVIDIA_TEMPERATURE, 0.2),
+      top_p: numberFromEnv(env.NVIDIA_TOP_P, 0.9),
+      max_tokens: numberFromEnv(env.NVIDIA_MAX_TOKENS, 3072),
     };
 
-    if (env.NVIDIA_ENABLE_THINKING !== "0" && env.NVIDIA_ENABLE_THINKING !== "off") {
+    if (["1", "true", "on", "yes"].includes(String(env.NVIDIA_ENABLE_THINKING || "").toLowerCase())) {
       body.chat_template_kwargs = { enable_thinking: true };
-      body.reasoning_budget = numberFromEnv(env.NVIDIA_REASONING_BUDGET, 16384);
+      body.reasoning_budget = numberFromEnv(env.NVIDIA_REASONING_BUDGET, 4096);
     }
 
     const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
@@ -571,6 +576,32 @@ async function callNvidiaChatJson({ apiKey, baseUrl, model, evidence, env, timeo
   } finally {
     clearTimeout(timer);
   }
+}
+
+function nvidiaAnalyzerPrompt() {
+  return [
+    "Analyze this recording evidence and return one JSON object only.",
+    "Use this exact top-level shape; omit no top-level keys:",
+    "{",
+    '  "summary": "short description",',
+    '  "goal": "what the skill does",',
+    '  "confidence": 0.0,',
+    '  "strategy": {"kind":"direct_api|query_api|browser_result_url|browser_replay|manual_review","candidateId":"","rationale":"","finalUrlUseful":false},',
+    '  "endpointEngineering": {"selectedRequestId":"","selectedEndpointUrl":"","method":"","endpointPurpose":"","payloadType":"json|query|form|multipart|browser|none|unknown","userInputMappings":[],"constantsToKeep":[],"volatileFields":[],"requiredPreflightSteps":[],"outputExtraction":[],"implementationNotes":[],"replayWarnings":[],"confidence":0.0},',
+    '  "inputs": [],',
+    '  "actions": [],',
+    '  "outputs": [],',
+    '  "conversation": {"intro":"","inputGroups":[]},',
+    '  "risks": []',
+    "}",
+    "Each input must be an object with id, question, type, required, mapsTo, helpText, evidence.",
+    "Each userInputMappings item must have inputId, question, type, mapsTo, transform, required, evidence.",
+    "Only create inputs from visible labels/options/clicks/typed fields in the evidence.",
+    "Never create inputs from hidden transport fields, headers, tokens, viewstate, UUIDs, counters, policy IDs, or raw JSON paths.",
+    "Questions must sound like the website's own form questions.",
+    "For outputs, keep only important result fields such as quote plans, premiums, prices, BMI score/category, duration/distance, or eligibility.",
+    "",
+  ].join("\n");
 }
 
 function analyzerInstructions() {

@@ -601,6 +601,7 @@ async function createSkillForRequest({ recording, request, recordingFile, name, 
   return (
     await maybeCreateTallySkill({ recording, request, recordingFile, name }) ||
     await maybeCreateQuerySkill({ recording, request, recordingFile, name, analysis }) ||
+    await maybeCreateGatewayPreflightSkill({ recording, request, recordingFile, name, analysis }) ||
     await createGenericRequestSkill({ recording, request, recordingFile, name, analysis })
   );
 }
@@ -621,8 +622,11 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
         computed = engineered.computed;
       } else {
         const conservative = buildConservativeBodyTemplate(body, fields);
-        body = conservative.body;
-        inputs = conservative.inputs;
+        const visibleChoices = conservative.inputs.length
+          ? conservative
+          : buildVisibleChoiceBodyTemplate(body, fields);
+        body = visibleChoices.body;
+        inputs = visibleChoices.inputs;
       }
     } catch {
       const fields = await getPageFieldCatalog(recording);
@@ -673,6 +677,148 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
     ],
   };
   return skill;
+}
+
+async function maybeCreateGatewayPreflightSkill({ recording, request, recordingFile, name, analysis }) {
+  const requests = recording.requests || [];
+  const gatewayRequest = findGatewayBootstrapRequest(requests);
+  const parameterRequest = findGatewayParameterRequest(requests, request);
+  if (!gatewayRequest || !parameterRequest) return null;
+  if (!looksLikeGatewayProtectedRequest(request)) return null;
+
+  const finalSkill = await createGenericRequestSkill({ recording, request, recordingFile, name, analysis });
+  const finalStep = structuredClone(finalSkill.steps?.[0] || {});
+  if (!finalStep.request) return null;
+
+  finalStep.id = "goal";
+  finalStep.request = {
+    ...finalStep.request,
+    url: gatewayEndpointTemplate(request.url),
+    headers: gatewayProtectedHeaders(request.requestHeaders || {}, { includeToken: true }),
+  };
+
+  const parameterPayload = recordedPayloadSpec(parameterRequest);
+  const gatewayStep = {
+    id: "gateway_config",
+    request: {
+      method: gatewayRequest.method || "GET",
+      url: gatewayRequest.url,
+      headers: keepReplayHeaders(gatewayRequest.requestHeaders || {}),
+    },
+    save: {
+      json: {
+        gatewayBaseUrl: ["$.url", "$.baseUrl", "$.apiUrl", "$.gatewayUrl"],
+        clientId: ["$.clientId", "$.client_id"],
+        clientSecret: ["$.clientSecret", "$.client_secret"],
+        giToken: ["$.token", "$.giToken", "$.gi_tkn", "$.headers.gi-tkn"],
+      },
+    },
+  };
+
+  const parameterStep = {
+    id: "gateway_session",
+    request: {
+      method: parameterRequest.method || "POST",
+      url: gatewayEndpointTemplate(parameterRequest.url),
+      headers: gatewayProtectedHeaders(parameterRequest.requestHeaders || {}, { includeToken: false }),
+      ...parameterPayload,
+    },
+    save: {
+      json: {
+        apiToken: ["$.token", "$.params.token", "$.data.token", "$.accessToken", "$.sessionToken"],
+      },
+    },
+  };
+
+  finalSkill.description = `Draft generated from ${recordingFile}. This workflow learned the API preflight/session calls required before the final endpoint. Review before using.`;
+  finalSkill.steps = [gatewayStep, parameterStep, finalStep];
+  finalSkill.learning = {
+    ...(finalSkill.learning || {}),
+    strategy: {
+      kind: "direct_api_with_preflight",
+      rationale: "The final endpoint depends on gateway configuration and a session token captured from earlier network calls.",
+    },
+  };
+  return finalSkill;
+}
+
+function findGatewayBootstrapRequest(requests) {
+  return requests.find((request) => {
+    if ((request.method || "GET").toUpperCase() !== "GET") return false;
+    const url = safeUrl(request.url || "");
+    const haystack = `${url.hostname} ${url.pathname}`.toLowerCase();
+    if (/getapigatewayparams|gateway.*params|api.*gateway.*config|gateway.*config/.test(haystack)) return true;
+    return /"clientId"|"client_id"|"clientSecret"|"client_secret"|"gi-tkn"/i.test(request.responseBodyPreview || "");
+  }) || null;
+}
+
+function findGatewayParameterRequest(requests, finalRequest) {
+  const finalIndex = requests.findIndex((request) => request.id === finalRequest.id);
+  const priorRequests = finalIndex >= 0 ? requests.slice(0, finalIndex) : requests;
+  const finalUrl = safeUrl(finalRequest.url || "");
+  return [...priorRequests].reverse().find((request) => {
+    if (!["POST", "PUT", "PATCH"].includes((request.method || "").toUpperCase())) return false;
+    if (!request.postData) return false;
+    const url = safeUrl(request.url || "");
+    const haystack = `${url.hostname} ${url.pathname}`.toLowerCase();
+    if (url.hostname !== finalUrl.hostname && !/gateway|token|session|parameter/.test(haystack)) return false;
+    return /\/parameter$|\/parameters$|\/session$|\/token$|\/init(?:ialize)?$|\/bootstrap$/.test(url.pathname.toLowerCase());
+  }) || null;
+}
+
+function looksLikeGatewayProtectedRequest(request) {
+  const headers = normalizeHeaderObject(request.requestHeaders || {});
+  if (headers.client_id || headers["client-id"] || headers.client_secret || headers["client-secret"] || headers["gi-tkn"]) {
+    return true;
+  }
+  if (headers.token && !/^bearer\s/i.test(String(headers.token))) return true;
+  const url = safeUrl(request.url || "");
+  return /gateway|\/gw\.|\/ext\/.*\/fe\//i.test(`${url.hostname}${url.pathname}`);
+}
+
+function normalizeHeaderObject(headers) {
+  const normalized = {};
+  for (const [key, value] of Object.entries(headers || {})) normalized[key.toLowerCase()] = value;
+  return normalized;
+}
+
+function gatewayProtectedHeaders(recordedHeaders, { includeToken }) {
+  const headers = stripVolatileHeaders(keepReplayHeaders(recordedHeaders || {}));
+  for (const key of Object.keys(headers)) {
+    const lower = key.toLowerCase();
+    if (["client_id", "client-id", "client_secret", "client-secret", "gi-tkn", "token"].includes(lower)) {
+      delete headers[key];
+    }
+  }
+  headers.client_id = "{{clientId}}";
+  headers.client_secret = "{{clientSecret}}";
+  headers["gi-tkn"] = "{{giToken}}";
+  if (includeToken) headers.Token = "{{apiToken}}";
+  return headers;
+}
+
+function gatewayEndpointTemplate(urlValue) {
+  const url = safeUrl(urlValue || "");
+  const path = url.pathname;
+  const commonGatewayIndex = path.toLowerCase().lastIndexOf("/fe/");
+  const suffix = commonGatewayIndex >= 0
+    ? path.slice(commonGatewayIndex + 4)
+    : path.split("/").filter(Boolean).slice(-1)[0] || "";
+  return `{{gatewayBaseUrl}}${suffix}${url.search || ""}`;
+}
+
+function recordedPayloadSpec(request) {
+  if (!request.postData) return {};
+  try {
+    return { body: JSON.parse(request.postData) };
+  } catch {
+    if (looksLikeFormBody(request.postData, request)) {
+      const form = {};
+      for (const [key, value] of new URLSearchParams(request.postData).entries()) appendFormTemplateValue(form, key, value);
+      return { form };
+    }
+    return { body: request.postData };
+  }
 }
 
 function hasRecordedPromptableInteractions(recording) {
@@ -905,26 +1051,85 @@ function latestChoiceClickEvents(clickEvents) {
   return [...byGroup.values()];
 }
 
-function questionForChoiceClickEvent(event) {
+function questionForChoiceClickEvent(event, allEvents = []) {
   const choices = cleanChoices(event.options || []);
-  const inferred = inferChoiceGroupQuestion(`${event.label || ""} ${event.groupLabel || ""} ${event.nearbyText || ""} ${event.sectionText || ""}`, choices);
+  const contexts = [
+    `${event.label || ""} ${event.groupLabel || ""} ${event.nearbyText || ""} ${event.sectionText || ""}`,
+    ...choiceContextFromOtherEvents(allEvents, choices),
+  ];
+  const inferred = contexts
+    .map((context) => inferChoiceGroupQuestion(context, choices))
+    .filter(Boolean)
+    .sort((a, b) => choiceQuestionScore(b) - choiceQuestionScore(a) || a.length - b.length)[0];
   return inferred || questionForRecordedEvent(event);
+}
+
+function choiceContextFromOtherEvents(events, choices) {
+  if (!events?.length || choices.length < 2) return [];
+  const labels = choices.map((choice) => cleanText(choice.label || choice.value)).filter(Boolean);
+  return events
+    .map((event) => `${event.label || ""} ${event.groupLabel || ""} ${event.nearbyText || ""} ${event.sectionText || ""}`)
+    .filter((context) => labels.filter((label) => context.toLowerCase().includes(label.toLowerCase())).length >= Math.min(2, labels.length));
 }
 
 function inferChoiceGroupQuestion(contextText, choices) {
   const text = cleanText(contextText);
   if (!text || !choices.length) return "";
   const labels = choices.map((choice) => cleanText(choice.label || choice.value)).filter(Boolean);
-  const indices = labels
-    .map((label) => ({ label, index: text.toLowerCase().indexOf(label.toLowerCase()) }))
-    .filter((item) => item.index >= 0)
-    .sort((a, b) => a.index - b.index);
+  const indices = [];
+  const lowerText = text.toLowerCase();
+  for (const label of labels) {
+    const lowerLabel = label.toLowerCase();
+    let index = lowerText.indexOf(lowerLabel);
+    while (index >= 0) {
+      indices.push({ label, index });
+      index = lowerText.indexOf(lowerLabel, index + lowerLabel.length);
+    }
+  }
+  indices.sort((a, b) => a.index - b.index);
   if (!indices.length) return "";
-  const prefix = cleanText(text.slice(0, indices[0].index));
-  if (!prefix) return "";
-  const tail = prefix.split(/\s+/).slice(-10).join(" ");
-  const natural = tail.match(/\b(i am a(?:n)?|i need(?: a| an)?|looking to cover|select(?: your)?|choose(?: your)?|coverage for|travelling to|leaving .* on|arriving .* on)\b.*$/i);
-  return cleanText(natural?.[0] || tail);
+  const tails = [];
+  const naturalMatches = [];
+  for (const item of indices) {
+    const prefix = cleanText(text.slice(0, item.index));
+    if (!prefix) continue;
+    const tail = prefix.split(/\s+/).slice(-12).join(" ");
+    const natural = tail.match(/\b(i am a(?:n)?|i need(?: a| an)?|looking to cover|select(?: your)?|choose(?: your)?|coverage for|travelling to|leaving .* on|arriving .* on)\b.*$/i);
+    if (natural?.[0]) {
+      const value = stripTrailingChoiceLabels(cleanText(natural[0]), labels);
+      naturalMatches.push({ value, score: choiceQuestionScore(value) });
+    }
+    tails.push(tail);
+  }
+  naturalMatches.sort((a, b) => b.score - a.score || a.value.length - b.value.length);
+  if (naturalMatches[0]?.value) return naturalMatches[0].value;
+  return stripTrailingChoiceLabels(cleanText(tails[0] || ""), labels);
+}
+
+function choiceQuestionScore(value) {
+  if (/^i am a(?:n)?\b/i.test(value)) return 100;
+  if (/^i need\b/i.test(value)) return 90;
+  if (/^looking to cover\b/i.test(value)) return 85;
+  if (/^select\b|^choose\b/i.test(value)) return 80;
+  if (/^travelling to\b|^leaving .* on\b|^arriving .* on\b/i.test(value)) return 75;
+  if (/^coverage for\b/i.test(value)) return 40;
+  return 50;
+}
+
+function stripTrailingChoiceLabels(value, labels) {
+  let output = cleanText(value);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const label of labels) {
+      const regex = new RegExp(`(?:^|\\s)${escapeRegExp(label)}$`, "i");
+      if (regex.test(output)) {
+        output = cleanText(output.replace(regex, ""));
+        changed = true;
+      }
+    }
+  }
+  return output;
 }
 
 function latestInputEvents(events) {
@@ -1007,6 +1212,107 @@ function buildConservativeBodyTemplate(body, fields) {
     setPathValue(template, row.path, `{{${input.id}}}`);
   }
   return { body: template, inputs };
+}
+
+function buildVisibleChoiceBodyTemplate(body, fields) {
+  const template = structuredClone(body);
+  const rows = flattenScalars(body).filter((row) => row.value !== "" && row.value !== null && row.value !== undefined);
+  const choiceFields = fields.filter((field) => {
+    const choices = cleanChoices(field.options || []);
+    return field.visible !== false && choices.length > 1 && isUserFacingField(field);
+  });
+  const inputs = [];
+  const usedInputIds = new Set();
+  const usedPaths = new Set();
+
+  for (const field of choiceFields) {
+    const match = findPayloadRowForVisibleChoice(rows, field, usedPaths);
+    if (!match) continue;
+    usedPaths.add(match.row.path);
+    const inputId = uniqueInputId(slugify(field.label || field.groupLabel || lastPathName(match.row.path)), usedInputIds);
+    inputs.push({
+      id: inputId,
+      question: questionForField(inputId, field),
+      type: "choice",
+      optional: false,
+      default: match.row.value,
+      choices: payloadChoicesForVisibleField(field, match.row.value),
+    });
+    setPathValue(template, match.row.path, `{{${inputId}}}`);
+  }
+
+  return { body: template, inputs };
+}
+
+function findPayloadRowForVisibleChoice(rows, field, usedPaths) {
+  const selectedLabel = cleanText(field.value || field.options?.find((option) => option.selected)?.label || "");
+  if (!selectedLabel) return null;
+  const candidates = rows
+    .filter((row) => !usedPaths.has(row.path))
+    .filter((row) => typeof row.value === "string" || typeof row.value === "number" || typeof row.value === "boolean")
+    .filter((row) => !isTechnicalPayloadPath(row.path) && !isNonUserControlName(lastPathName(row.path)))
+    .map((row) => ({ row, score: visibleChoicePayloadScore(selectedLabel, row) }))
+    .filter((item) => item.score >= 0.78)
+    .sort((a, b) => b.score - a.score);
+  return candidates[0] || null;
+}
+
+function visibleChoicePayloadScore(label, row) {
+  const labelNorm = normalizeComparableText(label);
+  const valueNorm = normalizeComparableText(row.value);
+  if (!labelNorm || !valueNorm) return 0;
+  let score = stringSimilarity(labelNorm, valueNorm);
+  const pathNorm = normalizeComparableText(lastPathName(row.path));
+  if (/type|code|option|plan|class|role|occup/i.test(lastPathName(row.path))) score += 0.04;
+  if (pathNorm && stringSimilarity(labelNorm, pathNorm) > 0.55) score += 0.04;
+  return Math.min(score, 1);
+}
+
+function payloadChoicesForVisibleField(field, selectedPayloadValue) {
+  const selectedLabel = cleanText(field.value || "");
+  const selectedNorm = normalizeComparableText(selectedLabel);
+  const selectedValue = String(selectedPayloadValue);
+  const selectedValueNorm = normalizeComparableText(selectedValue);
+  const codeLike = /^[A-Z0-9_ -]+$/.test(selectedValue) && !/\s/.test(selectedValue.trim());
+  return cleanChoices(field.options || []).map((choice) => {
+    const label = cleanText(choice.label || choice.value);
+    const labelNorm = normalizeComparableText(label);
+    let value = choice.value ?? label;
+    if (labelNorm === selectedNorm) {
+      value = selectedPayloadValue;
+    } else if (codeLike && stringSimilarity(selectedNorm, selectedValueNorm) >= 0.72) {
+      value = label.replace(/[^a-z0-9]+/gi, "").toUpperCase();
+    }
+    return { label, value };
+  });
+}
+
+function normalizeComparableText(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+}
+
+function stringSimilarity(a, b) {
+  if (!a || !b) return 0;
+  if (a === b) return 1;
+  if (a.includes(b) || b.includes(a)) return Math.min(a.length, b.length) / Math.max(a.length, b.length);
+  const distance = levenshteinDistance(a, b);
+  return 1 - distance / Math.max(a.length, b.length);
+}
+
+function levenshteinDistance(a, b) {
+  const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    let last = i;
+    previous[0] = i + 1;
+    for (let j = 0; j < b.length; j += 1) {
+      const old = previous[j + 1];
+      previous[j + 1] = a[i] === b[j]
+        ? last
+        : Math.min(last + 1, previous[j] + 1, previous[j + 1] + 1);
+      last = old;
+    }
+  }
+  return previous[b.length];
 }
 
 function inputFromMappingOrRow(mapping, row, fields, usedInputIds) {
@@ -1548,7 +1854,7 @@ function fieldsFromRecordedEvents(events) {
     }
 
     if (event.type === "click" && ["button", "a", "input"].includes(tag)) {
-      const groupLabel = cleanText(event.groupLabel || event.nearbyText || "");
+      const groupLabel = cleanText(questionForChoiceClickEvent(event, events));
       const options = cleanChoices(event.options || []);
       if (!groupLabel || options.length < 2) continue;
       const key = `choice:${normalizeFieldName(groupLabel)}`;
