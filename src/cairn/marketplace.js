@@ -467,12 +467,23 @@ ${workflow.description}
 ${JSON.stringify(operation.inputSchema, null, 2)}
 \`\`\`
 
-## Try it in demo mode
+## Auth
+
+Create an account first. Cairn returns an \`agentKey\` once; store it and send it as \`Authorization: Bearer <agentKey>\`.
+
+\`\`\`bash
+curl -X POST /api/accounts \\
+  -H "Content-Type: application/json" \\
+  -d '{"accountId":"demo-user"}'
+\`\`\`
+
+## Try it with tokens
 
 \`\`\`bash
 curl -X POST /api/tools/${slug}/invoke \\
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY" \\
   -H "Content-Type: application/json" \\
-  -d '${sample.replace(/\n/g, "")}'
+  -d '${tokenSample.replace(/\n/g, "")}'
 \`\`\`
 
 ## Pay and run
@@ -489,9 +500,9 @@ ${paidSample}
 
 This API costs ${tokenLabel}. Buy tokens once, then spend them across any marketplace API.
 
-1. Check a wallet: \`GET /api/tokens/wallet?accountId=demo-user\`
-2. Buy a pack: \`POST /api/tokens/checkout\`
-3. Invoke with \`paymentMethod: "tokens"\`
+1. Check a wallet with your bearer key: \`GET /api/tokens/wallet?accountId=demo-user\`
+2. Buy a pack with your bearer key: \`POST /api/tokens/checkout\`
+3. Invoke with your bearer key and \`paymentMethod: "tokens"\`
 
 \`\`\`json
 ${tokenSample}
@@ -805,6 +816,7 @@ function openApiDocument(listings, state) {
       post: {
         operationId: operation.name,
         summary: listing.tagline,
+        security: [{ agentBearerAuth: [] }],
         requestBody: {
           required: true,
           content: {
@@ -837,6 +849,7 @@ function openApiDocument(listings, state) {
         },
         responses: {
           "200": { description: "Tool call completed." },
+          "401": { description: "Agent bearer key is missing or invalid." },
           "402": { description: "Payment authorization required." },
           "403": { description: "Caller lacks required scope." }
         }
@@ -849,19 +862,28 @@ function openApiDocument(listings, state) {
       title: "Cairn Agent Workflow API Marketplace",
       version: "0.3.0"
     },
+    components: {
+      securitySchemes: {
+        agentBearerAuth: {
+          type: "http",
+          scheme: "bearer",
+          description: "Account-scoped Cairn agent key returned once from POST /api/accounts."
+        }
+      }
+    },
     paths
   };
 }
 
 function integrationSnippet(baseUrl, listing) {
   return {
-    curl: `curl -X POST ${baseUrl}${listing.invokePath} -H "Content-Type: application/json" -d '{"input":${JSON.stringify(listing.sampleInput)},"demo":true}'`,
+    curl: `curl -X POST ${baseUrl}${listing.invokePath} -H "Authorization: Bearer $CAIRN_AGENT_KEY" -H "Content-Type: application/json" -d '{"input":${JSON.stringify(listing.sampleInput)},"paymentMethod":"tokens","tokenAccountId":"demo-user"}'`,
     package: {
       installFromGitHub: "npm install github:arav31/Cairn-AI",
       futureNpmPackage: "npm install @cairn/ai",
       cli: "npx cairn help"
     },
-    sdk: `const { CairnClient } = require("cairn");\nconst cairn = new CairnClient({ baseUrl: "${baseUrl}", accountId: "demo-user" });\nawait cairn.createAccount();\nawait cairn.buyTokens("starter");\nconst result = await cairn.invoke("${listing.slug}", { input: ${JSON.stringify(listing.sampleInput)}, paymentMethod: "tokens" });`,
+    sdk: `const { CairnClient } = require("cairn");\nconst cairn = new CairnClient({ baseUrl: "${baseUrl}", accountId: "demo-user", agentKey: process.env.CAIRN_AGENT_KEY });\nawait cairn.createAccount();\nawait cairn.buyTokens("starter");\nconst result = await cairn.invoke("${listing.slug}", { input: ${JSON.stringify(listing.sampleInput)}, paymentMethod: "tokens" });`,
     mcp: {
       endpoint: `${baseUrl}/mcp`,
       tool: listing.mcpToolName
@@ -894,24 +916,29 @@ function integrationGuide(baseUrl, listing = null) {
     },
     environment: {
       CAIRN_BASE_URL: baseUrl,
-      CAIRN_ACCOUNT_ID: "demo-user"
+      CAIRN_ACCOUNT_ID: "demo-user",
+      CAIRN_AGENT_KEY: "returned_once_from_POST_api_accounts"
     },
     accountAndCredits: {
       createAccount: {
         method: "POST",
         url: `${baseUrl}/api/accounts`,
-        body: { accountId: "demo-user" }
+        body: { accountId: "demo-user" },
+        returns: "agentAuth.agentKey"
       },
       buyCredits: {
         method: "POST",
         url: `${baseUrl}/api/tokens/checkout`,
+        headers: { Authorization: "Bearer $CAIRN_AGENT_KEY" },
         body: { accountId: "demo-user", packId: "starter" }
       },
-      wallet: `${baseUrl}/api/tokens/wallet?accountId=demo-user`
+      wallet: `${baseUrl}/api/tokens/wallet?accountId=demo-user`,
+      walletHeaders: { Authorization: "Bearer $CAIRN_AGENT_KEY" }
     },
     invokeWithCredits: {
       method: "POST",
       url: `${baseUrl}/api/tools/${toolId}/invoke`,
+      headers: { Authorization: "Bearer $CAIRN_AGENT_KEY" },
       body: {
         input: sampleInput,
         paymentMethod: "tokens",
@@ -922,8 +949,9 @@ function integrationGuide(baseUrl, listing = null) {
     sdk: {
       commonjs: [
         'const { CairnClient } = require("cairn");',
-        `const cairn = new CairnClient({ baseUrl: "${baseUrl}", accountId: "demo-user" });`,
-        "await cairn.createAccount();",
+        `const cairn = new CairnClient({ baseUrl: "${baseUrl}", accountId: "demo-user", agentKey: process.env.CAIRN_AGENT_KEY });`,
+        "const account = await cairn.createAccount();",
+        "process.env.CAIRN_AGENT_KEY ||= account.agentAuth.agentKey;",
         'await cairn.buyTokens("starter");',
         `const result = await cairn.invoke("${toolId}", {`,
         `  input: ${JSON.stringify(sampleInput)},`,
@@ -962,7 +990,6 @@ function integrationGuide(baseUrl, listing = null) {
     },
     futureIntegrationWork: [
       "Publish the SDK under a stable npm package name.",
-      "Add API keys and account-scoped auth instead of plain account IDs.",
       "Add OAuth/OIDC helpers for enterprise agent runtimes.",
       "Generate typed clients from each listing OpenAPI schema.",
       "Emit webhooks for completed workflow runs and credit debits.",

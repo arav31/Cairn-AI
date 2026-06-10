@@ -132,10 +132,12 @@ const { CairnClient } = require("cairn");
 
 const cairn = new CairnClient({
   baseUrl: "https://cairn-ai-gamma.vercel.app",
-  accountId: "demo-user"
+  accountId: "demo-user",
+  agentKey: process.env.CAIRN_AGENT_KEY
 });
 
-await cairn.createAccount();
+const account = await cairn.createAccount();
+process.env.CAIRN_AGENT_KEY ||= account.agentAuth.agentKey;
 await cairn.buyTokens("starter");
 
 const result = await cairn.invoke("insurance/compare-insurance-prices", {
@@ -173,7 +175,9 @@ npx cairn readme --tool real-estate/search-properties
 
 ## Account And Credit Flow
 
-Cairn uses account-scoped credit wallets. In the current demo, an account is identified by an `accountId`. When `DATABASE_URL` is configured, that account is a durable row in Postgres and all wallet, ledger, payment, usage, invocation, and workflow-submission records attach to it. Production should add real auth before using this with external customers.
+Cairn uses account-scoped credit wallets. In the current demo, an account is identified by an `accountId`. When `DATABASE_URL` is configured, that account is a durable row in Postgres and all wallet, ledger, payment, usage, invocation, and workflow-submission records attach to it.
+
+Agent auth is now account-scoped. `POST /api/accounts` returns an `agentAuth.agentKey` once for a new account. Store it as `CAIRN_AGENT_KEY` and send it as `Authorization: Bearer <agentKey>` for wallet, checkout, MCP `tools/call`, workflow submission, and invoke calls. Cairn stores only a SHA-256 hash of the key.
 
 Create or load an account:
 
@@ -186,19 +190,22 @@ curl -X POST http://localhost:3000/api/accounts \
 Check wallet and recent ledger entries:
 
 ```bash
-curl "http://localhost:3000/api/tokens/wallet?accountId=demo-user"
+curl "http://localhost:3000/api/tokens/wallet?accountId=demo-user" \
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY"
 ```
 
 Check account usage:
 
 ```bash
-curl "http://localhost:3000/api/accounts/demo-user/usage"
+curl "http://localhost:3000/api/accounts/demo-user/usage" \
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY"
 ```
 
 Buy credits:
 
 ```bash
 curl -X POST http://localhost:3000/api/tokens/checkout \
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "packId": "starter",
@@ -218,6 +225,7 @@ Call an API with `paymentMethod: "tokens"`:
 
 ```bash
 curl -X POST http://localhost:3000/api/tools/insurance/compare-insurance-prices/invoke \
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY" \
   -H "Content-Type: application/json" \
   -d '{
     "paymentMethod": "tokens",
@@ -308,19 +316,19 @@ Tool payment and invocation:
 
 ```http
 POST /api/tools/:namespace/:slug/quote
-POST /api/tools/:namespace/:slug/checkout
-POST /api/tools/:namespace/:slug/invoke
+POST /api/tools/:namespace/:slug/checkout   # requires agent bearer key
+POST /api/tools/:namespace/:slug/invoke     # requires agent bearer key
 ```
 
 Accounts and credits:
 
 ```http
 POST /api/accounts
-GET /api/accounts/:accountId/usage
+GET /api/accounts/:accountId/usage          # requires matching agent bearer key
 GET /api/tokens/config
-GET /api/tokens/wallet?accountId=demo-user
+GET /api/tokens/wallet?accountId=demo-user  # requires matching agent bearer key
 POST /api/tokens/quote
-POST /api/tokens/checkout
+POST /api/tokens/checkout                   # requires matching agent bearer key
 ```
 
 Stripe helpers:
@@ -328,8 +336,8 @@ Stripe helpers:
 ```http
 GET /api/payments/stripe-config
 POST /api/payments/quote
-POST /api/payments/checkout
-POST /api/payments/usage
+POST /api/payments/checkout                 # requires agent bearer key
+POST /api/payments/usage                    # requires agent bearer key
 POST /api/stripe/webhook
 ```
 
@@ -462,6 +470,7 @@ SDK/CLI:
 | --- | --- | --- |
 | `CAIRN_BASE_URL` | optional | Marketplace URL for the SDK/CLI. Defaults to production. |
 | `CAIRN_ACCOUNT_ID` | optional | Default account ID for the SDK/CLI. Defaults to `demo-user`. |
+| `CAIRN_AGENT_KEY` | protected API calls | Bearer key returned once by `POST /api/accounts`. Required for wallet, checkout, invoke, usage, workflow submission, and MCP `tools/call`. |
 
 Stripe:
 
@@ -725,8 +734,7 @@ Latest local result:
 Immediate product work:
 
 - Publish the SDK under a real npm package name such as `@cairn/ai`.
-- Add real account auth instead of plain `accountId`.
-- Add API keys or OAuth/OIDC for external agents.
+- Add OAuth/OIDC for enterprise agent runtimes.
 - Add user/team ownership for wallets, listings, and workflow submissions.
 - Add a dashboard view for account usage, ledger history, and invoices.
 - Add a hosted MCP configuration page for ChatGPT, Claude, Cursor, Zapier, and n8n.

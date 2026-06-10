@@ -76,7 +76,17 @@ async function ensureAccountPersistent(state, accountId, metadata = {}) {
   return accountFromRow(result.rows[0]);
 }
 
+async function accountExistsPersistent(state, accountId) {
+  const normalized = normalizeAccountId(accountId);
+  if (!isDatabaseConfigured()) {
+    return Boolean(state.accounts && state.accounts[normalized]);
+  }
+  const result = await query("SELECT 1 FROM accounts WHERE id = $1 LIMIT 1", [normalized]);
+  return Boolean(result && result.rows[0]);
+}
+
 module.exports = {
+  accountExistsPersistent,
   accountFromRow,
   ensureAccount,
   ensureAccountPersistent,

@@ -37,6 +37,7 @@ Usage:
 Defaults:
   --base-url ${DEFAULT_BASE_URL}
   --account demo-user
+  CAIRN_AGENT_KEY is sent as the bearer key for protected API calls.
 `;
 }
 

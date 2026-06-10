@@ -206,8 +206,9 @@ async function createStripeTokenCheckoutSession(quote, buyer = {}) {
     },
     body: formBody({
       mode: "payment",
-      success_url: `${publicUrl}/?token_checkout=success&pack=${encodeURIComponent(pack.id)}`,
-      cancel_url: `${publicUrl}/?token_checkout=cancelled&pack=${encodeURIComponent(pack.id)}`,
+      success_url: `${publicUrl}/marketplace?token_checkout=success&session_id={CHECKOUT_SESSION_ID}&pack=${encodeURIComponent(pack.id)}`,
+      cancel_url: `${publicUrl}/marketplace?token_checkout=cancelled&pack=${encodeURIComponent(pack.id)}`,
+      client_reference_id: quote.accountId,
       "metadata[kind]": "token_pack",
       "metadata[account_id]": quote.accountId,
       "metadata[pack_id]": pack.id,

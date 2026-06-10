@@ -12,7 +12,8 @@ const app = {
   tokenConfig: null,
   wallet: null,
   walletLedger: [],
-  accountId: "demo-user"
+  accountId: "demo-user",
+  agentKey: null
 };
 
 const $ = (id) => document.getElementById(id);
@@ -47,6 +48,31 @@ function pretty(value) {
 
 function selectedListing() {
   return app.listings.find((listing) => listing.slug === app.selectedSlug) || app.listings[0];
+}
+
+function generatedAccountId() {
+  const suffix = crypto.randomUUID ? crypto.randomUUID().slice(0, 8) : String(Date.now()).slice(-8);
+  return `acct_${suffix}`;
+}
+
+function authHeaders(headers = {}) {
+  return app.agentKey
+    ? { ...headers, Authorization: `Bearer ${app.agentKey}` }
+    : headers;
+}
+
+function saveAgentSession(accountId, agentKey) {
+  app.accountId = accountId;
+  if (agentKey) app.agentKey = agentKey;
+  localStorage.setItem("cairnAccountId", app.accountId);
+  if (app.agentKey) localStorage.setItem("cairnAgentKey", app.agentKey);
+}
+
+function applyAgentAuth(payload) {
+  const agentKey = payload && payload.agentAuth && payload.agentAuth.agentKey;
+  if (agentKey) {
+    saveAgentSession(payload.account.accountId || payload.account.id, agentKey);
+  }
 }
 
 function filteredListings() {
@@ -105,25 +131,50 @@ async function fetchCatalog() {
   app.stripeConfig = await stripeResponse.json();
   const tokenConfigResponse = await fetch("/api/tokens/config");
   app.tokenConfig = await tokenConfigResponse.json();
+  await ensureAccountSession();
   await refreshWallet();
   render();
 }
 
 async function refreshWallet() {
-  const response = await fetch(`/api/tokens/wallet?accountId=${encodeURIComponent(app.accountId)}`);
+  const response = await fetch(`/api/tokens/wallet?accountId=${encodeURIComponent(app.accountId)}`, {
+    headers: authHeaders()
+  });
   const payload = await response.json();
-  app.wallet = payload.wallet;
-  app.walletLedger = payload.ledger || [];
+  if (response.ok) {
+    app.wallet = payload.wallet;
+    app.walletLedger = payload.ledger || [];
+  } else {
+    app.wallet = null;
+    app.walletLedger = [];
+    $("token-status").textContent = payload.message || "Create an account before using wallet credits.";
+  }
 }
 
-async function postJson(path, body) {
+async function postJson(path, body, options = {}) {
+  const headers = options.auth === false
+    ? { "Content-Type": "application/json" }
+    : authHeaders({ "Content-Type": "application/json" });
   const response = await fetch(path, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers,
     body: JSON.stringify(body)
   });
   const payload = await response.json();
   return { ok: response.ok, status: response.status, payload };
+}
+
+async function ensureAccountSession() {
+  if (app.agentKey) return;
+  if (app.accountId === "demo-user") {
+    app.accountId = generatedAccountId();
+  }
+  const result = await postJson("/api/accounts", { accountId: app.accountId });
+  if (result.ok) {
+    applyAgentAuth(result.payload);
+    app.wallet = result.payload.wallet;
+    app.walletLedger = result.payload.ledger || [];
+  }
 }
 
 async function quoteSelected() {
@@ -225,15 +276,21 @@ async function runSelectedWithPaymentMode() {
 
 async function createOrLoadAccount() {
   const nextAccountId = ($("account-id-input").value || "demo-user").trim() || "demo-user";
+  const sameAccount = nextAccountId === app.accountId;
   const result = await postJson("/api/accounts", {
     accountId: nextAccountId
-  });
+  }, { auth: sameAccount });
   if (result.ok) {
+    applyAgentAuth(result.payload);
     app.accountId = nextAccountId;
     app.wallet = result.payload.wallet;
     app.walletLedger = result.payload.ledger || [];
-    localStorage.setItem("cairnAccountId", app.accountId);
+    if (!result.payload.agentAuth.agentKey && app.agentKey) {
+      saveAgentSession(app.accountId, app.agentKey);
+    }
     $("token-status").textContent = `Account ready: ${app.accountId}.`;
+  } else if (result.status === 409 || result.status === 401) {
+    $("token-status").textContent = "That account already needs its saved agent key. Create a new account ID or use this browser's saved account.";
   } else {
     $("token-status").textContent = "Could not load that account.";
   }
@@ -259,7 +316,9 @@ async function buySelectedTokenPack() {
   await refreshWallet();
   const checkout = checkoutResult.payload.checkout;
   if (checkout && checkout.checkoutUrl) {
-    $("token-status").textContent = "Stripe Checkout created. Open the returned checkout URL to finish payment.";
+    $("token-status").textContent = "Opening Stripe Checkout...";
+    window.location.href = checkout.checkoutUrl;
+    return;
   } else {
     $("token-status").textContent = checkoutResult.ok
       ? `Tokens added. Balance is now ${app.wallet.balance}.`
@@ -368,11 +427,18 @@ function renderDetail() {
     return;
   }
   const origin = window.location.origin;
-  const curl = `curl -X POST ${origin}${listing.invokePath} -H "Content-Type: application/json" -d '${JSON.stringify({ input: listing.sampleInput, demo: true })}'`;
+  const curl = `curl -X POST ${origin}${listing.invokePath} \\
+  -H "Authorization: Bearer $CAIRN_AGENT_KEY" \\
+  -H "Content-Type: application/json" \\
+  -d '${JSON.stringify({ input: listing.sampleInput, paymentMethod: "tokens", tokenAccountId: app.accountId })}'`;
   const sdkSnippet = `const { CairnClient } = require("cairn");
-const cairn = new CairnClient({ baseUrl: "${origin}", accountId: "${app.accountId}" });
+const cairn = new CairnClient({
+  baseUrl: "${origin}",
+  accountId: "${app.accountId}",
+  agentKey: process.env.CAIRN_AGENT_KEY
+});
 
-await cairn.createAccount();
+const account = await cairn.createAccount();
 await cairn.buyTokens("starter");
 const result = await cairn.invoke("${listing.slug}", {
   input: ${JSON.stringify(listing.sampleInput, null, 2).replace(/\n/g, "\n  ")},
@@ -455,8 +521,12 @@ function render() {
 
 function bind() {
   const savedAccountId = localStorage.getItem("cairnAccountId");
+  const savedAgentKey = localStorage.getItem("cairnAgentKey");
   if (savedAccountId) {
     app.accountId = savedAccountId;
+  }
+  if (savedAgentKey) {
+    app.agentKey = savedAgentKey;
   }
   $("integration-guide-url").textContent = `${window.location.origin}/api/integrations`;
   $("search-input").addEventListener("input", (event) => {

@@ -29,6 +29,7 @@ class CairnClient {
   constructor(options = {}) {
     this.baseUrl = trimSlash(options.baseUrl || process.env.CAIRN_BASE_URL || DEFAULT_BASE_URL);
     this.accountId = options.accountId || process.env.CAIRN_ACCOUNT_ID || "demo-user";
+    this.agentKey = options.agentKey || process.env.CAIRN_AGENT_KEY || null;
     this.fetchImpl = options.fetchImpl || globalThis.fetch;
     assertFetch(this.fetchImpl);
   }
@@ -38,6 +39,9 @@ class CairnClient {
       Accept: "application/json",
       ...(options.headers || {})
     };
+    if (this.agentKey && !headers.Authorization) {
+      headers.Authorization = `Bearer ${this.agentKey}`;
+    }
     const init = {
       method: options.method || "GET",
       headers
@@ -73,12 +77,16 @@ class CairnClient {
     return this.request(`/api/integrations${suffix}`);
   }
 
-  createAccount(accountId = this.accountId) {
+  async createAccount(accountId = this.accountId) {
     this.accountId = accountId || this.accountId;
-    return this.request("/api/accounts", {
+    const result = await this.request("/api/accounts", {
       method: "POST",
       body: { accountId: this.accountId }
     });
+    if (result.agentAuth && result.agentAuth.agentKey) {
+      this.agentKey = result.agentAuth.agentKey;
+    }
+    return result;
   }
 
   wallet(accountId = this.accountId) {

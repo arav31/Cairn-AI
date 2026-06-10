@@ -16,6 +16,7 @@ test("sdk invokes tools with token payment by default", async () => {
   const client = new CairnClient({
     baseUrl: "https://cairn.example",
     accountId: "acct_sdk",
+    agentKey: "cairn_agent_sdk",
     fetchImpl: async (url, init) => {
       seen = { url, init };
       return new Response(JSON.stringify({ ok: true }), {
@@ -32,6 +33,7 @@ test("sdk invokes tools with token payment by default", async () => {
 
   assert.equal(result.ok, true);
   assert.equal(seen.url, "https://cairn.example/api/tools/insurance%2Fcompare-insurance-prices/invoke");
+  assert.equal(seen.init.headers.Authorization, "Bearer cairn_agent_sdk");
   assert.equal(body.paymentMethod, "tokens");
   assert.equal(body.tokenAccountId, "acct_sdk");
   assert.deepEqual(body.input, { zipCode: "78701" });
@@ -46,7 +48,9 @@ test("sdk can create accounts and buy token packs", async () => {
       calls.push({ url, init });
       const body = url.endsWith("/api/tokens/quote")
         ? { quote: { id: "quote_1", packId: "starter", tokens: 250, total: 99 } }
-        : { ok: true };
+        : url.endsWith("/api/accounts")
+          ? { ok: true, agentAuth: { agentKey: "cairn_agent_created" } }
+          : { ok: true };
       return new Response(JSON.stringify(body), {
         status: 200,
         headers: { "Content-Type": "application/json" }
@@ -60,5 +64,6 @@ test("sdk can create accounts and buy token packs", async () => {
   assert.equal(calls[0].url, "https://cairn.example/api/accounts");
   assert.equal(calls[1].url, "https://cairn.example/api/tokens/quote");
   assert.equal(calls[2].url, "https://cairn.example/api/tokens/checkout");
+  assert.equal(calls[2].init.headers.Authorization, "Bearer cairn_agent_created");
   assert.equal(JSON.parse(calls[2].init.body).accountId, "acct_sdk");
 });

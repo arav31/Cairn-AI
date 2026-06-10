@@ -14,6 +14,7 @@ function createState() {
     skills: {},
     marketplaceListings: {},
     accounts: {},
+    agentApiKeys: {},
     workflowSubmissions: {},
     verificationRecords: {},
     repairJobs: {},

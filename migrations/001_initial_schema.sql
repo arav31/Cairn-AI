@@ -59,6 +59,20 @@ CREATE TABLE IF NOT EXISTS accounts (
 CREATE INDEX IF NOT EXISTS accounts_status_idx ON accounts(status);
 CREATE INDEX IF NOT EXISTS accounts_last_seen_idx ON accounts(last_seen_at DESC);
 
+CREATE TABLE IF NOT EXISTS agent_api_keys (
+  id text PRIMARY KEY,
+  account_id text NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  key_hash text NOT NULL UNIQUE,
+  prefix text NOT NULL,
+  label text,
+  status text NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'revoked')),
+  created_at timestamptz NOT NULL DEFAULT now(),
+  last_used_at timestamptz
+);
+
+CREATE INDEX IF NOT EXISTS agent_api_keys_account_created_idx ON agent_api_keys(account_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS agent_api_keys_status_idx ON agent_api_keys(status);
+
 CREATE TABLE IF NOT EXISTS verification_records (
   id bigserial PRIMARY KEY,
   operation_id text NOT NULL REFERENCES api_operations(id) ON DELETE CASCADE,
