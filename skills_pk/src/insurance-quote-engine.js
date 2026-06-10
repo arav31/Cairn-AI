@@ -615,6 +615,10 @@ function deterministicRecommendation(quotes, inputs) {
 }
 
 async function llmRecommendation(quotes, inputs, fallback) {
+  if (!/^(1|true|yes)$/i.test(process.env.INSURANCE_USE_LLM || "")) {
+    return null;
+  }
+
   const provider = (process.env.INSURANCE_LLM_PROVIDER || process.env.SKILL_BUILDER_LLM_PROVIDER || "").toLowerCase();
   const openAiKey = process.env.OPENAI_API_KEY;
   const nvidiaKey = process.env.NVIDIA_API_KEY;

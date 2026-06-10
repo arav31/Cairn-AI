@@ -73,7 +73,7 @@ This demo does not ask you to learn a new skill in the terminal. It uses a Codex
 
 The UI shows a mock skill marketplace, lets you "buy" the insurance skill, asks the quote inputs in website-style language, calls the learned endpoints, and displays a compact comparison. Running the same input again is served from the local skill cache, so it demonstrates the speed difference between the first endpoint call and cached replay.
 
-The optional LLM comparison layer uses `OPENAI_API_KEY` or `NVIDIA_API_KEY` when present. Without an API key, the demo still works and uses deterministic comparison logic.
+By default, plan comparison is deterministic so the endpoint/cache speed difference is obvious. To enable the optional LLM-written comparison summary, set `INSURANCE_USE_LLM=1` and provide `OPENAI_API_KEY` or `NVIDIA_API_KEY`.
 
 ## Why This Exists
 
