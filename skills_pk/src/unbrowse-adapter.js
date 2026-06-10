@@ -131,6 +131,10 @@ async function startUnbrowseServe(status) {
       UNBROWSE_BUN_BIN: status.bunPath,
       UNBROWSE_TOS_ACCEPTED: process.env.UNBROWSE_TOS_ACCEPTED || "1",
       UNBROWSE_NON_INTERACTIVE: process.env.UNBROWSE_NON_INTERACTIVE || "1",
+      // Manual route learning needs an actual browser window. Unbrowse/Kuri
+      // defaults to headless unless these flags are explicitly false.
+      HEADLESS: process.env.HEADLESS || "false",
+      KURI_HEADLESS: process.env.KURI_HEADLESS || process.env.HEADLESS || "false",
       HOST: !url.hostname || url.hostname === "localhost" ? "127.0.0.1" : url.hostname,
       PORT: url.port || (url.protocol === "https:" ? "443" : "80"),
     },
