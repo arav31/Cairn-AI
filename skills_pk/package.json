@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "@flue/runtime": "^0.11.0",
-    "playwright-core": "^1.60.0"
+    "playwright-core": "^1.60.0",
+    "unbrowse": "^8.2.0"
   }
 }

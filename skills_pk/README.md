@@ -299,11 +299,32 @@ npm run workflow:learn -- recordings/example-form-2026-06-09T10-00-00-000Z.json 
 
 ## How Recording Works
 
-Recording is implemented in `src/recorder.js`, `src/cdp.js`, and `src/playwright-evidence.js`.
+Recording is implemented in `src/recorder.js`, `src/kuri.js`, `src/cdp.js`, and `src/playwright-evidence.js`.
+
+### Browser Engine Selection
+
+The learner now uses a cache-first, Kuri-first workflow:
+
+1. The CLI checks local saved skills before opening a browser.
+2. If a new skill must be learned, `SKILL_BUILDER_BROWSER_ENGINE=auto` tries Kuri first.
+3. Kuri launches a local Chrome session, captures HAR/network evidence, page text, markdown, a snapshot, and the injected interaction log.
+4. The same endpoint-ranking and Codex/OpenAI/NVIDIA analyzer then reverse-engineer the reusable endpoint or choose browser replay.
+5. If Kuri is unavailable or fails in `auto` mode, the older Chrome CDP recorder is used as a fallback.
+
+Kuri is supplied by the `unbrowse` npm package under `node_modules/unbrowse/vendor/kuri/...`. The app calls the Kuri binary directly, so normal learning does not require the Unbrowse CLI, Bun, marketplace publishing, or payment setup.
+
+Set one of these when you need explicit control:
+
+```env
+SKILL_BUILDER_BROWSER_ENGINE=auto
+# SKILL_BUILDER_BROWSER_ENGINE=kuri
+# SKILL_BUILDER_BROWSER_ENGINE=cdp
+# SKILL_BUILDER_KURI_BIN=C:\path\to\kuri.exe
+```
 
 ### Chrome Launch
 
-`src/cdp.js` launches Chrome with:
+When the legacy CDP backend is used, `src/cdp.js` launches Chrome with:
 
 - A temporary user data directory.
 - `--remote-debugging-port=0`, so Chrome chooses a free debug port.
@@ -312,7 +333,7 @@ Recording is implemented in `src/recorder.js`, `src/cdp.js`, and `src/playwright
 
 The recorder then connects to the active page over Chrome DevTools Protocol.
 
-CDP is the source of truth for endpoint reverse engineering. It captures the actual request URL, method, headers, body, response status, timing, and response preview for the workflow the user completes.
+Kuri HAR or CDP network capture is the source of truth for endpoint reverse engineering. The recording stores the actual request URL, method, headers, body when available, response status, timing, and response preview when the backend exposes it.
 
 ### CDP Domains Used
 

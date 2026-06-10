@@ -4,6 +4,7 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { CdpClient, getPageTarget, launchChrome, sleep } from "./cdp.js";
 import { flattenScalars } from "./json-path.js";
+import { hasKuriExecutable, startKuriBroker } from "./kuri.js";
 import { collectPlaywrightEvidence } from "./playwright-evidence.js";
 import {
   analyzeRecordingWithLlm,
@@ -156,6 +157,19 @@ const REPEATABLE_GROUP_KEYS = [
 ];
 
 export async function recordWorkflow({ url, name, goal, headless = false, waitForDone } = {}) {
+  const engine = String(process.env.SKILL_BUILDER_BROWSER_ENGINE || process.env.SKILL_BUILDER_RECORDER_ENGINE || "auto").toLowerCase();
+  if (engine !== "cdp" && (engine === "kuri" || (engine === "auto" && hasKuriExecutable()))) {
+    try {
+      return await recordWorkflowWithKuri({ url, name, goal, headless, waitForDone });
+    } catch (error) {
+      if (engine === "kuri") throw error;
+      console.warn(`Kuri recorder unavailable; falling back to Chrome CDP recorder: ${error.message}`);
+    }
+  }
+  return recordWorkflowWithCdp({ url, name, goal, headless, waitForDone });
+}
+
+async function recordWorkflowWithCdp({ url, name, goal, headless = false, waitForDone } = {}) {
   const { child, port, profileDir } = launchChrome({ url, headless });
   console.log(`Chrome launched on debug port ${port}.`);
   console.log(`Profile: ${profileDir}`);
@@ -256,6 +270,156 @@ export async function recordWorkflow({ url, name, goal, headless = false, waitFo
   client.close();
   child.kill();
   return { file, recording };
+}
+
+async function recordWorkflowWithKuri({ url, name, goal, headless = false, waitForDone } = {}) {
+  const broker = await startKuriBroker({ headless });
+  console.log(`Kuri launched on broker port ${broker.port}.`);
+  console.log(`Browser engine: Kuri (vendored Zig-native CDP broker).`);
+  console.log(`State: ${broker.stateDir}`);
+
+  let tabId = "";
+  try {
+    tabId = await broker.newTab("about:blank");
+    if (!tabId) throw new Error("Kuri did not return a tab id.");
+    await broker.addInitScript(tabId, INTERACTION_RECORDER_SCRIPT).catch(() => {});
+    await broker.networkEnable(tabId).catch(() => {});
+    await broker.harStart(tabId).catch(() => {});
+    await broker.navigate(tabId, url);
+    await broker.injectScript(tabId, INTERACTION_RECORDER_SCRIPT).catch(() => {});
+
+    console.log("");
+    console.log("Complete the target workflow in the Kuri-controlled Chrome window.");
+    console.log("When the final result/quote is visible, come back here and press Enter.");
+    if (waitForDone) {
+      await waitForDone();
+    } else {
+      const rl = readline.createInterface({ input, output });
+      await rl.question("Press Enter when done...");
+      rl.close();
+    }
+    await sleep(700);
+
+    const pageFields = await collectPageFields(kuriRuntimeClient(broker, tabId)).catch((error) => ({
+      error: error.message,
+      fields: [],
+    }));
+    const [har, text, markdown, snapshot, finalUrl] = await Promise.all([
+      broker.harStop(tabId).catch((error) => ({ entries: [], error: error.message })),
+      broker.text(tabId).catch(() => ""),
+      broker.markdown(tabId).catch(() => ""),
+      broker.snapshot(tabId).catch(() => ""),
+      broker.currentUrl(tabId).catch(() => ""),
+    ]);
+
+    const allRequests = requestsFromKuriHar(har.entries || []);
+    let candidates = rankCandidates(allRequests, goal);
+    const recording = {
+      url,
+      name,
+      goal,
+      recordedAt: new Date().toISOString(),
+      browserEngine: "kuri",
+      pageFields: {
+        ...pageFields,
+        url: pageFields.url || finalUrl || url,
+        text: pageFields.text || String(text || "").slice(0, 5000),
+      },
+      kuri: {
+        brokerPort: broker.port,
+        tabId,
+        textPreview: String(text || "").slice(0, 5000),
+        markdownPreview: String(markdown || "").slice(0, 8000),
+        snapshotPreview: String(snapshot || "").slice(0, 8000),
+        harEntryCount: har.entries?.length || 0,
+        harError: har.error || "",
+      },
+      playwright: {
+        enabled: false,
+        skipped: true,
+        reason: "Kuri is the browser recorder for this run; Playwright evidence is only used by the legacy CDP backend.",
+      },
+      requests: allRequests,
+      candidates,
+    };
+
+    await fs.mkdir("recordings", { recursive: true });
+    const safeName = slugify(name || new URL(url).hostname);
+    const file = path.join("recordings", `${safeName}-${new Date().toISOString().replace(/[:.]/g, "-")}.json`);
+    await fs.writeFile(file, JSON.stringify(recording, null, 2));
+
+    return { file, recording };
+  } finally {
+    if (tabId) await broker.closeTab(tabId).catch(() => {});
+    await broker.stop();
+  }
+}
+
+function kuriRuntimeClient(broker, tabId) {
+  return {
+    async send(method, params = {}) {
+      if (method !== "Runtime.evaluate") {
+        return { result: { result: { value: null } } };
+      }
+      const value = await broker.evaluate(tabId, params.expression || "");
+      return { result: { result: { value } } };
+    },
+  };
+}
+
+function requestsFromKuriHar(entries) {
+  return (entries || []).map((entry, index) => {
+    const requestHeaders = headersArrayToObject(entry.request?.headers || []);
+    const responseHeaders = headersArrayToObject(entry.response?.headers || []);
+    const responseContent = entry.response?.content || {};
+    const startedAt = parseHarStartedAt(entry.startedDateTime);
+    return {
+      id: `kuri.${index + 1}`,
+      method: entry.request?.method || "GET",
+      url: entry.request?.url || "",
+      requestHeaders,
+      postData: entry.request?.postData?.text || "",
+      resourceType: inferHarResourceType(entry),
+      startedAt,
+      status: entry.response?.status,
+      statusText: entry.response?.statusText || "",
+      mimeType: responseContent.mimeType || responseHeaders["content-type"] || "",
+      responseHeaders,
+      durationMs: typeof entry.time === "number" ? Math.max(0, Math.round(entry.time)) : undefined,
+      encodedDataLength: entry.response?.bodySize,
+      responseBodyPreview: typeof responseContent.text === "string" ? responseContent.text.slice(0, 5000) : undefined,
+    };
+  });
+}
+
+function headersArrayToObject(headers) {
+  if (!Array.isArray(headers)) return {};
+  const output = {};
+  for (const header of headers) {
+    if (!header?.name) continue;
+    output[header.name] = header.value ?? "";
+  }
+  return output;
+}
+
+function parseHarStartedAt(value) {
+  if (!value) return undefined;
+  const numeric = Number(value);
+  if (Number.isFinite(numeric)) return numeric;
+  const ms = Date.parse(value);
+  return Number.isFinite(ms) ? ms / 1000 : undefined;
+}
+
+function inferHarResourceType(entry) {
+  const mime = String(entry.response?.content?.mimeType || "").toLowerCase();
+  const url = safeUrl(entry.request?.url || "");
+  if (mime.includes("json") || /\/api\/|graphql|quote|price|search|calculate/i.test(url.pathname)) return "Fetch";
+  if (mime.includes("html")) return "Document";
+  if (mime.includes("javascript")) return "Script";
+  if (mime.includes("css")) return "Stylesheet";
+  if (mime.startsWith("image/")) return "Image";
+  if (mime.includes("font")) return "Font";
+  return "Fetch";
 }
 
 export function rankCandidates(requests, goal = "") {

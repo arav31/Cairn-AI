@@ -347,9 +347,27 @@ export function buildRecordingEvidence(recording, candidates = [], options = {})
     pageText: redactSensitiveText(cleanText(page.text || "").slice(0, compact ? 800 : 4000)),
     fields: summarizeFields(page.fields || [], { compact }),
     events: summarizeEvents(page.events || [], { compact }),
+    kuri: summarizeKuriEvidence(recording.kuri || {}, { compact }),
     playwright: summarizePlaywrightEvidence(recording.playwright || {}, { compact }),
     candidateRequests: summarizeCandidates(candidates, { compact }),
     requestShapes: summarizeRequestShapes(recording.requests || [], candidates, { compact }),
+  };
+}
+
+function summarizeKuriEvidence(kuri, options = {}) {
+  const compact = Boolean(options.compact);
+  if (!kuri || (!kuri.textPreview && !kuri.markdownPreview && !kuri.snapshotPreview)) {
+    return {
+      enabled: false,
+    };
+  }
+  return {
+    enabled: true,
+    harEntryCount: kuri.harEntryCount || 0,
+    textPreview: redactSensitiveText(cleanText(kuri.textPreview || "").slice(0, compact ? 900 : 3500)),
+    markdownPreview: redactSensitiveText(cleanText(kuri.markdownPreview || "").slice(0, compact ? 1200 : 5000)),
+    snapshotPreview: redactSensitiveText(cleanText(kuri.snapshotPreview || "").slice(0, compact ? 1200 : 5000)),
+    harError: cleanText(kuri.harError || ""),
   };
 }
 
