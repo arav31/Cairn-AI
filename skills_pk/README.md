@@ -11,7 +11,7 @@ Given a website link, the CLI can:
 1. Check if a skill already exists for that site.
 2. Run the saved skill in a chatbot-style prompt.
 3. If no skill exists, open Chrome and record the user completing the workflow.
-4. Capture network requests, page fields, selected options, typed values, clicks, and final URL state.
+4. Capture network requests, page fields, selected options, typed values, clicks, Playwright DOM/accessibility evidence, and final URL state.
 5. Rank useful endpoint candidates while ignoring static files, analytics, telemetry, fonts, CSS, images, and Cloudflare RUM noise.
 6. Optionally run a GPT endpoint-engineering pass over the recording evidence.
 7. Generate a draft skill from the best available strategy.
@@ -43,7 +43,10 @@ This project bridges the two:
 - Network access to the target websites.
 - Optional: `OPENAI_API_KEY` or `NVIDIA_API_KEY` for contextual LLM analysis during learning.
 
-No npm dependencies are currently required beyond Node built-ins.
+Run `npm install` before using the recorder. The package uses:
+
+- `playwright-core` to attach to the same Chrome session and capture richer UI/accessibility evidence.
+- `@flue/runtime` for the staged learning workflow entrypoint.
 
 ## Optional GPT Endpoint Engineering
 
@@ -59,6 +62,7 @@ For better skill learning, configure an LLM provider. The learner uses OpenAI Ch
 The GPT pass receives a compact, redacted evidence packet from the recording:
 
 - visible website text, labels, fields, options, typed interactions, and clicked buttons
+- Playwright DOM controls, forms, role counts, and accessibility names
 - ranked candidate requests from Chrome DevTools Protocol traffic
 - request methods, URLs, query parameters, request body shapes, and safe header names
 - short response body previews for top candidate requests when Chrome exposes them
@@ -146,7 +150,7 @@ From this folder:
 npm install
 ```
 
-There are no third-party packages right now, but running install is harmless and keeps the workflow familiar.
+This installs the Playwright and Flue runtime packages used by the learner.
 
 ## Run The Chat Menu
 
@@ -266,9 +270,15 @@ Create a draft from a recording:
 node src/cli.js draft recordings/example-form-2026-06-09T10-00-00-000Z.json --name example-form
 ```
 
+Create a draft through the Flue-compatible workflow entrypoint:
+
+```powershell
+npm run workflow:learn -- recordings/example-form-2026-06-09T10-00-00-000Z.json --name example-form
+```
+
 ## How Recording Works
 
-Recording is implemented in `src/recorder.js` and `src/cdp.js`.
+Recording is implemented in `src/recorder.js`, `src/cdp.js`, and `src/playwright-evidence.js`.
 
 ### Chrome Launch
 
@@ -280,6 +290,8 @@ Recording is implemented in `src/recorder.js` and `src/cdp.js`.
 - A normal visible browser by default, because the user needs to complete the workflow manually.
 
 The recorder then connects to the active page over Chrome DevTools Protocol.
+
+CDP is the source of truth for endpoint reverse engineering. It captures the actual request URL, method, headers, body, response status, timing, and response preview for the workflow the user completes.
 
 ### CDP Domains Used
 
@@ -336,6 +348,31 @@ This gives the learner a fallback when there is no useful API endpoint. For exam
 
 For single-page apps, the final result screen may no longer contain the original form controls. The recorder therefore also turns recorded `input`, `change`, and well-labelled button-group `click` events into synthetic visible fields. Draft generation uses these recorded interactions as the source of prompts.
 
+### Playwright Evidence Capture
+
+After the user presses Enter, `src/playwright-evidence.js` attaches Playwright to the same Chrome debug port. It does not replay clicks and does not drive a second browser. It reads the page that CDP just recorded and captures:
+
+- visible controls, including ARIA role controls that ordinary `input/select/textarea` scans can miss
+- labels, prompt text, placeholders, current values, checked state, and option groups
+- form/radiogroup/group containers
+- role counts for buttons, radios, checkboxes, comboboxes, textboxes, spinbuttons, listboxes, options, tabs, and links
+- an accessibility snapshot when Chromium exposes it
+
+This fixes the common failure mode where a modern SPA renders custom button/radio controls that are not normal HTML form fields. Draft generation merges CDP page fields, recorded interaction events, and Playwright evidence into one field catalog before mapping API payloads to chatbot questions.
+
+### Flue Workflow Layer
+
+The staged learning wrapper lives in `src/learning-workflow.js`. The Flue-compatible entrypoint lives in `src/workflows/learn-skill.js`.
+
+Flue is used for workflow structure, not as the browser recorder. The stack is:
+
+1. CDP records network traffic and page/runtime events.
+2. Playwright attaches to the same Chrome session and records richer UI/accessibility evidence.
+3. The optional OpenAI or NVIDIA provider interprets the evidence as an endpoint engineer.
+4. The Flue-compatible workflow wraps candidate ranking, strategy selection, and draft writing as observable stages.
+
+That split avoids two automation systems fighting over the page while still giving the learner a stronger view of the website.
+
 ## How Endpoint Ranking Works
 
 The ranking logic lives in `rankCandidates()` inside `src/recorder.js`.
@@ -370,6 +407,7 @@ The evidence packet includes:
 - source URL and final URL
 - page title and redacted page text
 - visible input/select/textarea fields
+- Playwright-visible controls, forms, role counts, and accessibility names
 - selected options and field values after redaction
 - recent input/change/click events
 - ranked endpoint candidates
@@ -682,7 +720,10 @@ For replay skills, the runner:
 | File | Purpose |
 | --- | --- |
 | `src/cli.js` | Terminal menu, chat prompts, recording commands, draft promotion |
+| `src/learning-workflow.js` | Staged learning wrapper used by the CLI and workflow entrypoint |
+| `src/workflows/learn-skill.js` | Flue-compatible workflow entrypoint for drafting from a recording |
 | `src/recorder.js` | CDP network capture, field extraction, interaction recording, candidate ranking, draft generation |
+| `src/playwright-evidence.js` | Playwright DOM/accessibility evidence collection from the active Chrome session |
 | `src/llm-analyzer.js` | Optional OpenAI Structured Outputs analysis over compact recording evidence |
 | `src/skill-runner.js` | Executes direct HTTP, browser fallback, browser navigation, browser replay, file uploads |
 | `src/cdp.js` | Launches Chrome and provides a small CDP WebSocket client |

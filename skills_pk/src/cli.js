@@ -5,12 +5,12 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import {
   analyzeRecordingFile,
-  createDraftSkillFromRecording,
   inspectRecording,
   llmAnalysisStatus,
   recordWorkflow,
 } from "./recorder.js";
 import { loadEnvFile } from "./env.js";
+import { createDraftSkillWithLearningWorkflow } from "./learning-workflow.js";
 import { loadSkill, loadSkills, runSkill } from "./skill-runner.js";
 
 const envFile = loadEnvFile();
@@ -149,11 +149,12 @@ async function handleUrlFlow(rl) {
   progress(2, "No registered skill found");
   console.log("");
   console.log("Learning flow:");
-  console.log("1. Browser automation opens the link and captures network traffic.");
+  console.log("1. Browser automation opens the link and captures network traffic with Chrome DevTools Protocol.");
   console.log("2. Complete the obvious workflow until the final result appears.");
-  console.log("3. The recorder ranks endpoint candidates and captures visible fields/clicks.");
-  console.log("4. If OPENAI_API_KEY is set, an LLM reads the page/network evidence to infer intent, inputs, buttons, outputs, and best strategy.");
-  console.log("5. Future runs ask the website-like questions and use the fastest saved strategy available.");
+  console.log("3. Playwright attaches to the same Chrome session to capture visible controls/accessibility evidence.");
+  console.log("4. The recorder ranks endpoint candidates and captures visible fields/clicks.");
+  console.log("5. If OPENAI_API_KEY is set, an LLM reads the page/network evidence to infer intent, inputs, buttons, outputs, and best strategy.");
+  console.log("6. Future runs ask website-like questions and use the fastest saved strategy available.");
   console.log("");
   console.log("For arbitrary sites, the first learning pass may need manual review because some forms use encrypted payloads, captchas, auth, or anti-bot checks.");
   printLlmStatus();
@@ -179,7 +180,8 @@ async function handleUrlFlow(rl) {
   console.log("");
   console.log("Auto-drafting the best usable strategy. Static assets and analytics requests are ignored.");
   progress(5, "Creating draft skill");
-  const draftFile = await createDraftSkillFromRecording({ recordingFile: file, candidateIndex: undefined, name });
+  const draftRun = await createDraftSkillWithLearningWorkflow({ recordingFile: file, candidateIndex: undefined, name });
+  const draftFile = draftRun.draftFile;
   console.log(`Draft skill created: ${draftFile}`);
   await printDraftLearningSummary(draftFile);
   const promote = await rl.question("Register this draft now? [y/N]: ");
@@ -366,7 +368,7 @@ async function draft(args) {
   const candidateIndex = Number(args[1] || 0);
   const name = option(args, "--name");
   if (!recordingFile) throw new Error("Usage: node src/cli.js draft <recording-file> [candidate-index] --name <name>");
-  const file = await createDraftSkillFromRecording({ recordingFile, candidateIndex, name });
+  const { draftFile: file } = await createDraftSkillWithLearningWorkflow({ recordingFile, candidateIndex, name });
   console.log(`Created draft skill: ${file}`);
   await printDraftLearningSummary(file);
 }

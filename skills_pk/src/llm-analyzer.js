@@ -315,9 +315,66 @@ export function buildRecordingEvidence(recording, candidates = [], options = {})
     pageText: redactSensitiveText(cleanText(page.text || "").slice(0, compact ? 800 : 4000)),
     fields: summarizeFields(page.fields || [], { compact }),
     events: summarizeEvents(page.events || [], { compact }),
+    playwright: summarizePlaywrightEvidence(recording.playwright || {}, { compact }),
     candidateRequests: summarizeCandidates(candidates, { compact }),
     requestShapes: summarizeRequestShapes(recording.requests || [], candidates, { compact }),
   };
+}
+
+function summarizePlaywrightEvidence(playwright, options = {}) {
+  if (!playwright?.enabled) {
+    return {
+      enabled: false,
+      error: cleanText(playwright?.error || ""),
+    };
+  }
+  const compact = Boolean(options.compact);
+  return {
+    enabled: true,
+    url: playwright.url || "",
+    title: cleanText(playwright.title || ""),
+    roleCounts: playwright.roleCounts || {},
+    forms: (playwright.forms || []).slice(0, compact ? 10 : 30).map((form) => ({
+      tag: form.tag || "",
+      role: form.role || "",
+      promptText: cleanText(form.promptText || ""),
+      text: cleanText(form.text || "").slice(0, compact ? 140 : 400),
+      controlCount: form.controlCount || 0,
+    })),
+    controls: (playwright.controls || []).slice(0, compact ? 40 : 120).map((control) => ({
+      tag: control.tag || "",
+      role: control.role || "",
+      type: control.type || "",
+      name: control.name || "",
+      id: control.id || "",
+      promptText: cleanText(control.promptText || ""),
+      label: cleanText(control.label || ""),
+      placeholder: cleanText(control.placeholder || ""),
+      text: cleanText(control.text || ""),
+      value: valuePreview(control.value),
+      checked: Boolean(control.checked),
+      options: (control.options || []).slice(0, compact ? 8 : 20).map((option) => ({
+        label: cleanText(option.label || option.text || ""),
+        value: valuePreview(option.value),
+        selected: Boolean(option.selected),
+      })),
+    })),
+    accessibility: playwright.accessibility ? trimAccessibility(playwright.accessibility, compact ? 3 : 4) : null,
+  };
+}
+
+function trimAccessibility(node, maxDepth, depth = 0) {
+  if (!node || depth > maxDepth) return null;
+  const output = {
+    role: node.role || "",
+    name: cleanText(node.name || ""),
+  };
+  if (node.value !== undefined) output.value = valuePreview(node.value);
+  if (node.checked !== undefined) output.checked = node.checked;
+  if (node.selected !== undefined) output.selected = node.selected;
+  const children = (node.children || []).map((child) => trimAccessibility(child, maxDepth, depth + 1)).filter(Boolean);
+  if (children.length) output.children = children.slice(0, 20);
+  return output;
 }
 
 export function applyLlmAnalysisToSkill(skill, analysis) {

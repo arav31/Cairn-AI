@@ -4,6 +4,7 @@ import readline from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { CdpClient, getPageTarget, launchChrome, sleep } from "./cdp.js";
 import { flattenScalars } from "./json-path.js";
+import { collectPlaywrightEvidence } from "./playwright-evidence.js";
 import {
   analyzeRecordingWithLlm,
   applyLlmAnalysisToSkill,
@@ -216,10 +217,16 @@ export async function recordWorkflow({ url, name, goal, headless = false, waitFo
     rl.close();
   }
   await sleep(500);
-  const pageFields = await collectPageFields(client).catch((error) => ({
-    error: error.message,
-    fields: [],
-  }));
+  const [pageFields, playwrightEvidence] = await Promise.all([
+    collectPageFields(client).catch((error) => ({
+      error: error.message,
+      fields: [],
+    })),
+    collectPlaywrightEvidence({ port }).catch((error) => ({
+      enabled: false,
+      error: error.message,
+    })),
+  ]);
 
   const allRequests = [...requests.values()].map((request) => ({
     ...request,
@@ -236,6 +243,7 @@ export async function recordWorkflow({ url, name, goal, headless = false, waitFo
     goal,
     recordedAt: new Date().toISOString(),
     pageFields,
+    playwright: playwrightEvidence,
     requests: allRequests,
     candidates,
   };
@@ -659,9 +667,7 @@ async function createGenericRequestSkill({ recording, request, recordingFile, na
         computed = engineered.computed;
       } else {
         const conservative = buildConservativeBodyTemplate(body, fields);
-        const visibleChoices = conservative.inputs.length
-          ? conservative
-          : buildVisibleChoiceBodyTemplate(body, fields);
+        const visibleChoices = buildVisibleChoiceBodyTemplate(body, fields, conservative);
         body = visibleChoices.body;
         inputs = visibleChoices.inputs;
       }
@@ -859,10 +865,19 @@ function recordedPayloadSpec(request) {
 }
 
 function hasRecordedPromptableInteractions(recording) {
-  return (recording.pageFields?.events || []).some((event) => {
+  const hasEvents = (recording.pageFields?.events || []).some((event) => {
     if (["input", "change"].includes(event.type) && event.value !== undefined && event.value !== "") return true;
     if (isChoiceClickEvent(event) && cleanChoices(event.options || []).length > 1) return true;
     return false;
+  });
+  if (hasEvents) return true;
+
+  return fieldsFromPlaywrightEvidence(recording.playwright).some((field) => {
+    if (!isUserFacingField(field)) return false;
+    const type = String(field.type || "").toLowerCase();
+    const role = String(field.role || "").toLowerCase();
+    if (["button", "submit", "reset", "image"].includes(type) || role === "button") return false;
+    return Boolean(field.promptText || field.label || field.placeholder || field.options?.length);
   });
 }
 
@@ -1090,8 +1105,10 @@ function latestChoiceClickEvents(clickEvents) {
 
 function questionForChoiceClickEvent(event, allEvents = []) {
   const choices = cleanChoices(event.options || []);
+  const direct = directChoicePrompt(event, choices);
+  if (direct) return direct;
+
   const contexts = [
-    event.promptText || "",
     `${event.label || ""} ${event.groupLabel || ""} ${event.nearbyText || ""} ${event.sectionText || ""}`,
     ...choiceContextFromOtherEvents(allEvents, choices),
   ];
@@ -1100,6 +1117,23 @@ function questionForChoiceClickEvent(event, allEvents = []) {
     .filter(Boolean)
     .sort((a, b) => choiceQuestionScore(b) - choiceQuestionScore(a) || a.length - b.length)[0];
   return inferred || questionForRecordedEvent(event);
+}
+
+function directChoicePrompt(event, choices) {
+  const optionLabels = choices.map((choice) => cleanText(choice.label || choice.value)).filter(Boolean);
+  for (const candidate of [event.promptText, event.groupLabel]) {
+    const prompt = cleanText(candidate);
+    if (!prompt || prompt.length > 120) continue;
+    const normalized = normalizeComparableText(prompt);
+    if (!normalized) continue;
+    if (optionLabels.some((label) => normalizeComparableText(label) === normalized)) continue;
+    const embeddedOptionCount = optionLabels
+      .filter((label) => prompt.toLowerCase().includes(label.toLowerCase()))
+      .length;
+    if (embeddedOptionCount >= Math.min(2, optionLabels.length)) continue;
+    return prompt;
+  }
+  return "";
 }
 
 function choiceContextFromOtherEvents(events, choices) {
@@ -1241,27 +1275,29 @@ function buildConservativeBodyTemplate(body, fields) {
   const template = structuredClone(body);
   const inputs = [];
   const usedInputIds = new Set();
+  const usedPaths = new Set();
   for (const row of flattenScalars(body)) {
     if (row.value === "" || row.value === null || row.value === undefined) continue;
     const field = findFieldForParam(fields, inputIdFromPath(row.path));
     if (!shouldAskPayloadPath(row.path, [row.value], field)) continue;
     const input = toBodyInputSpec(row, fields, usedInputIds);
     inputs.push(input);
+    usedPaths.add(row.path);
     setPathValue(template, row.path, `{{${input.id}}}`);
   }
-  return { body: template, inputs };
+  return { body: template, inputs, usedPaths };
 }
 
-function buildVisibleChoiceBodyTemplate(body, fields) {
-  const template = structuredClone(body);
+function buildVisibleChoiceBodyTemplate(body, fields, base = {}) {
+  const template = structuredClone(base.body || body);
   const rows = flattenScalars(body).filter((row) => row.value !== "" && row.value !== null && row.value !== undefined);
   const choiceFields = fields.filter((field) => {
     const choices = cleanChoices(field.options || []);
     return field.visible !== false && choices.length > 1 && isUserFacingField(field);
   });
-  const inputs = [];
-  const usedInputIds = new Set();
-  const usedPaths = new Set();
+  const inputs = [...(base.inputs || [])];
+  const usedInputIds = new Set(inputs.map((input) => input.id));
+  const usedPaths = new Set(base.usedPaths || []);
 
   for (const field of choiceFields) {
     const match = findPayloadRowForVisibleChoice(rows, field, usedPaths);
@@ -1279,7 +1315,7 @@ function buildVisibleChoiceBodyTemplate(body, fields) {
     setPathValue(template, match.row.path, `{{${inputId}}}`);
   }
 
-  return { body: template, inputs };
+  return { body: template, inputs, usedPaths };
 }
 
 function findPayloadRowForVisibleChoice(rows, field, usedPaths) {
@@ -1838,10 +1874,26 @@ function findFieldForParam(fields, paramName) {
 async function getPageFieldCatalog(recording) {
   const recordedFields = recording.pageFields?.fields || [];
   const eventFields = fieldsFromRecordedEvents(recording.pageFields?.events || []);
-  if (recordedFields.length) return mergeFieldCatalogs(recordedFields.map(normalizeFieldRecord), eventFields);
+  const playwrightFields = fieldsFromPlaywrightEvidence(recording.playwright);
+  if (recordedFields.length) return mergeFieldCatalogs(recordedFields.map(normalizeFieldRecord), eventFields, playwrightFields);
 
   const htmlFields = await fetchPageFieldCatalog(recording.url).catch(() => []);
-  return mergeFieldCatalogs(htmlFields.map(normalizeFieldRecord), eventFields);
+  return mergeFieldCatalogs(htmlFields.map(normalizeFieldRecord), eventFields, playwrightFields);
+}
+
+function fieldsFromPlaywrightEvidence(playwright) {
+  return (playwright?.controls || [])
+    .filter((control) => control && control.visible !== false)
+    .map((control) => normalizeFieldRecord({
+      ...control,
+      source: "playwright",
+      tag: control.tag || "control",
+      type: control.type || control.role || control.tag || "control",
+      label: control.label || control.promptText || control.text || "",
+      promptText: control.promptText || control.label || "",
+      value: control.value || control.text || "",
+      options: cleanChoices(control.options || []),
+    }));
 }
 
 function mergeFieldCatalogs(...catalogs) {
@@ -2494,7 +2546,26 @@ function isUserFacingField(field) {
   if (!field || isTechnicalField(field) || isLikelyHiddenField(field)) return false;
   const type = String(field.type || "").toLowerCase();
   if (["submit", "button", "image", "reset", "file"].includes(type)) return type === "file";
-  return field.visible === true || Boolean(field.promptText || field.label || field.placeholder || field.options?.length || field.name || field.id);
+  const role = String(field.role || "").toLowerCase();
+  if (["button", "link", "tab"].includes(role)) return false;
+
+  const readableEvidence = [
+    field.promptText,
+    field.label,
+    field.placeholder,
+    field.groupLabel,
+    field.nearbyText,
+  ].some((value) => cleanText(value).length > 0);
+  if (readableEvidence) return true;
+  if (cleanChoices(field.options || []).length > 1) return true;
+
+  const evidenceSource = String(field.source || "");
+  const capturedFromVisibleBrowser = ["recorded-event", "recorded-click-group", "playwright"].includes(evidenceSource);
+  if (capturedFromVisibleBrowser && field.visible === true) {
+    return Boolean(field.selector || field.value || field.text);
+  }
+
+  return false;
 }
 
 function isLikelyHiddenField(field) {
