@@ -1035,7 +1035,7 @@ async function maybeCreateBrowserReplaySkill({ recording, recordingFile, name })
 }
 
 function questionForRecordedEvent(event) {
-  const candidate = cleanText(event.label || event.placeholder || event.groupLabel || event.nearbyText || event.name || event.id || "Input");
+  const candidate = cleanText(event.promptText || event.label || event.placeholder || event.groupLabel || event.nearbyText || event.name || event.id || "Input");
   return readableQuestionLabel(candidate, { name: event.name, id: event.id }, event.name || event.id || candidate);
 }
 
@@ -1054,6 +1054,7 @@ function latestChoiceClickEvents(clickEvents) {
 function questionForChoiceClickEvent(event, allEvents = []) {
   const choices = cleanChoices(event.options || []);
   const contexts = [
+    event.promptText || "",
     `${event.label || ""} ${event.groupLabel || ""} ${event.nearbyText || ""} ${event.sectionText || ""}`,
     ...choiceContextFromOtherEvents(allEvents, choices),
   ];
@@ -1749,7 +1750,7 @@ function toQueryInputSpec(inputId, paramName, values, field) {
 }
 
 function questionForField(paramName, field) {
-  const candidate = cleanText(field?.label || field?.placeholder || field?.groupLabel || field?.nearbyText || "");
+  const candidate = cleanText(field?.promptText || field?.label || field?.placeholder || field?.groupLabel || field?.nearbyText || "");
   if (candidate) return readableQuestionLabel(candidate, field, paramName);
   return humanizeName(baseParamName(paramName));
 }
@@ -1786,6 +1787,7 @@ function findFieldForParam(fields, paramName) {
       field.id,
       field.dataInput,
       field.dataSelect,
+      field.promptText,
       field.label,
       field.groupLabel,
     ].filter(Boolean).map(normalizeFieldName);
@@ -1828,7 +1830,7 @@ function fieldsFromRecordedEvents(events) {
     if (!event || !["input", "change", "click"].includes(event.type)) continue;
     const tag = event.tag || "";
     const inputType = event.inputType || tag;
-    const label = cleanText(event.label || event.groupLabel || event.nearbyText || event.name || event.id || "");
+    const label = cleanText(event.promptText || event.label || event.groupLabel || event.nearbyText || event.name || event.id || "");
 
     if (["input", "change"].includes(event.type) && ["input", "select", "textarea"].includes(tag)) {
       const key = event.selector || event.name || event.id || label;
@@ -1840,6 +1842,7 @@ function fieldsFromRecordedEvents(events) {
         id: event.id || "",
         selector: event.selector || "",
         label,
+        promptText: event.promptText || "",
         placeholder: event.placeholder || "",
         value: event.value || "",
         checked: Boolean(event.checked),
@@ -1865,6 +1868,7 @@ function fieldsFromRecordedEvents(events) {
         id: "",
         selector: event.selector || "",
         label: groupLabel,
+        promptText: groupLabel,
         placeholder: "",
         value: cleanText(event.value || event.text || ""),
         checked: false,
@@ -1988,6 +1992,7 @@ async function installInteractionRecorder(client) {
 async function collectPageFields(client) {
   const expression = String.raw`(() => {
     const compact = (value, limit = 300) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+    const CONTROL_SELECTOR = "input, select, textarea, button, a, [role='button'], [role='radio'], [role='checkbox'], [role='combobox'], [role='option']";
     const cssEscape = (value) => {
       if (window.CSS && CSS.escape) return CSS.escape(value);
       return String(value).replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
@@ -2022,6 +2027,76 @@ async function collectPageFields(client) {
       if (wrapping) return compact(wrapping.innerText || wrapping.textContent || "");
       return compact(element.getAttribute("aria-label") || element.getAttribute("placeholder") || "");
     };
+    const resolvedLabelledByText = (element) => {
+      const ids = compact(element.getAttribute?.("aria-labelledby") || "", 500).split(/\s+/).filter(Boolean);
+      return compact(ids.map((id) => document.getElementById(id)?.innerText || document.getElementById(id)?.textContent || "").filter(Boolean).join(" "), 160);
+    };
+    const nonControlText = (element, currentElement) => {
+      if (!element) return "";
+      const clone = element.cloneNode(true);
+      clone.querySelectorAll(CONTROL_SELECTOR).forEach((control) => control.remove());
+      if (currentElement?.id) clone.querySelector("#" + cssEscape(currentElement.id))?.remove();
+      return compact(clone.innerText || clone.textContent || "", 180);
+    };
+    const precedingTextFor = (element) => {
+      const candidates = [];
+      let current = element;
+      for (let depth = 0; current && current.parentElement && depth < 4; depth += 1) {
+        const siblings = Array.from(current.parentElement.children);
+        const index = siblings.indexOf(current);
+        for (let i = index - 1; i >= 0 && i >= index - 4; i -= 1) {
+          const text = nonControlText(siblings[i], element);
+          if (text) candidates.push(text);
+        }
+        current = current.parentElement;
+      }
+      return bestQuestionCandidate(candidates);
+    };
+    const groupContainerFor = (element) => element.closest?.("fieldset, [role='radiogroup'], [role='group'], .form-group, .field, .question, .control-group, form, section") || element.parentElement;
+    const groupQuestionFor = (element) => {
+      const fieldset = element.closest?.("fieldset");
+      const legend = fieldset?.querySelector("legend");
+      if (legend) return compact(legend.innerText || legend.textContent || "", 160);
+      const group = groupContainerFor(element);
+      const ariaLabel = compact(group?.getAttribute?.("aria-label") || "", 160);
+      if (ariaLabel) return ariaLabel;
+      const labelled = group ? resolvedLabelledByText(group) : "";
+      if (labelled) return labelled;
+      const ownLabelled = resolvedLabelledByText(element);
+      if (ownLabelled) return ownLabelled;
+      const heading = group ? Array.from(group.querySelectorAll("h1,h2,h3,h4,h5,h6,legend,label,[aria-label]"))
+        .map((item) => compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 160))
+        .filter(Boolean)[0] : "";
+      if (heading) return heading;
+      const withoutControls = nonControlText(group, element);
+      const bestFromGroup = bestQuestionCandidate(withoutControls.split(/(?<=[?:])\s+|[|]/).map((text) => compact(text, 160)).filter(Boolean));
+      return bestFromGroup || precedingTextFor(element);
+    };
+    const questionScore = (text) => {
+      const value = compact(text, 160);
+      if (!value || value.length < 2 || value.length > 140) return -100;
+      let score = 0;
+      if (/[?:]$/.test(value)) score += 25;
+      if (/^(what|which|who|where|when|how|do you|are you|is this|i am a(?:n)?|i need|looking to|select|choose)\b/i.test(value)) score += 50;
+      if (/\b(name|email|phone|postal|postcode|destination|date|height|weight|salary|country|category|plan|coverage|property|travelling|leaving|arriving)\b/i.test(value)) score += 15;
+      if (/\b(insurance|discount|promo|notice|terms|privacy|help|login|copyright|enable javascript)\b/i.test(value)) score -= 25;
+      if (/%|\$\d|within minutes|instant savings/i.test(value)) score -= 20;
+      score -= Math.max(0, value.split(/\s+/).length - 12);
+      return score;
+    };
+    const bestQuestionCandidate = (items) => items
+      .map((text) => compact(text, 160))
+      .filter(Boolean)
+      .sort((a, b) => questionScore(b) - questionScore(a) || a.length - b.length)[0] || "";
+    const promptTextFor = (element) => {
+      const direct = bestQuestionCandidate([labelTextFor(element), resolvedLabelledByText(element)]);
+      if (direct) return direct;
+      const candidates = [
+        groupQuestionFor(element),
+        precedingTextFor(element),
+      ].filter(Boolean);
+      return bestQuestionCandidate(candidates);
+    };
     const nearbyTextFor = (element) => {
       const pieces = [];
       let current = element;
@@ -2037,6 +2112,8 @@ async function collectPageFields(client) {
       return compact(pieces.join(" "), 400);
     };
     const groupLabelFor = (element) => {
+      const prompt = promptTextFor(element);
+      if (prompt) return prompt;
       const legend = element.closest("fieldset")?.querySelector("legend");
       if (legend) return compact(legend.innerText || legend.textContent || "");
       const group = element.closest("[role='radiogroup'], [role='group'], .form-group, .field, .question, .control-group");
@@ -2054,9 +2131,19 @@ async function collectPageFields(client) {
       return compact(section?.innerText || section?.textContent || "", 600);
     };
     const optionGroupFor = (element) => {
+      const tag = element.tagName.toLowerCase();
+      const type = (element.getAttribute("type") || "").toLowerCase();
+      if (tag === "select") {
+        return Array.from(element.options).map((option) => ({
+          label: option.textContent || "",
+          value: option.value || "",
+          selected: option.selected,
+        })).filter((option) => option.label || option.value);
+      }
+      if (tag === "textarea" || (tag === "input" && !["radio", "checkbox", "button"].includes(type))) return [];
       const parent = element.closest("[role='radiogroup'], [role='group']") || element.parentElement;
       if (!parent) return [];
-      const controls = Array.from(parent.querySelectorAll("button, [role='button'], input[type='button'], input[type='radio'], input[type='checkbox'], option"));
+      const controls = Array.from(parent.querySelectorAll(CONTROL_SELECTOR));
       return controls.slice(0, 40).map((item) => ({
         label: compact(item.innerText || item.textContent || item.getAttribute("aria-label") || item.value || "", 120),
         value: item.value || compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 120),
@@ -2076,6 +2163,7 @@ async function collectPageFields(client) {
       id: element.id || "",
       selector: selectorFor(element),
       label: labelTextFor(element),
+      promptText: promptTextFor(element),
       placeholder: element.getAttribute("placeholder") || "",
       value: element.value || "",
       checked: Boolean(element.checked),
@@ -2086,13 +2174,7 @@ async function collectPageFields(client) {
       nearbyText: nearbyTextFor(element),
       groupLabel: groupLabelFor(element),
       sectionText: sectionTextFor(element),
-      options: element.tagName.toLowerCase() === "select"
-        ? Array.from(element.options).map((option) => ({
-            label: option.textContent || "",
-            value: option.value || "",
-            selected: option.selected,
-          }))
-        : optionGroupFor(element),
+      options: optionGroupFor(element),
     }));
     return {
       url: location.href,
@@ -2115,6 +2197,7 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
   window.__apiSkillBuilderEvents = window.__apiSkillBuilderEvents || [];
 
   const compact = (value, limit = 300) => String(value || "").replace(/\s+/g, " ").trim().slice(0, limit);
+  const CONTROL_SELECTOR = "input, select, textarea, button, a, [role='button'], [role='radio'], [role='checkbox'], [role='combobox'], [role='option']";
   const cssEscape = (value) => {
     if (window.CSS && CSS.escape) return CSS.escape(value);
     return String(value).replace(/["\\#.;?+*~':!^$[\]()=>|/@]/g, "\\$&");
@@ -2152,6 +2235,8 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
     return compact(pieces.join(" "), 400);
   };
   const groupLabelFor = (element) => {
+    const prompt = promptTextFor(element);
+    if (prompt) return prompt;
     const legend = element.closest && element.closest("fieldset")?.querySelector("legend");
     if (legend) return compact(legend.innerText || legend.textContent || "");
     const group = element.closest && element.closest("[role='radiogroup'], [role='group'], .form-group, .field, .question, .control-group");
@@ -2169,9 +2254,19 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
     return compact(section?.innerText || section?.textContent || "", 600);
   };
   const optionGroupFor = (element) => {
+    const tag = element.tagName.toLowerCase();
+    const type = (element.getAttribute("type") || "").toLowerCase();
+    if (tag === "select") {
+      return Array.from(element.options).map((option) => ({
+        label: option.textContent || "",
+        value: option.value || "",
+        selected: option.selected,
+      })).filter((option) => option.label || option.value);
+    }
+    if (tag === "textarea" || (tag === "input" && !["radio", "checkbox", "button"].includes(type))) return [];
     const parent = element.closest && (element.closest("[role='radiogroup'], [role='group']") || element.parentElement);
     if (!parent) return [];
-    const controls = Array.from(parent.querySelectorAll("button, [role='button'], input[type='button'], input[type='radio'], input[type='checkbox'], option"));
+    const controls = Array.from(parent.querySelectorAll(CONTROL_SELECTOR));
     return controls.slice(0, 40).map((item) => ({
       label: compact(item.innerText || item.textContent || item.getAttribute("aria-label") || item.value || "", 120),
       value: item.value || compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 120),
@@ -2191,6 +2286,76 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
     if (label) return compact(label.innerText || label.textContent || "");
     return element.getAttribute && compact(element.getAttribute("aria-label") || element.getAttribute("placeholder") || "");
   };
+  const resolvedLabelledByText = (element) => {
+    const ids = compact(element.getAttribute?.("aria-labelledby") || "", 500).split(/\s+/).filter(Boolean);
+    return compact(ids.map((id) => document.getElementById(id)?.innerText || document.getElementById(id)?.textContent || "").filter(Boolean).join(" "), 160);
+  };
+  const nonControlText = (element, currentElement) => {
+    if (!element) return "";
+    const clone = element.cloneNode(true);
+    clone.querySelectorAll(CONTROL_SELECTOR).forEach((control) => control.remove());
+    if (currentElement?.id) clone.querySelector("#" + cssEscape(currentElement.id))?.remove();
+    return compact(clone.innerText || clone.textContent || "", 180);
+  };
+  const precedingTextFor = (element) => {
+    const candidates = [];
+    let current = element;
+    for (let depth = 0; current && current.parentElement && depth < 4; depth += 1) {
+      const siblings = Array.from(current.parentElement.children);
+      const index = siblings.indexOf(current);
+      for (let i = index - 1; i >= 0 && i >= index - 4; i -= 1) {
+        const text = nonControlText(siblings[i], element);
+        if (text) candidates.push(text);
+      }
+      current = current.parentElement;
+    }
+    return bestQuestionCandidate(candidates);
+  };
+  const groupContainerFor = (element) => element.closest?.("fieldset, [role='radiogroup'], [role='group'], .form-group, .field, .question, .control-group, form, section") || element.parentElement;
+  const groupQuestionFor = (element) => {
+    const fieldset = element.closest?.("fieldset");
+    const legend = fieldset?.querySelector("legend");
+    if (legend) return compact(legend.innerText || legend.textContent || "", 160);
+    const group = groupContainerFor(element);
+    const ariaLabel = compact(group?.getAttribute?.("aria-label") || "", 160);
+    if (ariaLabel) return ariaLabel;
+    const labelled = group ? resolvedLabelledByText(group) : "";
+    if (labelled) return labelled;
+    const ownLabelled = resolvedLabelledByText(element);
+    if (ownLabelled) return ownLabelled;
+    const heading = group ? Array.from(group.querySelectorAll("h1,h2,h3,h4,h5,h6,legend,label,[aria-label]"))
+      .map((item) => compact(item.innerText || item.textContent || item.getAttribute("aria-label") || "", 160))
+      .filter(Boolean)[0] : "";
+    if (heading) return heading;
+    const withoutControls = nonControlText(group, element);
+    const bestFromGroup = bestQuestionCandidate(withoutControls.split(/(?<=[?:])\s+|[|]/).map((text) => compact(text, 160)).filter(Boolean));
+    return bestFromGroup || precedingTextFor(element);
+  };
+  const questionScore = (text) => {
+    const value = compact(text, 160);
+    if (!value || value.length < 2 || value.length > 140) return -100;
+    let score = 0;
+    if (/[?:]$/.test(value)) score += 25;
+    if (/^(what|which|who|where|when|how|do you|are you|is this|i am a(?:n)?|i need|looking to|select|choose)\b/i.test(value)) score += 50;
+    if (/\b(name|email|phone|postal|postcode|destination|date|height|weight|salary|country|category|plan|coverage|property|travelling|leaving|arriving)\b/i.test(value)) score += 15;
+    if (/\b(insurance|discount|promo|notice|terms|privacy|help|login|copyright|enable javascript)\b/i.test(value)) score -= 25;
+    if (/%|\$\d|within minutes|instant savings/i.test(value)) score -= 20;
+    score -= Math.max(0, value.split(/\s+/).length - 12);
+    return score;
+  };
+  const bestQuestionCandidate = (items) => items
+    .map((text) => compact(text, 160))
+    .filter(Boolean)
+    .sort((a, b) => questionScore(b) - questionScore(a) || a.length - b.length)[0] || "";
+  const promptTextFor = (element) => {
+    const direct = bestQuestionCandidate([labelFor(element), resolvedLabelledByText(element)]);
+    if (direct) return direct;
+    const candidates = [
+      groupQuestionFor(element),
+      precedingTextFor(element),
+    ].filter(Boolean);
+    return bestQuestionCandidate(candidates);
+  };
   const record = (type, element) => {
     if (!element || !element.tagName) return;
     const tag = element.tagName.toLowerCase();
@@ -2204,6 +2369,7 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
       id: element.id || "",
       name: element.getAttribute("name") || "",
       label: labelFor(element),
+      promptText: promptTextFor(element),
       placeholder: element.getAttribute("placeholder") || "",
       text: compact(element.innerText || element.textContent || "", 200),
       value: element.value || "",
@@ -2229,6 +2395,7 @@ const INTERACTION_RECORDER_SCRIPT = String.raw`(() => {
 function normalizeFieldRecord(field) {
   return {
     ...field,
+    promptText: cleanText(field.promptText || ""),
     label: cleanText(field.label || ""),
     placeholder: cleanText(field.placeholder || ""),
     selector: field.selector || "",
@@ -2247,7 +2414,7 @@ function isUserFacingField(field) {
   if (!field || isTechnicalField(field) || isLikelyHiddenField(field)) return false;
   const type = String(field.type || "").toLowerCase();
   if (["submit", "button", "image", "reset", "file"].includes(type)) return type === "file";
-  return field.visible === true || Boolean(field.label || field.placeholder || field.options?.length || field.name || field.id);
+  return field.visible === true || Boolean(field.promptText || field.label || field.placeholder || field.options?.length || field.name || field.id);
 }
 
 function isLikelyHiddenField(field) {
@@ -2261,7 +2428,7 @@ function isLikelyHiddenField(field) {
 
 function isTechnicalField(field) {
   if (!field) return false;
-  return [field.name, field.id, field.dataInput, field.dataSelect, field.label, field.placeholder]
+  return [field.name, field.id, field.dataInput, field.dataSelect, field.promptText, field.label, field.placeholder]
     .filter(Boolean)
     .some(isTechnicalFieldName);
 }

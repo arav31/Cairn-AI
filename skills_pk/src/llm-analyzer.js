@@ -265,24 +265,37 @@ export async function analyzeRecordingWithLlm(recording, candidates = [], option
   const timeoutMs = Number(env.SKILL_BUILDER_LLM_TIMEOUT_MS || options.timeoutMs || defaultLlmTimeoutMs(provider));
   const response = provider === "nvidia"
     ? await callNvidiaChatJson({
-        apiKey: env.NVIDIA_API_KEY,
-        baseUrl: env.NVIDIA_BASE_URL || env.NVIDIA_API_BASE_URL || DEFAULT_NVIDIA_BASE_URL,
-        model: options.model || env.NVIDIA_MODEL || DEFAULT_NVIDIA_MODEL,
-        evidence,
-        env,
-        timeoutMs,
-      })
-    : await callOpenAiStructured({
+      apiKey: env.NVIDIA_API_KEY,
+      baseUrl: env.NVIDIA_BASE_URL || env.NVIDIA_API_BASE_URL || DEFAULT_NVIDIA_BASE_URL,
+      model: options.model || env.NVIDIA_MODEL || DEFAULT_NVIDIA_MODEL,
+      evidence,
+      env,
+      timeoutMs,
+    })
+    : provider === "openai_responses"
+      ? await callOpenAiStructured({
         apiKey: env.OPENAI_API_KEY,
         baseUrl: env.OPENAI_BASE_URL || DEFAULT_BASE_URL,
         model: options.model || env.OPENAI_MODEL || DEFAULT_MODEL,
         evidence,
         timeoutMs,
+      })
+      : await callOpenAiChatJson({
+        apiKey: env.OPENAI_API_KEY,
+        baseUrl: env.OPENAI_BASE_URL || DEFAULT_BASE_URL,
+        model: options.model || env.OPENAI_MODEL || DEFAULT_MODEL,
+        evidence,
+        env,
+        timeoutMs,
       });
 
   return {
     ...normalizeAnalysis(response, evidence),
-    analyzer: provider === "nvidia" ? "nvidia-chat-completions-json-mode" : "openai-responses-structured-output",
+    analyzer: provider === "nvidia"
+      ? "nvidia-chat-completions-json-mode"
+      : provider === "openai_responses"
+        ? "openai-responses-structured-output"
+        : "openai-chat-completions-structured-output",
     provider,
   };
 }
@@ -314,7 +327,7 @@ export function applyLlmAnalysisToSkill(skill, analysis) {
   improved.description = enhancedDescription(improved.description, analysis);
   improved.learning = {
     ...(improved.learning || {}),
-    analyzer: analysis.analyzer || "openai-responses-structured-output",
+    analyzer: analysis.analyzer || "openai-chat-completions-structured-output",
     provider: analysis.provider || "openai",
     summary: cleanText(analysis.summary),
     inferredGoal: cleanText(analysis.goal),
@@ -361,6 +374,7 @@ function summarizeFields(fields, options = {}) {
       type: field.type || "",
       name: field.name || "",
       id: field.id || "",
+      promptText: cleanText(field.promptText || ""),
       label: cleanText(field.label || ""),
       placeholder: cleanText(field.placeholder || ""),
       nearbyText: cleanText(field.nearbyText || ""),
@@ -390,6 +404,7 @@ function summarizeEvents(events, options = {}) {
       inputType: event.inputType || "",
       id: event.id || "",
       name: event.name || "",
+      promptText: cleanText(event.promptText || ""),
       label: cleanText(event.label || ""),
       nearbyText: cleanText(event.nearbyText || ""),
       groupLabel: cleanText(event.groupLabel || ""),
@@ -475,6 +490,57 @@ function shapeOf(value, depth = 0, compact = false) {
     output[key] = shapeOf(child, depth + 1, compact);
   }
   return output;
+}
+
+async function callOpenAiChatJson({ apiKey, baseUrl, model, evidence, env, timeoutMs }) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const body = {
+      model,
+      store: false,
+      messages: [
+        {
+          role: "system",
+          content: analyzerInstructions(),
+        },
+        {
+          role: "user",
+          content: `Analyze this recording evidence and return strict JSON.\n\n${JSON.stringify(evidence)}`,
+        },
+      ],
+      response_format: {
+        type: "json_schema",
+        json_schema: {
+          name: "skill_recording_analysis",
+          strict: true,
+          schema: ANALYSIS_SCHEMA,
+        },
+      },
+      max_completion_tokens: numberFromEnv(env.OPENAI_MAX_TOKENS, 4096),
+    };
+
+    if (env.OPENAI_TEMPERATURE !== undefined) body.temperature = numberFromEnv(env.OPENAI_TEMPERATURE, 0.2);
+    if (env.OPENAI_REASONING_EFFORT) body.reasoning_effort = env.OPENAI_REASONING_EFFORT;
+
+    const response = await fetch(`${baseUrl.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+
+    const text = await response.text();
+    if (!response.ok) {
+      throw new Error(`OpenAI Chat Completions analysis failed: ${response.status} ${response.statusText} ${text.slice(0, 500)}`);
+    }
+    return parseChatCompletionJson(JSON.parse(text));
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 async function callOpenAiStructured({ apiKey, baseUrl, model, evidence, timeoutMs }) {
@@ -644,7 +710,7 @@ function parseOutputText(response) {
 function parseChatCompletionJson(response) {
   const content = response.choices?.[0]?.message?.content;
   if (typeof content !== "string" || !content.trim()) {
-    throw new Error("NVIDIA analysis response did not contain message content JSON.");
+    throw new Error("Chat completion analysis response did not contain message content JSON.");
   }
   return JSON.parse(extractJsonObjectText(content));
 }
@@ -992,7 +1058,9 @@ function normalizeOutputSource(source) {
 function resolveLlmProvider(env) {
   const configured = String(env.SKILL_BUILDER_LLM_PROVIDER || "").trim().toLowerCase();
   if (["nvidia", "nemotron"].includes(configured)) return "nvidia";
-  if (["openai", "responses"].includes(configured)) return "openai";
+  if (["openai", "chatgpt", "chat", "chat-completions", "openai-chat"].includes(configured)) return "openai";
+  if (["responses", "openai-responses"].includes(configured)) return "openai_responses";
+  if (env.OPENAI_API_KEY) return "openai";
   if (env.NVIDIA_API_KEY) return "nvidia";
   return "openai";
 }

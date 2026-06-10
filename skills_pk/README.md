@@ -54,7 +54,7 @@ The project works without an API key. In that mode it uses deterministic evidenc
 - final URL query parameters
 - recorded input/change/click events
 
-For better skill learning, configure an LLM provider. The learner can use either OpenAI Responses with Structured Outputs or NVIDIA's OpenAI-compatible Chat Completions API with Nemotron JSON mode. In both cases, the model behaves like an endpoint engineer reviewing the browser recording.
+For better skill learning, configure an LLM provider. The learner uses OpenAI Chat Completions with Structured Outputs by default, or NVIDIA's OpenAI-compatible Chat Completions API with Nemotron JSON mode when explicitly selected. In both cases, the model behaves like an endpoint engineer reviewing the browser recording.
 
 The GPT pass receives a compact, redacted evidence packet from the recording:
 
@@ -102,11 +102,11 @@ SKILL_BUILDER_LLM_PROVIDER=nvidia
 NVIDIA_API_KEY=nvapi-...
 NVIDIA_MODEL=nvidia/nemotron-3-ultra-550b-a55b
 NVIDIA_BASE_URL=https://integrate.api.nvidia.com/v1
-NVIDIA_ENABLE_THINKING=1
-NVIDIA_REASONING_BUDGET=16384
-NVIDIA_MAX_TOKENS=16384
-NVIDIA_TEMPERATURE=1
-NVIDIA_TOP_P=0.95
+NVIDIA_ENABLE_THINKING=0
+NVIDIA_REASONING_BUDGET=4096
+NVIDIA_MAX_TOKENS=3072
+NVIDIA_TEMPERATURE=0.2
+NVIDIA_TOP_P=0.9
 ```
 
 Real terminal environment variables still win over `.env` values when both are set. The real `.env` file is ignored by git; only `.env.example` is committed.
@@ -115,23 +115,26 @@ Useful environment variables:
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `SKILL_BUILDER_LLM_PROVIDER` | auto | `openai` or `nvidia`; auto uses NVIDIA when `NVIDIA_API_KEY` is set, otherwise OpenAI |
-| `OPENAI_API_KEY` | unset | Enables OpenAI Responses analysis when using the OpenAI provider |
+| `SKILL_BUILDER_LLM_PROVIDER` | auto | `openai`, `openai-responses`, or `nvidia`; auto uses OpenAI when `OPENAI_API_KEY` is set, otherwise NVIDIA when `NVIDIA_API_KEY` is set |
+| `OPENAI_API_KEY` | unset | Enables OpenAI Chat Completions analysis when using the OpenAI provider |
 | `OPENAI_MODEL` | `gpt-5.4-mini` | OpenAI model used for recording analysis |
 | `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Override for OpenAI-compatible endpoints |
+| `OPENAI_MAX_TOKENS` | `4096` | OpenAI Chat Completions maximum output tokens |
+| `OPENAI_TEMPERATURE` | unset | Optional Chat Completions temperature; omitted by default for broader model compatibility |
+| `OPENAI_REASONING_EFFORT` | unset | Optional Chat Completions reasoning effort for models that support it |
 | `NVIDIA_API_KEY` | unset | Enables NVIDIA Nemotron analysis when using the NVIDIA provider |
 | `NVIDIA_MODEL` | `nvidia/nemotron-3-ultra-550b-a55b` | NVIDIA model used for recording analysis |
 | `NVIDIA_BASE_URL` | `https://integrate.api.nvidia.com/v1` | NVIDIA OpenAI-compatible API base URL |
-| `NVIDIA_TEMPERATURE` | `1` | NVIDIA chat completion temperature |
-| `NVIDIA_TOP_P` | `0.95` | NVIDIA chat completion top-p |
-| `NVIDIA_MAX_TOKENS` | `16384` | NVIDIA maximum output tokens |
-| `NVIDIA_ENABLE_THINKING` | `1` | Sends Nemotron thinking controls unless set to `0` or `off` |
-| `NVIDIA_REASONING_BUDGET` | `16384` | Reasoning budget sent to NVIDIA when thinking is enabled |
+| `NVIDIA_TEMPERATURE` | `0.2` | NVIDIA chat completion temperature |
+| `NVIDIA_TOP_P` | `0.9` | NVIDIA chat completion top-p |
+| `NVIDIA_MAX_TOKENS` | `3072` | NVIDIA maximum output tokens |
+| `NVIDIA_ENABLE_THINKING` | unset | Sends Nemotron thinking controls only when set to `1`, `true`, `on`, or `yes` |
+| `NVIDIA_REASONING_BUDGET` | `4096` | Reasoning budget sent to NVIDIA when thinking is enabled |
 | `SKILL_BUILDER_LLM` | unset | Set to `off` or `0` to force-disable LLM analysis |
 | `SKILL_BUILDER_LLM_REQUIRED` | unset | Set to `1` to fail drafting if GPT endpoint engineering fails |
 | `SKILL_BUILDER_LLM_TIMEOUT_MS` | `30000` | LLM analysis timeout |
 
-The OpenAI Responses request intentionally does not send `temperature`. Some GPT models reject that parameter on the Responses API, so the learner lets the selected model use its default sampling behavior. The NVIDIA provider uses Chat Completions and does send `temperature`, `top_p`, `max_tokens`, and optional Nemotron thinking controls.
+The default OpenAI provider uses Chat Completions with structured JSON output. It omits `temperature` unless you set `OPENAI_TEMPERATURE`, because some reasoning models reject unsupported sampling parameters. Set `SKILL_BUILDER_LLM_PROVIDER=openai-responses` only if you specifically want the older Responses implementation. The NVIDIA provider uses Chat Completions and sends compact prompts by default; Nemotron thinking controls are opt-in.
 
 The LLM request uses `store: false` and sends a compact evidence packet, not the full raw recording. The packet includes redacted page text, field metadata, selected options, click/input summaries, ranked request candidates, and JSON request shapes. Raw recordings can still contain sensitive data and should remain local.
 
@@ -194,7 +197,7 @@ After recording, the learner:
 
 - Filters out static and telemetry traffic.
 - Builds a compact evidence packet from page text, fields, options, clicks, final URL, and endpoint candidates.
-- Uses optional GPT endpoint engineering when `OPENAI_API_KEY` is set.
+- Uses optional GPT endpoint engineering through OpenAI Chat Completions when `OPENAI_API_KEY` is set.
 - Looks for real form/search/quote endpoints.
 - Falls back to final URL query parameters when the site computes client-side.
 - Falls back to recorded browser replay when no endpoint exists.
@@ -377,7 +380,8 @@ The evidence packet includes:
 
 The provider paths are:
 
-- OpenAI: `POST /responses` with `text.format.type=json_schema`
+- OpenAI: `POST /chat/completions` with `response_format.type=json_schema`
+- OpenAI Responses fallback: `POST /responses` with `text.format.type=json_schema` when `SKILL_BUILDER_LLM_PROVIDER=openai-responses`
 - NVIDIA: `POST /chat/completions` with `response_format.type=json_object`
 
 The model returns:
@@ -780,7 +784,7 @@ Some sites block direct local API calls. The runner can use browser fallback for
 
 ### OpenAI says temperature is unsupported
 
-Update to a version that omits `temperature` from the Responses API request. The learner now sends `model`, `store`, `max_output_tokens`, `instructions`, `input`, and structured output settings, but does not send `temperature`.
+The default Chat Completions request omits `temperature`. If you set `OPENAI_TEMPERATURE` and your selected model rejects it, remove that variable from `.env`.
 
 ### OpenAI insufficient quota
 
