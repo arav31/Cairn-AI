@@ -2,6 +2,7 @@ const { buildRecording } = require("./recordings");
 const { synthesize } = require("./synthesizer");
 const { verifyOperation, executeOperation } = require("./executor");
 const { createSkill, evaluateInvocation, createInvocationLog } = require("./policy");
+const { recordInvocationLog } = require("./database");
 const { repairAndVerify } = require("./repair");
 const { id, now, sleep } = require("./utils");
 
@@ -162,6 +163,7 @@ async function invokeSkill({ skillId, input, caller, state, bus, baseUrl }) {
   if (!decision.allow) {
     const log = createInvocationLog({ skill, caller, input, decision, status: "blocked" });
     state.invocationLogs.unshift(log);
+    await recordInvocationLog(log);
     bus.emit("invocation.blocked", { skillId, caller, reason: decision.reason, log });
     return { allowed: false, decision, log };
   }
@@ -171,6 +173,7 @@ async function invokeSkill({ skillId, input, caller, state, bus, baseUrl }) {
     const log = createInvocationLog({ skill, caller, input, decision, status: "succeeded", output });
     state.invocationLogs.unshift(log);
     state.marketplaceListings[skill.id].usageCount += 1;
+    await recordInvocationLog(log);
     bus.emit("invocation.completed", { skillId, caller, output, log });
     return { allowed: true, decision, output, log };
   } catch (error) {
@@ -183,6 +186,7 @@ async function invokeSkill({ skillId, input, caller, state, bus, baseUrl }) {
       error: { code: error.code || "execution_error", message: error.message }
     });
     state.invocationLogs.unshift(log);
+    await recordInvocationLog(log);
     bus.emit("invocation.failed", { skillId, caller, error: log.error, log });
     return { allowed: true, decision, error: log.error, log };
   }

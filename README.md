@@ -339,13 +339,19 @@ Current app variables:
 | `STRIPE_PRICE_TOKENS_STARTER` | optional | Prebuilt Stripe Price for the Starter token pack. |
 | `STRIPE_PRICE_TOKENS_BUILDER` | optional | Prebuilt Stripe Price for the Builder token pack. |
 | `STRIPE_PRICE_TOKENS_TEAM` | optional | Prebuilt Stripe Price for the Team token pack. |
+| `DATABASE_URL` | production database | RDS Postgres connection string. When set, marketplace listings, wallets, token ledger entries, usage events, payments, and invocation logs persist to Postgres. |
+| `DATABASE_SSL` | production database | Set to `true` for RDS. Set to `false` only for a trusted local database. |
+| `DATABASE_SSL_REJECT_UNAUTHORIZED` | optional | Set to `true` only when you also provide a trusted CA chain. Defaults to RDS-friendly TLS without strict local CA validation. |
+| `DATABASE_POOL_MAX` | optional | Postgres connection pool size. Defaults to `3`, which is safer for serverless deployments. |
 
 Reserved production variables in `.env.example`:
 
 | Name | Future use |
 | --- | --- |
 | `AWS_REGION` | AWS SDK region. |
-| `DATABASE_URL` | RDS Postgres connection string. |
+| `RDS_DB_INSTANCE_IDENTIFIER` | RDS instance name for the AWS setup scripts. |
+| `RDS_DB_NAME` | Postgres database name. |
+| `RDS_MASTER_USERNAME` | Postgres admin user name. |
 | `S3_RECORDINGS_BUCKET` | Raw workflow recording artifacts. |
 | `S3_TRACES_BUCKET` | Browser/proxy traces. |
 | `S3_SCREENSHOTS_BUCKET` | Screenshots and visual artifacts. |
@@ -359,6 +365,24 @@ Reserved production variables in `.env.example`:
 | `SECRETS_PREFIX` | Prefix for AWS Secrets Manager paths. |
 | `OPENAI_API_KEY` | Computer-use or repair assistant integration. |
 | `BROWSER_USE_API_KEY` | Browser Use repair adapter integration. |
+
+## Database Setup
+
+Cairn runs without a database for local demos, but production should set `DATABASE_URL` to an RDS Postgres database and run:
+
+```bash
+npm run db:migrate
+```
+
+The migration creates tables for published APIs, skill manifests, marketplace listings, verification records, workflow submissions, token wallets, token ledger entries, usage events, payments, and invocation logs.
+
+Credit behavior:
+
+- `POST /api/tokens/checkout` creates a Stripe Checkout Session when `STRIPE_SECRET_KEY` is set.
+- `POST /api/stripe/webhook` verifies `STRIPE_WEBHOOK_SECRET` when configured.
+- Stripe `checkout.session.completed` events with `metadata.kind=token_pack` credit the buyer wallet exactly once.
+- Successful token-paid API invocations debit the wallet exactly once using the invocation id as the idempotency key.
+- Failed, blocked, or unpaid invocations do not spend tokens.
 
 ## Project Map
 

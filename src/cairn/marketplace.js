@@ -1,4 +1,5 @@
 const { createSkill } = require("./policy");
+const { upsertPublishedApi } = require("./database");
 const { id, now, stableHash } = require("./utils");
 const { compareInsuranceQuotes, searchProperties } = require("../data/seed");
 
@@ -652,7 +653,14 @@ async function bootstrapMarketplace(state) {
     skill.marketplace.pricingModel = "per_call";
     skill.marketplace.agenticCommerceEnabled = true;
     state.skills[skill.id] = skill;
-    state.marketplaceListings[skill.id] = createListing(skill, operation, workflow);
+    const listing = createListing(skill, operation, workflow);
+    state.marketplaceListings[skill.id] = listing;
+    await upsertPublishedApi({
+      operation,
+      skill,
+      listing,
+      verificationRecord: state.verificationRecords[operation.id]
+    });
   }
 }
 

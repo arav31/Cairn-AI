@@ -1,6 +1,7 @@
 const { loadEnv } = require("./cairn/env");
 loadEnv();
 
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const http = require("node:http");
 const path = require("node:path");
@@ -28,12 +29,13 @@ const {
 const {
   createTokenCheckout,
   createTokenQuote,
-  ensureWallet,
-  previewTokenDebit,
+  ensureWalletPersistent,
+  fulfillTokenCheckoutSession,
+  previewTokenDebitPersistent,
   publicWallet,
-  spendTokens,
+  spendTokensPersistent,
   tokenConfig,
-  walletLedger
+  walletLedgerPersistent
 } = require("./cairn/tokens");
 const {
   customers,
@@ -92,6 +94,44 @@ async function parseBody(req) {
     return Object.fromEntries(new URLSearchParams(raw));
   }
   return raw;
+}
+
+function safeJsonParse(raw) {
+  try {
+    return raw ? JSON.parse(raw) : {};
+  } catch (error) {
+    return { error: "invalid_json", message: error.message };
+  }
+}
+
+function verifyStripeSignature(raw, signatureHeader, secret) {
+  if (!secret) {
+    return { ok: true, skipped: true };
+  }
+  const parts = Object.fromEntries(
+    String(signatureHeader || "")
+      .split(",")
+      .map((part) => part.split("="))
+      .filter(([key, value]) => key && value)
+  );
+  const timestamp = parts.t;
+  const expected = parts.v1;
+  if (!timestamp || !expected) {
+    return { ok: false, error: "missing_signature_fields" };
+  }
+  const signedPayload = `${timestamp}.${raw}`;
+  const actual = crypto
+    .createHmac("sha256", secret)
+    .update(signedPayload)
+    .digest("hex");
+  const actualBuffer = Buffer.from(actual, "hex");
+  const expectedBuffer = Buffer.from(expected, "hex");
+  if (actualBuffer.length !== expectedBuffer.length) {
+    return { ok: false, error: "signature_length_mismatch" };
+  }
+  return {
+    ok: crypto.timingSafeEqual(actualBuffer, expectedBuffer)
+  };
 }
 
 function setCookie(res, name, value) {
@@ -412,7 +452,7 @@ function createApp() {
   const bus = new EventBus();
   const tokenStore = new Set();
   let baseUrl = "http://localhost:3000";
-  bootstrapMarketplace(state)
+  const ready = bootstrapMarketplace(state)
     .then(() => bus.emit("marketplace.ready", { listings: Object.values(state.marketplaceListings).length }))
     .catch((error) => bus.emit("marketplace.bootstrap_failed", { error: { message: error.message } }));
 
@@ -420,6 +460,7 @@ function createApp() {
     const url = new URL(req.url, baseUrl);
     const pathname = url.pathname;
     try {
+      await ready;
       if (req.method === "GET" && pathname === "/.well-known/cairn.json") {
         const origin = requestOrigin(req, baseUrl);
         const listings = Object.values(state.marketplaceListings);
@@ -502,10 +543,10 @@ function createApp() {
       }
       if (req.method === "GET" && pathname === "/api/tokens/wallet") {
         const accountId = url.searchParams.get("accountId") || "demo-user";
-        const wallet = ensureWallet(state, accountId);
+        const wallet = await ensureWalletPersistent(state, accountId);
         json(res, 200, {
-          wallet: publicWallet(wallet),
-          ledger: walletLedger(state, accountId)
+          wallet,
+          ledger: await walletLedgerPersistent(state, accountId)
         });
         return;
       }
@@ -608,7 +649,7 @@ function createApp() {
         const body = await parseBody(req);
         const tokenPayment = wantsTokenPayment(body);
         const tokenAccountId = tokenAccountFrom(body);
-        const tokenPreview = tokenPayment ? previewTokenDebit(state, tokenAccountId, listing) : null;
+        const tokenPreview = tokenPayment ? await previewTokenDebitPersistent(state, tokenAccountId, listing) : null;
         if (tokenPayment && !tokenPreview.ok) {
           json(res, 402, {
             error: "insufficient_tokens",
@@ -642,7 +683,7 @@ function createApp() {
           baseUrl
         });
         const tokenDebit = tokenPayment && result.allowed === true && result.output
-          ? spendTokens(state, tokenAccountId, listing, {
+          ? await spendTokensPersistent(state, tokenAccountId, listing, {
               toolId: listing.slug,
               invocationId: result.log && result.log.id
             })
@@ -703,13 +744,33 @@ function createApp() {
         return;
       }
       if (req.method === "POST" && pathname === "/api/stripe/webhook") {
-        const body = await parseBody(req);
+        const raw = await readBody(req);
+        const signature = verifyStripeSignature(raw, req.headers["stripe-signature"], process.env.STRIPE_WEBHOOK_SECRET);
+        if (!signature.ok) {
+          json(res, 400, { error: "invalid_stripe_signature", reason: signature.error || "signature_mismatch" });
+          return;
+        }
+        const body = safeJsonParse(raw);
+        if (body.error) {
+          json(res, 400, body);
+          return;
+        }
+        const session = body && body.data && body.data.object ? body.data.object : null;
+        const tokenFulfillment = body.type === "checkout.session.completed" && session
+          ? await fulfillTokenCheckoutSession(state, session)
+          : null;
         bus.emit("payment.webhook_received", {
           provider: "stripe",
           type: body.type || "unknown",
-          livemode: Boolean(body.livemode)
+          livemode: Boolean(body.livemode),
+          signatureVerified: !signature.skipped,
+          tokenFulfillment
         });
-        json(res, 200, { received: true, mode: "stub_until_signature_verification_is_configured" });
+        json(res, 200, {
+          received: true,
+          signatureVerified: !signature.skipped,
+          tokenFulfillment
+        });
         return;
       }
       if (req.method === "POST" && pathname === "/api/workflows/recordings") {
@@ -785,7 +846,7 @@ function createApp() {
           };
           const tokenPayment = wantsTokenPayment(callBody);
           const tokenAccountId = tokenAccountFrom(callBody);
-          const tokenPreview = tokenPayment ? previewTokenDebit(state, tokenAccountId, listing) : null;
+          const tokenPreview = tokenPayment ? await previewTokenDebitPersistent(state, tokenAccountId, listing) : null;
           if (tokenPayment && !tokenPreview.ok) {
             json(res, 200, {
               jsonrpc: "2.0",
@@ -831,7 +892,7 @@ function createApp() {
             baseUrl
           });
           const tokenDebit = tokenPayment && result.allowed === true && result.output
-            ? spendTokens(state, tokenAccountId, listing, {
+            ? await spendTokensPersistent(state, tokenAccountId, listing, {
                 toolId: listing.slug,
                 invocationId: result.log && result.log.id
               })
@@ -1009,6 +1070,7 @@ function createApp() {
   };
   server.state = state;
   server.bus = bus;
+  server.ready = ready;
   return server;
 }
 
