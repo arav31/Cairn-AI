@@ -13,6 +13,12 @@ import {
 const packageJson = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 );
+const generationCues = JSON.parse(
+  readFileSync(new URL("../voiceover/cues.json", import.meta.url), "utf8"),
+);
+const elevenLabsConfig = JSON.parse(
+  readFileSync(new URL("../voiceover/elevenlabs.json", import.meta.url), "utf8"),
+);
 
 const textFromScenes = scenes
   .flatMap((scene) => [
@@ -101,12 +107,34 @@ describe("Cairn explainer storyboard", () => {
 
   it("ships voiceover cues aligned to scene timing", () => {
     assert.equal(voiceoverCues.length, scenes.length);
+    assert.equal(generationCues.length, scenes.length);
     for (const cue of voiceoverCues) {
       const scene = scenes.find((item) => item.id === cue.sceneId);
       assert.ok(scene, `cue ${cue.sceneId} has a scene`);
       assert.equal(cue.start, scene.start);
       assert.equal(cue.end, scene.end);
       assert.ok(cue.narration.length > 24, `${cue.sceneId} narration is usable`);
+    }
+
+    for (const cue of generationCues) {
+      const scene = scenes.find((item) => item.id === cue.sceneId);
+      assert.ok(scene, `generation cue ${cue.sceneId} has a scene`);
+      assert.equal(cue.start, scene.start);
+      assert.equal(cue.end, scene.end);
+      assert.equal(cue.narration, scene.narration);
+    }
+  });
+
+  it("uses expressive ElevenLabs cues without polluting the clean script", () => {
+    assert.equal(elevenLabsConfig.modelId, "eleven_v3");
+    assert.match(elevenLabsConfig.voiceName, /Bright, Warm/);
+    assert.ok(elevenLabsConfig.voiceSettings.style >= 0.7);
+    assert.ok(elevenLabsConfig.voiceSettings.stability < 0.5);
+
+    for (const cue of generationCues) {
+      assert.doesNotMatch(cue.narration, /\[[^\]]+\]/);
+      assert.match(cue.ttsText, /\[[^\]]+\]/);
+      assert.ok(cue.ttsText.includes(cue.narration.slice(0, 24)));
     }
   });
 

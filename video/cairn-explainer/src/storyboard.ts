@@ -55,7 +55,7 @@ export const scenes: Scene[] = [
     labels: ["browser", "forms", "portals", "dashboards"],
     visual: "Terminal title card over a warm halftone wavefield.",
     narration:
-      "Agents can use browsers now. But for repeated production work, the browser is still a clunky interface.",
+      "Agents can use browsers. But repeated production work deserves better than a clunky browser interface.",
   }),
   scene({
     id: "browser-loop",

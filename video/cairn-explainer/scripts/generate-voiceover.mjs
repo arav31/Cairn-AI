@@ -44,6 +44,7 @@ for (const cue of cues) {
   }
 
   console.log(`voiceover: generating ${cue.sceneId}`);
+  const text = cue.ttsText ?? cue.narration;
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${config.voiceId}?output_format=${config.outputFormat}`,
     {
@@ -54,7 +55,7 @@ for (const cue of cues) {
         Accept: "audio/mpeg",
       },
       body: JSON.stringify({
-        text: cue.narration,
+        text,
         model_id: config.modelId,
         voice_settings: config.voiceSettings,
       }),
@@ -141,6 +142,7 @@ writeFileSync(
         sourceDuration: round(scene.sourceDuration),
         preparedDuration: round(scene.preparedDuration),
         speed: round(scene.speed),
+        usesExpressiveText: Boolean(scene.ttsText),
       })),
     },
     null,

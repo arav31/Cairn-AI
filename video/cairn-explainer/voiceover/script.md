@@ -2,11 +2,12 @@
 
 Composition: `CairnReusableApiExplainer`  
 Runtime: 90 seconds at 30fps  
-Audio status: silent render now, ready for ElevenLabs later
+Audio status: ElevenLabs narration generated with Eleven v3 expressive tags.
+Clean narration is kept here; tagged TTS prompts live in `voiceover/cues.json`.
 
 ## 0-6s
 
-Agents can use browsers now. But for repeated production work, the browser is still a clunky interface.
+Agents can use browsers. But repeated production work deserves better than a clunky browser interface.
 
 ## 6-20s
 

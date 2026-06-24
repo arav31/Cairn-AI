@@ -73,6 +73,10 @@ The generated voiceover timeline is written to:
 public/assets/voiceover/cairn-explainer/cairn-explainer-voiceover.wav
 ```
 
+The current narration uses ElevenLabs `eleven_v3` with `Bella - Professional,
+Bright, Warm`. `voiceover/cues.json` keeps clean narration plus `ttsText`
+entries with inline performance tags for pauses, emphasis, and tonal shifts.
+
 The narration source files are:
 
 ```text
