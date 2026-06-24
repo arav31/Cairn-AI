@@ -6,6 +6,9 @@ export const COMPOSITION = {
   durationInFrames: 2700,
 } as const;
 
+export const VOICEOVER_AUDIO_PATH =
+  "assets/voiceover/cairn-explainer/cairn-explainer-voiceover.wav";
+
 export type SceneAsset =
   | {
       kind: "stock-video";

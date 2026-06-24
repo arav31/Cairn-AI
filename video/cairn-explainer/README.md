@@ -14,10 +14,12 @@ Run commands from this directory:
 
 ```bash
 npm run download-assets
+npm run generate-voiceover
 npm run test
 npm run typecheck
 npm run still
 npm run render
+npm run render:voiceover
 ```
 
 Root shortcuts are also available:
@@ -26,12 +28,20 @@ Root shortcuts are also available:
 npm run video:studio
 npm run video:still
 npm run video:render
+npm run video:voiceover
+npm run video:render:voiceover
 ```
 
 The final silent render writes to:
 
 ```text
 video/cairn-explainer/out/cairn-reusable-api-explainer-silent.mp4
+```
+
+The voiced render writes to:
+
+```text
+video/cairn-explainer/out/cairn-reusable-api-explainer-voiceover.mp4
 ```
 
 ## Showcase MP4
@@ -48,13 +58,27 @@ On the next `npm run render`, Remotion detects the file and uses it inside the r
 
 ## Voiceover
 
-The current video is silent. The render script passes Remotion's `--muted` flag so
-stock/showcase audio is excluded from the exported MP4. Use these files for
-ElevenLabs timing:
+The default render script passes Remotion's `--muted` flag so stock/showcase audio
+is excluded from the exported MP4. To create a voiced version, add
+`ELEVENLABS_API_KEY` to the ignored repo-root `.env`, then run:
+
+```bash
+npm run generate-voiceover
+npm run render:voiceover
+```
+
+The generated voiceover timeline is written to:
+
+```text
+public/assets/voiceover/cairn-explainer/cairn-explainer-voiceover.wav
+```
+
+The narration source files are:
 
 ```text
 voiceover/script.md
 voiceover/cues.json
+voiceover/elevenlabs.json
 ```
 
 If the generated audio timing differs, adjust `src/storyboard.ts` scene ranges first, then update both voiceover files.

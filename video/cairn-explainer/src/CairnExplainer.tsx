@@ -1,6 +1,7 @@
 import React from "react";
-import {AbsoluteFill, Sequence} from "remotion";
-import {scenes} from "./storyboard";
+import {Audio} from "@remotion/media";
+import {AbsoluteFill, Sequence, staticFile} from "remotion";
+import {scenes, VOICEOVER_AUDIO_PATH} from "./storyboard";
 import {SceneShell} from "./components/SceneShell";
 import {
   BrowserLoop,
@@ -15,10 +16,17 @@ import {
 
 export type CairnExplainerProps = {
   showcaseVideoAvailable?: boolean;
+  voiceoverAudioAvailable?: boolean;
 };
 
-export const CairnExplainer = ({showcaseVideoAvailable = false}: CairnExplainerProps) => (
+export const CairnExplainer = ({
+  showcaseVideoAvailable = false,
+  voiceoverAudioAvailable = false,
+}: CairnExplainerProps) => (
   <AbsoluteFill>
+    {voiceoverAudioAvailable ? (
+      <Audio src={staticFile(VOICEOVER_AUDIO_PATH)} volume={1} />
+    ) : null}
     {scenes.map((scene) => {
       const content = (() => {
         switch (scene.id) {

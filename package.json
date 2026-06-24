@@ -26,7 +26,9 @@
     "test": "node --test tests/*.test.js",
     "video:studio": "npm --prefix video/cairn-explainer run studio",
     "video:still": "npm --prefix video/cairn-explainer run still",
-    "video:render": "npm --prefix video/cairn-explainer run render"
+    "video:render": "npm --prefix video/cairn-explainer run render",
+    "video:voiceover": "npm --prefix video/cairn-explainer run generate-voiceover",
+    "video:render:voiceover": "npm --prefix video/cairn-explainer run render:voiceover"
   },
   "dependencies": {
     "pg": "^8.13.1"

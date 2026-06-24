@@ -1,12 +1,18 @@
 import assert from "node:assert/strict";
+import {readFileSync} from "node:fs";
 import {describe, it} from "node:test";
 
 import {
   BANNED_POSITIONING_PATTERNS,
   COMPOSITION,
+  VOICEOVER_AUDIO_PATH,
   scenes,
   voiceoverCues,
 } from "../src/storyboard";
+
+const packageJson = JSON.parse(
+  readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+);
 
 const textFromScenes = scenes
   .flatMap((scene) => [
@@ -102,5 +108,19 @@ describe("Cairn explainer storyboard", () => {
       assert.equal(cue.end, scene.end);
       assert.ok(cue.narration.length > 24, `${cue.sceneId} narration is usable`);
     }
+  });
+
+  it("keeps separate silent and voiced render commands", () => {
+    assert.equal(
+      VOICEOVER_AUDIO_PATH,
+      "assets/voiceover/cairn-explainer/cairn-explainer-voiceover.wav",
+    );
+    assert.match(packageJson.scripts["generate-voiceover"], /generate-voiceover/);
+    assert.match(packageJson.scripts.render, /--muted/);
+    assert.doesNotMatch(packageJson.scripts["render:voiceover"], /--muted/);
+    assert.match(
+      packageJson.scripts["render:voiceover"],
+      /cairn-reusable-api-explainer-voiceover\.mp4/,
+    );
   });
 });
