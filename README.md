@@ -1,12 +1,71 @@
-# Cairn
+<a id="readme-top"></a>
 
-**Record a browser workflow once, get a durable, private, reusable API you and your agents own and call forever.**
+<p align="center">
+  <a href="https://github.com/arav31/Cairn-AI">
+    <img src="assets/brand/cairn-logo.svg" alt="Cairn logo" width="120">
+  </a>
+</p>
 
-Useful work is often stuck behind a slow browser workflow: log in, pass an OTP, search, click through a few pages, copy out the answer. Cairn watches you do that task once, compiles the hidden multi-request backend flow, verifies it end to end, and turns it into a typed API that lives in your account. After that, you and your own agents call a single endpoint instead of clicking through the site again.
+<h1 align="center">Cairn</h1>
 
-**Record once. Reuse forever.**
+<p align="center">
+  Record a browser workflow once, get a durable, private, reusable API you and your agents own and call forever.
+  <br>
+  <a href="#getting-started"><strong>Explore the docs &raquo;</strong></a>
+  <br>
+  <br>
+  <a href="https://cairn-ai-gamma.vercel.app">Live App</a>
+  &middot;
+  <a href="https://cairn-ai-gamma.vercel.app/dashboard">View Demo</a>
+  &middot;
+  <a href="https://github.com/arav31/Cairn-AI/issues">Report Bug</a>
+  &middot;
+  <a href="https://github.com/arav31/Cairn-AI/issues">Request Feature</a>
+</p>
 
-Every API Cairn creates is **private** to the account that owns it. There is no marketplace, no public catalog, no browsing or discovery of other people's APIs, and no payments, tokens, or credits. APIs are called with an account-scoped agent key, and one account can never see or call another account's APIs. When a target site changes and an API drifts, Cairn re-verifies it and repairs it.
+<p align="center">
+  <a href="https://github.com/arav31/Cairn-AI/graphs/contributors"><img src="https://img.shields.io/github/contributors/arav31/Cairn-AI.svg?style=for-the-badge" alt="Contributors"></a>
+  <a href="https://github.com/arav31/Cairn-AI/network/members"><img src="https://img.shields.io/github/forks/arav31/Cairn-AI.svg?style=for-the-badge" alt="Forks"></a>
+  <a href="https://github.com/arav31/Cairn-AI/stargazers"><img src="https://img.shields.io/github/stars/arav31/Cairn-AI.svg?style=for-the-badge" alt="Stargazers"></a>
+  <a href="https://github.com/arav31/Cairn-AI/issues"><img src="https://img.shields.io/github/issues/arav31/Cairn-AI.svg?style=for-the-badge" alt="Issues"></a>
+</p>
+
+## Table Of Contents
+
+1. [About The Project](#about-the-project)
+   - [Built With](#built-with)
+   - [How Cairn Works](#how-cairn-works)
+   - [Architecture](#architecture)
+   - [Auth Model](#auth-model)
+2. [Getting Started](#getting-started)
+   - [Prerequisites](#prerequisites)
+   - [Installation](#installation)
+   - [Configuration](#configuration)
+3. [Usage](#usage)
+   - [Run Locally](#run-locally)
+   - [Install The Package](#install-the-package)
+   - [SDK](#sdk)
+   - [CLI](#cli)
+   - [Agent Integration](#agent-integration)
+   - [Submit A Workflow](#submit-a-workflow)
+   - [Demo APIs](#demo-apis)
+   - [Persistence](#persistence)
+   - [AWS Setup](#aws-setup)
+   - [Vercel Deployment](#vercel-deployment)
+   - [Sandbox Targets](#sandbox-targets)
+   - [Project Map](#project-map)
+   - [Tests](#tests)
+4. [Roadmap](#roadmap)
+5. [Contributing](#contributing)
+6. [License](#license)
+7. [Contact](#contact)
+8. [Acknowledgments](#acknowledgments)
+
+## About The Project
+
+Cairn turns slow browser workflows into private APIs. Useful work is often stuck behind a sequence of clicks: log in, pass an OTP, search, open a detail page, and copy out the answer. Cairn watches that workflow once, compiles the hidden multi-request backend flow, verifies it end to end, and exposes a typed API that belongs to the account that recorded it.
+
+Every API Cairn creates is private to its owning account. There is no marketplace, public catalog, browsing of other people's APIs, payments, tokens, or credits. APIs are called with an account-scoped agent key, and one account cannot see or call another account's APIs.
 
 Production URL used by the SDK and CLI by default:
 
@@ -14,40 +73,65 @@ Production URL used by the SDK and CLI by default:
 https://cairn-ai-gamma.vercel.app
 ```
 
-## What It Is
-
-- A tool that turns a recorded browser workflow into a durable, private, reusable API owned by your account.
-- A package, SDK, and CLI you or your agents install to list, inspect, record, and call those APIs.
-- Account-scoped agent keys: created once, hashed at rest, sent as `Authorization: Bearer <agentKey>`.
-- Auth-gated invocation only — never payment-gated. No tokens, wallets, credits, or Stripe.
-- Per-API README, OpenAPI, MCP tool, and verification endpoints, all scoped to the calling account.
-- A durability story: scheduled re-verification detects drift, and repair proposes a new operation version that publishes only after it verifies.
-- Optional Postgres persistence when `DATABASE_URL` is configured, so your APIs, accounts, agent keys, verification history, submissions, and invocation logs survive restarts.
-
-## How Cairn Works
-
-The lifecycle of one API:
-
-1. **Record** — you complete the task once in the browser; Cairn captures the interactions and the underlying network requests.
-2. **Compile / synthesize** — the compiler turns that evidence into an operation definition: input schema, output schema, execution plan, fresh-token handling, selectors, allowed domains, success predicates, and OpenAPI.
-3. **Verify end to end** — Cairn replays the operation against a known input and expected output before anything is registered.
-4. **Register as a private API** — a verified operation is wrapped as a permissioned skill and registered as an API **owned by your account**, with a stable slug, schemas, README, and verification record.
-5. **Invoke** — you and your agents call the API with your agent key. Invocation is auth-gated and scope-checked; it is never payment-gated.
-6. **Re-verify + repair on drift** — scheduled re-verification catches changes in the target site. If the operation breaks, repair proposes a new version and publishes it only after it verifies; low-confidence repairs are left for a human.
-
 Core invariants:
 
 - Agents call typed contracts, not raw browser sessions.
-- Every API points to a versioned operation, a skill manifest, and a verification record.
 - An operation must verify before it is registered as an API.
-- Every API is private to its owning account. Cross-account lookups return `404` — you cannot even probe another account's API names.
+- Every API is private to its owning account. Cross-account lookups return `404`.
 - Account-scoped agent keys are SHA-256 hashed before storage and the raw key is shown only once.
 - Session secrets, CSRF tokens, cookies, and browser state stay outside agent-visible schemas.
 - Invocation logs store hashes and metadata so usage is auditable without exposing full payloads by default.
 
-## Architecture
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-The whole thing runs locally as one small Node HTTP server (`src/server.js`), with no required external services. It already models the production boundaries: account identity, account-scoped agent keys, private API records, skill manifests, verification records, invocation logs, optional Postgres persistence, a Vercel adapter, and AWS artifact/worker infrastructure for the next phase.
+### Built With
+
+- [![Node.js][node-shield]][node-url]
+- [![PostgreSQL][postgres-shield]][postgres-url]
+- [![Vercel][vercel-shield]][vercel-url]
+- [![AWS][aws-shield]][aws-url]
+- [![OpenAPI][openapi-shield]][openapi-url]
+- [![MCP][mcp-shield]][mcp-url]
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### How Cairn Works
+
+The lifecycle of one API:
+
+1. **Record** - complete the task once in the browser while Cairn captures interactions and underlying network requests.
+2. **Compile / synthesize** - turn the evidence into an operation definition: input schema, output schema, execution plan, fresh-token handling, selectors, allowed domains, success predicates, and OpenAPI.
+3. **Verify end to end** - replay the operation against a known input and expected output before anything is registered.
+4. **Register as a private API** - wrap the verified operation as a permissioned skill owned by your account, with a stable slug, schemas, README, and verification record.
+5. **Invoke** - call the API with your agent key. Invocation is auth-gated and scope-checked; it is never payment-gated.
+6. **Re-verify and repair on drift** - scheduled checks catch target-site changes. Repairs publish only after they verify; low-confidence repairs stay in human review.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Submitted
+  Submitted --> Captured: recording captured
+  Captured --> Compiled: operation synthesized
+  Compiled --> Verifying: replay starts
+  Verifying --> Registered: verification passed
+  Verifying --> NeedsReview: verification failed
+  Registered --> Active: private API callable by owner
+  Active --> Invoked: agent call
+  Invoked --> Active: success
+  Active --> Reverify: scheduled check
+  Reverify --> Active: still valid
+  Reverify --> DriftDetected: route, schema, token, or selector failure
+  DriftDetected --> RepairCandidate
+  RepairCandidate --> Active: repair verifies
+  RepairCandidate --> NeedsReview: low confidence or expanded permission
+```
+
+The repair path exists in the codebase: `reverifyLatest` replays the operation, `repairLatest` re-verifies it, and `repairAndVerify` proposes a new operation version when drift is detected. A repaired version is registered only when verification passes.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Architecture
+
+Cairn runs locally as one small Node HTTP server (`src/server.js`) with no required external services. It already models the production boundaries: account identity, account-scoped agent keys, private API records, skill manifests, verification records, invocation logs, optional Postgres persistence, a Vercel adapter, and AWS artifact/worker infrastructure for the next phase.
 
 ```mermaid
 flowchart TB
@@ -61,7 +145,7 @@ flowchart TB
   subgraph App["Cairn app"]
     Server["src/server.js"]
     Vercel["api/cairn.js adapter"]
-    Apis["apis.js (your private APIs)"]
+    Apis["apis.js"]
     Accounts["accounts.js and agentAuth.js"]
     Pipeline["pipeline.js"]
     Policy["policy.js"]
@@ -99,126 +183,31 @@ flowchart TB
   Executor --> Secrets
 ```
 
-The local app runs without Postgres or AWS; in that mode all state is held in memory and is ephemeral. Production should set `DATABASE_URL`, run migrations, store artifacts in S3, and sync AWS environment values to Vercel.
-
-### Runtime responsibilities
+Runtime responsibilities:
 
 | Area | Files | Responsibility |
 | --- | --- | --- |
 | HTTP server | `src/server.js` | Routing, dashboard/static pages, JSON APIs, MCP surface, sandbox demo endpoints |
 | Vercel adapter | `api/cairn.js`, `vercel.json` | Runs the same Node app as a Vercel Function |
-| SDK and CLI | `src/sdk/client.js`, `bin/cairn.js` | Account creation, list/inspect/record/call your private APIs, MCP |
+| SDK and CLI | `src/sdk/client.js`, `bin/cairn.js` | Account creation, list/inspect/record/call private APIs, MCP |
 | Accounts and auth | `src/cairn/accounts.js`, `src/cairn/agentAuth.js` | Account creation, agent key issuing, SHA-256 hashing, request authentication, account matching |
 | Private APIs | `src/cairn/apis.js` | API record creation, owner-scoped lookup, OpenAPI generation, per-API README, demo workflows |
 | Persistence | `src/cairn/database.js`, `migrations/*.sql` | Postgres pool, migrations, API loading, account/submission/invocation persistence |
-| Pipeline | `src/cairn/pipeline.js` | Record → synthesize → verify → register, invocation, reverify, repair |
+| Pipeline | `src/cairn/pipeline.js` | Record, synthesize, verify, register, invoke, reverify, repair |
 | Execution | `src/cairn/executor.js` | Input validation, deterministic replay, fixture execution, output matching, failure classification |
 | Policy | `src/cairn/policy.js` | Skill creation, scope checks, input limits, invocation audit records |
 | Synthesis and repair | `src/cairn/synthesizer.js`, `src/cairn/repair.js` | Recording-to-operation compiler, fresh-token lifting, drift classification, repaired operation proposals |
 | AWS setup | `infra/aws/cloudshell-setup.sh`, `docs/AWS_STORAGE.md`, `docs/AWS_DATABASE.md` | RDS, S3, SQS, EventBridge, and Secrets Manager setup guidance |
 
-## Domain Model
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-```mermaid
-classDiagram
-direction LR
-class Account {
-  string id
-  string status
-  object metadata
-}
-class AgentKey {
-  string id
-  string accountId
-  string keyHash
-  string prefix
-  string status
-}
-class ApiOperation {
-  string id
-  string name
-  string target
-  string version
-  object definition
-}
-class SkillManifest {
-  string id
-  string operationId
-  string owner
-  string riskTier
-  object manifest
-}
-class Api {
-  string id
-  string slug
-  string ownerAccountId
-  string skillId
-  string operationId
-  string visibility
-}
-class VerificationRecord {
-  string operationId
-  string target
-  string status
-  object record
-}
-class WorkflowSubmission {
-  string id
-  string accountId
-  string targetUrl
-  string goal
-  string status
-}
-class InvocationLog {
-  string id
-  string skillId
-  string apiSlug
-  string callerId
-  string status
-  string inputHash
-  string outputHash
-}
-
-Account "1" --> "*" AgentKey : owns
-Account "1" --> "*" Api : owns
-Account "1" --> "*" WorkflowSubmission : submits
-Account "1" --> "*" InvocationLog : invokes
-ApiOperation "1" --> "1" SkillManifest : wrapped_by
-ApiOperation "1" --> "1" Api : exposed_as
-ApiOperation "1" --> "*" VerificationRecord : verified_by
-SkillManifest "1" --> "*" InvocationLog : audited_as
-```
-
-## Record, Verify, Repair Lifecycle
-
-```mermaid
-stateDiagram-v2
-  [*] --> Submitted
-  Submitted --> Captured: recording captured
-  Captured --> Compiled: operation candidate synthesized
-  Compiled --> Verifying: end-to-end replay starts
-  Verifying --> Registered: verification passed
-  Verifying --> NeedsReview: verification failed
-  Registered --> Active: private API callable by owner
-  Active --> Invoked: agent call (auth + scope checked)
-  Invoked --> Active: success
-  Active --> Reverify: scheduled check
-  Reverify --> Active: still valid
-  Reverify --> DriftDetected: route, schema, token, or selector failure
-  DriftDetected --> RepairCandidate
-  RepairCandidate --> Active: repair verifies, new version published
-  RepairCandidate --> NeedsReview: low confidence or expanded permission
-```
-
-The repair path is real in the codebase: `reverifyLatest` replays the operation, `repairLatest` re-verifies and, on failure, asks `repairAndVerify` for a proposed new operation version. A repaired version is registered (new version, new verification record, re-owned by the same account) only when it verifies; otherwise the job is marked `needs_human`.
-
-## Auth Model
+### Auth Model
 
 Every protected Cairn API is private to its owning account and gated by an account-scoped agent key.
 
-1. Create (or attach to) an account with `POST /api/accounts`. For a brand-new account, the response includes `agentAuth.agentKey` **once**. Cairn stores only a SHA-256 hash of it.
-2. Store the raw key (for example as `CAIRN_AGENT_KEY`) and send it as `Authorization: Bearer <agentKey>` on every protected call.
-3. The agent key resolves to exactly one account. Listing, inspecting, invoking, recording, usage, and MCP `tools/list` / `tools/call` only ever see that account's APIs. A request for another account returns `404` (or `403 agent_account_mismatch` when an explicit account id conflicts with the key).
+1. Create or attach to an account with `POST /api/accounts`. For a new account, the response includes `agentAuth.agentKey` once. Cairn stores only a SHA-256 hash of it.
+2. Store the raw key, for example as `CAIRN_AGENT_KEY`, and send it as `Authorization: Bearer <agentKey>` on protected calls.
+3. The agent key resolves to exactly one account. Listing, inspecting, invoking, recording, usage, and MCP `tools/list` / `tools/call` only ever see that account's APIs.
 
 Create or attach to an account:
 
@@ -237,7 +226,7 @@ The response shape:
     "type": "bearer",
     "header": "Authorization",
     "scheme": "Bearer",
-    "agentKey": "cairn_agent_…",
+    "agentKey": "cairn_agent_...",
     "note": "Store this key now. Cairn only returns the raw agent key once."
   },
   "next": {
@@ -247,21 +236,61 @@ The response shape:
 }
 ```
 
-> If the account already exists, calling `POST /api/accounts` without a valid key returns `409 account_auth_required`. Re-send with the account's existing agent key.
+If the account already exists, calling `POST /api/accounts` without a valid key returns `409 account_auth_required`. Re-send with the account's existing agent key.
 
-## Quickstart
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Install dependencies:
+## Getting Started
+
+Follow these steps to run Cairn locally with in-memory state. Add `DATABASE_URL` later when you want durable state.
+
+### Prerequisites
+
+- Node.js `>=18`
+- npm
+- Optional: Postgres, only when using `DATABASE_URL`
+
+### Installation
+
+Clone the repository and install dependencies:
 
 ```bash
+git clone https://github.com/arav31/Cairn-AI.git
+cd Cairn-AI
 npm install
 ```
 
-Create a local env file:
+### Configuration
+
+Create a local environment file:
 
 ```bash
 cp .env.example .env
 ```
+
+Useful local defaults:
+
+| Name | Required | Used for |
+| --- | --- | --- |
+| `PORT` | no | Local HTTP port. Defaults to `3000`. |
+| `HOST` | no | Bind host. Defaults to `127.0.0.1`; use `0.0.0.0` in containers. |
+| `CAIRN_PUBLIC_URL` | production | Public app URL used as the Vercel base URL fallback. |
+| `CAIRN_ENABLE_DEMO_APIS` | no | Set to `true` to seed the three demo APIs owned by `demo-user`. |
+| `CAIRN_BASE_URL` | optional | Base URL for the SDK/CLI. Defaults to production. |
+| `CAIRN_ACCOUNT_ID` | optional | Default account id for the SDK/CLI. Defaults to `demo-user`. |
+| `CAIRN_AGENT_KEY` | protected calls | Bearer key returned once by `POST /api/accounts`. |
+| `DATABASE_URL` | production database | Postgres connection string for durable APIs, accounts, and logs. |
+| `DATABASE_SSL` | production database | Set to `true` for RDS. Set to `false` only for trusted local Postgres. |
+| `DATABASE_SSL_REJECT_UNAUTHORIZED` | optional | Set to `true` only when a trusted CA chain is configured. |
+| `DATABASE_POOL_MAX` | optional | Postgres connection pool size. Defaults to `3`. |
+
+AWS values for the next backend phase are documented in `.env.example`, `docs/AWS_STORAGE.md`, and `docs/AWS_DATABASE.md`.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Usage
+
+### Run Locally
 
 Start the app:
 
@@ -282,19 +311,21 @@ If port `3000` is busy:
 PORT=3005 npm start
 ```
 
-Run tests:
-
-```bash
-npm test
-```
-
-To explore with the three deterministic demo APIs (owned by `demo-user`) pre-loaded:
+To explore with the three deterministic demo APIs pre-loaded:
 
 ```bash
 CAIRN_ENABLE_DEMO_APIS=true npm start
 ```
 
-## Install The Package
+Run the test suite:
+
+```bash
+npm test
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Install The Package
 
 The package is not published to npm yet. Install it from GitHub:
 
@@ -302,7 +333,11 @@ The package is not published to npm yet. Install it from GitHub:
 npm install github:arav31/Cairn-AI
 ```
 
-Use the SDK (`src/sdk/client.js`). It calls your own private APIs — create an account once to get an agent key, then list, inspect, record, and call the APIs that belong to that account. There are no credits or payments.
+The SDK and CLI call your own private APIs. Create an account once to get an agent key, then list, inspect, record, and call the APIs that belong to that account. There are no credits or payments.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### SDK
 
 ```js
 const { CairnClient } = require("cairn");
@@ -313,7 +348,7 @@ const cairn = new CairnClient({
   agentKey: process.env.CAIRN_AGENT_KEY
 });
 
-// Create the account once and capture the agent key (returned only once).
+// Create the account once and capture the agent key, returned only once.
 const account = await cairn.createAccount();
 process.env.CAIRN_AGENT_KEY ||= account.agentAuth.agentKey;
 
@@ -341,96 +376,86 @@ SDK surface:
 | `apiReadme(slug)` | Markdown README for one API. |
 | `apiOpenApi(slug)` | OpenAPI document for one API. |
 | `recordWorkflow({ title, targetUrl, goal })` | Submit a workflow recording to be compiled into a private API. |
-| `invoke(slug, { input })` | Call one of your APIs (no payment). |
+| `invoke(slug, { input })` | Call one of your APIs. |
 | `mcpToolList()` | MCP `tools/list` over your APIs. |
 | `mcpCall(name, args)` | MCP `tools/call` for one of your APIs. |
 | `discovery()` | Fetch `/.well-known/cairn.json`. |
 
 Default base URL is `https://cairn-ai-gamma.vercel.app`. The SDK reads `CAIRN_BASE_URL`, `CAIRN_ACCOUNT_ID`, and `CAIRN_AGENT_KEY` from the environment when options are not passed.
 
-## CLI
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### CLI
 
 The CLI (`bin/cairn.js`) wraps the SDK. `CAIRN_AGENT_KEY` is sent as the bearer key; every API is private to your account.
 
 ```bash
-# Create an account (prints the agent key once) or re-attach to it
+# Create an account, print the agent key once, or re-attach to it.
 npx cairn account create --account demo-user
 npx cairn login --account demo-user
 
-# List the APIs that belong to your account
+# List the APIs that belong to your account.
 npx cairn apis
 
-# Submit a workflow recording for compilation
-npx cairn record --title "Compare flight refunds" --url https://example.com/trips --goal "Return refund eligibility"
+# Submit a workflow recording for compilation.
+npx cairn record --title "Compare civic records" --url http://localhost:3000/civic --goal "Return record status"
 
-# Call one of your APIs
+# Call one of your APIs.
 npx cairn call --api demo-user/compareInsurancePrices --input '{"coverageType":"auto","zipCode":"78701"}'
 
-# Inspect docs for one API
+# Inspect docs for one API.
 npx cairn readme --api demo-user/searchProperties
 npx cairn openapi --api demo-user/searchProperties
 
-# MCP
+# MCP.
 npx cairn mcp list
 npx cairn mcp call --api compareInsurancePrices --input '{"coverageType":"auto","zipCode":"78701"}'
 ```
 
 Defaults: `--base-url https://cairn-ai-gamma.vercel.app`, `--account demo-user`.
 
-## Agent Integration
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Endpoints
+### Agent Integration
 
-Discovery (open):
+Discovery endpoints:
 
 ```http
 GET /.well-known/cairn.json
-GET /openapi.json            # auth-scoped: paths cover only your APIs
-GET /api/state               # local demo/inspection state
+GET /openapi.json
+GET /api/state
 ```
 
-Your APIs (require a matching agent bearer key):
+Your APIs require a matching agent bearer key:
 
 ```http
-GET  /api/apis               # list your APIs
-GET  /api/apis/:slug         # inspect one API + operation + verification
-GET  /api/accounts/:id/usage # your usage (invocation logs, submissions)
+GET  /api/apis
+GET  /api/apis/:slug
+GET  /api/accounts/:id/usage
 ```
 
-Per-API documents (require a matching agent bearer key):
+Per-API documents require a matching agent bearer key:
 
 ```http
 GET  /api/tools/:slug/openapi.json
 GET  /api/tools/:slug/readme.md
 GET  /api/tools/:slug/verification
-GET  /api/tools/:slug                 # summary + verification
-POST /api/tools/:slug/invoke          # call the API
+GET  /api/tools/:slug
+POST /api/tools/:slug/invoke
 ```
 
-Accounts and recording:
+Accounts, recording, MCP, and skill-level invoke:
 
 ```http
-POST /api/accounts                    # create/attach; returns agentKey once
-POST /api/workflows/recordings        # submit a recording (requires key)
+POST /api/accounts
+POST /api/workflows/recordings
+POST /mcp
+POST /api/invoke
 ```
 
-MCP (single JSON-RPC endpoint):
+There are intentionally no catalog, public tool list, integrations, token, payment, or Stripe webhook routes. Cross-account requests to protected routes return `404`.
 
-```http
-POST /mcp                             # initialize | tools/list | tools/call
-```
-
-Skill-level invoke (requires key; resolves your own skill):
-
-```http
-POST /api/invoke                      # { skillId, input, caller? }
-```
-
-> There are intentionally no catalog, public tool list, integrations, token, payment, or Stripe webhook routes. Cross-account requests to any of the protected routes return `404`.
-
-### Invoking an API
-
-Invocation is auth-gated and scope-checked only — there is no quote, checkout, or credit step.
+Invoke an API:
 
 ```bash
 curl -X POST http://localhost:3000/api/tools/demo-user/compareInsurancePrices/invoke \
@@ -453,16 +478,14 @@ Request body: `{ input, caller? }`. Response shape:
   "apiId": "demo-user/compareInsurancePrices",
   "result": {
     "allowed": true,
-    "output": { }
+    "output": {}
   }
 }
 ```
 
 If policy blocks the call, `result.allowed` is `false` and the HTTP status is `403`. If execution fails after passing policy, the response carries `result.error`.
 
-### MCP
-
-List your tools:
+MCP list:
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
@@ -471,7 +494,7 @@ curl -X POST http://localhost:3000/mcp \
   -d '{ "jsonrpc": "2.0", "id": "tools", "method": "tools/list" }'
 ```
 
-Call a tool:
+MCP call:
 
 ```bash
 curl -X POST http://localhost:3000/mcp \
@@ -488,9 +511,11 @@ curl -X POST http://localhost:3000/mcp \
   }'
 ```
 
-`initialize` does not require auth; `tools/list` and `tools/call` do, and they only ever see the APIs owned by the authenticated account.
+`initialize` does not require auth; `tools/list` and `tools/call` do, and they only ever see APIs owned by the authenticated account.
 
-## Submit A Workflow
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Submit A Workflow
 
 Submitting a recording is how a workflow becomes a private API. The endpoint accepts the upload today; wiring real artifact capture and synthesis to it is the next recorder/compiler step.
 
@@ -501,7 +526,7 @@ POST /api/workflows/recordings
 ```json
 {
   "title": "Compare flight refund options",
-  "targetUrl": "https://example.com/account/trips",
+  "targetUrl": "http://localhost:3000/civic",
   "goal": "Return refund eligibility, policy notes, and next available action.",
   "artifacts": []
 }
@@ -509,9 +534,11 @@ POST /api/workflows/recordings
 
 It responds `202` with an accepted submission id. The submission is owned by the authenticated account.
 
-## Demo APIs
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Three deterministic demo APIs are available for local exploration and tests. They run via fixtures (no live sandbox needed) and are **opt-in** — they are not supply for anyone else and are owned by a `demo-user` account.
+### Demo APIs
+
+Three deterministic demo APIs are available for local exploration and tests. They run via fixtures, no live sandbox needed, and are opt-in. They are owned by a `demo-user` account.
 
 Enable them with an environment variable:
 
@@ -519,24 +546,26 @@ Enable them with an environment variable:
 CAIRN_ENABLE_DEMO_APIS=true npm start
 ```
 
-…or when embedding the app:
+Or when embedding the app:
 
 ```js
 const { createApp } = require("cairn/server");
 const app = createApp({ seedDemoApis: true });
 ```
 
-The seeded APIs (slugs are `owner/operationName`):
+Seeded APIs:
 
-| API | Slug | Input (required) |
+| API | Slug | Input required |
 | --- | --- | --- |
 | Compare Insurance Prices | `demo-user/compareInsurancePrices` | `zipCode` |
 | Search Properties | `demo-user/searchProperties` | `location` |
 | Business Renewals | `demo-user/checkBusinessRenewals` | `businessName`, `state` |
 
-When `DATABASE_URL` is set, demo APIs are only seeded if no stored APIs are loaded and demo seeding is enabled, so a configured database is never polluted by accident.
+When `DATABASE_URL` is set, demo APIs are only seeded if no stored APIs are loaded and demo seeding is enabled, so a configured database is not polluted by accident.
 
-## Persistence Model
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Persistence
 
 Local runs work without a database: APIs, accounts, agent keys, submissions, and logs live in process memory and are lost on restart.
 
@@ -546,26 +575,28 @@ For durable state, set `DATABASE_URL` and run the migrations:
 npm run db:migrate
 ```
 
-Migrations apply in order: `001_initial_schema.sql` then `002_private_apis_no_payments.sql`. Migration `002` is the repositioning: it **drops** every credit/payment table (`token_wallets`, `token_ledger`, `usage_events`, `payments`), renames `marketplace_listings` to `apis` with an `owner_account_id` and no pricing columns, and renames the invocation audit column `listing_slug` to `api_slug`.
+Migrations apply in order: `001_initial_schema.sql` then `002_private_apis_no_payments.sql`. Migration `002` drops credit/payment tables, renames `marketplace_listings` to `apis` with an `owner_account_id` and no pricing columns, and renames the invocation audit column `listing_slug` to `api_slug`.
 
 Tables after both migrations:
 
 | Table | What it stores |
 | --- | --- |
-| `accounts` | Account identity (id, status, metadata). |
-| `agent_api_keys` | Account-scoped agent keys (SHA-256 hash, prefix, label, status). |
+| `accounts` | Account identity: id, status, metadata. |
+| `agent_api_keys` | Account-scoped agent keys: SHA-256 hash, prefix, label, status. |
 | `api_operations` | Full operation definition: schemas, execution plan, OpenAPI, selectors, success predicates. |
 | `skill_manifests` | Permissioned skill wrapper: owner, scopes, risk tier, version pointers. |
-| `apis` | Your private API record: slug, owner account, visibility, quality gate, verification freshness, contract. |
+| `apis` | Private API record: slug, owner account, visibility, quality gate, verification freshness, contract. |
 | `verification_records` | Verification history used to check whether an API version still works. |
 | `workflow_submissions` | Recording submissions by account. |
 | `invocation_logs` | Policy decision, input/output hashes, status, caller account, and API slug. |
 
-On boot with `DATABASE_URL` set, Cairn reloads your APIs from Postgres so they can be listed, inspected, invoked, and re-verified after a restart.
+On boot with `DATABASE_URL` set, Cairn reloads APIs from Postgres so they can be listed, inspected, invoked, and re-verified after a restart.
 
-## AWS Setup
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-AWS is still relevant for the next phase: storing recordings/traces/artifacts in S3 and running synthesis, verification, and repair as workers. The current app does not require these yet.
+### AWS Setup
+
+AWS is for the next phase: storing recordings, traces, and artifacts in S3, then running synthesis, verification, and repair as workers. The current app does not require AWS.
 
 The helper script is:
 
@@ -589,7 +620,9 @@ npm run db:migrate
 
 The script writes `cairn-prod.env` with `DATABASE_URL`, RDS settings, SQS queue URLs, `EVENTBRIDGE_BUS_NAME`, and `SECRETS_PREFIX`. After AWS creates it, sync the non-empty values to Vercel and redeploy. See `docs/AWS_STORAGE.md` and `docs/AWS_DATABASE.md` for details.
 
-## Vercel Deployment
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Vercel Deployment
 
 The app runs locally as a plain Node HTTP server. On Vercel, `api/cairn.js` adapts the same server to a Vercel Function and `vercel.json` rewrites routes into it.
 
@@ -604,86 +637,30 @@ trend-pact/cairn-ai
 https://cairn-ai-gamma.vercel.app
 ```
 
-## Environment Variables
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Server:
-
-| Name | Required | Used for |
-| --- | --- | --- |
-| `PORT` | no | Local HTTP port. Defaults to `3000`. |
-| `HOST` | no | Bind host. Defaults to `127.0.0.1`; use `0.0.0.0` in containers. |
-| `CAIRN_PUBLIC_URL` | production | Public app URL used as the Vercel base URL fallback. |
-| `CAIRN_ENABLE_DEMO_APIS` | no | Set to `true` to seed the three demo APIs (owned by `demo-user`). |
-
-SDK / CLI:
-
-| Name | Required | Used for |
-| --- | --- | --- |
-| `CAIRN_BASE_URL` | optional | Base URL for the SDK/CLI. Defaults to production. |
-| `CAIRN_ACCOUNT_ID` | optional | Default account id for the SDK/CLI. Defaults to `demo-user`. |
-| `CAIRN_AGENT_KEY` | protected calls | Bearer key returned once by `POST /api/accounts`. Required to list, inspect, record, invoke, read usage, and use MCP `tools/list` / `tools/call`. |
-
-Database:
-
-| Name | Required | Used for |
-| --- | --- | --- |
-| `DATABASE_URL` | production database | RDS/Postgres connection string. Enables durable APIs, accounts, and logs. |
-| `DATABASE_SSL` | production database | Set to `true` for RDS. Set to `false` only for trusted local Postgres. |
-| `DATABASE_SSL_REJECT_UNAUTHORIZED` | optional | Set to `true` only when a trusted CA chain is configured. |
-| `DATABASE_POOL_MAX` | optional | Postgres connection pool size. Defaults to `3`. |
-
-AWS (for the next backend phase; not read by the current demo):
-
-| Name | Used for |
-| --- | --- |
-| `AWS_REGION` | AWS SDK region. |
-| `AWS_ACCOUNT_ID` | AWS account id. |
-| `RDS_DB_INSTANCE_IDENTIFIER` | RDS instance name for setup scripts. |
-| `RDS_DB_NAME` | Postgres database name. |
-| `RDS_MASTER_USERNAME` | Postgres admin username. |
-| `S3_RECORDINGS_BUCKET` | Raw workflow recordings. |
-| `S3_API_ARTIFACTS_BUCKET` | Operation specs, OpenAPI files, traces, and generated artifacts. |
-| `S3_TRACES_BUCKET` | Browser/proxy traces. |
-| `S3_SCREENSHOTS_BUCKET` | Screenshots and visual artifacts. |
-| `S3_VERIFICATION_BUCKET` | Verification run artifacts. |
-| `S3_REPAIR_BUCKET` | Repair job artifacts. |
-| `S3_*_PREFIX` | Key prefixes for the buckets above. |
-| `KMS_KEY_ARN` | KMS key for encrypted artifacts and secrets. |
-| `SQS_RECORDING_QUEUE_URL` | Recording job queue. |
-| `SQS_SYNTHESIS_QUEUE_URL` | Compiler job queue. |
-| `SQS_VERIFICATION_QUEUE_URL` | Verification job queue. |
-| `SQS_INVOCATION_QUEUE_URL` | Runtime invocation queue. |
-| `SQS_REPAIR_QUEUE_URL` | Drift repair queue. |
-| `EVENTBRIDGE_BUS_NAME` | Run/API/repair event bus. |
-| `SECRETS_PREFIX` | AWS Secrets Manager path prefix. |
-
-Repair adapters (for later):
-
-| Name | Used for |
-| --- | --- |
-| `OPENAI_API_KEY` | Future computer-use repair assistant. |
-| `BROWSER_USE_API_KEY` | Future Browser Use repair adapter. |
-
-## Sandbox Targets
+### Sandbox Targets
 
 These exist for recorder/compiler/repair testing. They are not seeded as APIs.
 
-- `/meridian` — modern JSON REST CRM sandbox (login → OTP → search → detail).
-- `/civic` — legacy server-rendered records portal with CSRF and ViewState-style hidden state.
+- `/meridian` - modern JSON REST CRM sandbox: login, OTP, search, detail.
+- `/civic` - legacy server-rendered records portal with CSRF and ViewState-style hidden state.
 
-Demo recorder / verify / repair endpoints drive the lifecycle against those sandboxes:
+Demo recorder, verify, and repair endpoints drive the lifecycle against those sandboxes:
 
 ```http
-POST /api/demo/record        # record → synthesize → verify → register
-POST /api/demo/reverify      # replay the latest operation
-POST /api/demo/repair        # re-verify and, on drift, repair + republish
-POST /api/demo/drift-civic   # induce route drift on the civic target
-POST /api/demo/reset-drift   # reset the induced drift
+POST /api/demo/record
+POST /api/demo/reverify
+POST /api/demo/repair
+POST /api/demo/drift-civic
+POST /api/demo/reset-drift
 ```
 
 A typical durability demo: `record` the civic workflow, `drift-civic` to move a route, `reverify` to watch it fail, then `repair` to publish a verified new version.
 
-## Project Map
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Project Map
 
 ```text
 bin/cairn.js               CLI: account, apis, record, call, readme, openapi, mcp
@@ -711,38 +688,87 @@ migrations/002_private_apis_no_payments.sql  Drop payments, private per-account 
 tests/*.test.js                              Node test runner coverage
 ```
 
-## Tests
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Tests
 
 ```bash
 npm test
 ```
 
-Run them with and without `DATABASE_URL`; the in-memory path keeps local runs fast and the persistent path exercises the migrations and durable reload.
+Run tests with and without `DATABASE_URL`; the in-memory path keeps local runs fast and the persistent path exercises migrations and durable reload.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ## Roadmap
 
-The product foundation — record, verify, register a private API, invoke, re-verify, repair — is in place. The forward plan focuses on durability and ownership, not payments or a marketplace.
+The product foundation - record, verify, register a private API, invoke, re-verify, repair - is in place. The forward plan focuses on durability and ownership, not payments or a marketplace.
 
-**Durability and repair**
-
-- Scheduled re-verification for every registered API, with a health signal from pass rate, latency, and freshness.
+- Scheduled re-verification for every registered API, with health signals from pass rate, latency, and freshness.
 - Repair proposals backed by trace diffs and confidence scores; auto-publish only safe route/selector fixes after verification.
 - Rollback to the last verified operation version, and alerts on repeated drift.
-
-**Ownership and team scoping**
-
-- Team/tenant ownership for APIs, agent keys, and submissions, so a team shares its private APIs without exposing them to anyone else.
+- Team/tenant ownership for APIs, agent keys, and submissions, so a team can share private APIs without exposing them publicly.
 - Per-API rate limits, scopes, risk tiers, and domain allowlists.
 - OAuth/OIDC for enterprise agent runtimes; audit exports for compliance.
-
-**Real recorder → synthesis wiring**
-
 - Connect the browser recorder/compiler output to `POST /api/workflows/recordings`.
 - Store recording bundles, traces, and generated artifacts in S3; resolve secrets only inside workers and redact traces before any LLM-assisted repair.
-- Move synthesis, verification, and repair onto workers (SQS + Step Functions) so long jobs stay off the request path.
-
-**Developer experience**
-
+- Move synthesis, verification, and repair onto workers so long jobs stay off the request path.
 - Publish the SDK under a real npm package name.
 - Generate typed clients from per-API OpenAPI schemas.
 - Add a hosted MCP configuration page for common agent clients, plus examples for ChatGPT Actions, Cursor, n8n, and direct REST.
+
+See the [open issues](https://github.com/arav31/Cairn-AI/issues) for proposed features and known issues.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Contributing
+
+Contributions are welcome when they preserve Cairn's account-scoped privacy model and keep APIs auth-gated, not payment-gated.
+
+1. Fork the project.
+2. Create your feature branch: `git checkout -b feature/my-change`.
+3. Commit your changes: `git commit -m "Describe the change"`.
+4. Push to the branch: `git push origin feature/my-change`.
+5. Open a pull request.
+
+For bugs and feature requests, use [GitHub Issues](https://github.com/arav31/Cairn-AI/issues).
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## License
+
+The root project currently has no declared license file. Do not assume MIT, Apache, or any other open-source license applies to the repository root until a root license is added.
+
+Nested packages may have their own licenses; check the relevant subdirectory before reusing code from them.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Contact
+
+Project link: [https://github.com/arav31/Cairn-AI](https://github.com/arav31/Cairn-AI)
+
+Issues and feature requests: [https://github.com/arav31/Cairn-AI/issues](https://github.com/arav31/Cairn-AI/issues)
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+## Acknowledgments
+
+- [othneildrew/Best-README-Template](https://github.com/othneildrew/Best-README-Template) for the README structure.
+- [Model Context Protocol](https://modelcontextprotocol.io/) for the agent tool interface shape.
+- [OpenAPI](https://www.openapis.org/) for API contract documentation.
+- [Node.js](https://nodejs.org/), [PostgreSQL](https://www.postgresql.org/), [Vercel](https://vercel.com/), and [AWS](https://aws.amazon.com/) for the runtime and deployment stack.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+[node-shield]: https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white
+[node-url]: https://nodejs.org/
+[postgres-shield]: https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white
+[postgres-url]: https://www.postgresql.org/
+[vercel-shield]: https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white
+[vercel-url]: https://vercel.com/
+[aws-shield]: https://img.shields.io/badge/AWS-232F3E?style=for-the-badge&logo=amazonwebservices&logoColor=white
+[aws-url]: https://aws.amazon.com/
+[openapi-shield]: https://img.shields.io/badge/OpenAPI-6BA539?style=for-the-badge&logo=openapiinitiative&logoColor=white
+[openapi-url]: https://www.openapis.org/
+[mcp-shield]: https://img.shields.io/badge/MCP-111827?style=for-the-badge
+[mcp-url]: https://modelcontextprotocol.io/
