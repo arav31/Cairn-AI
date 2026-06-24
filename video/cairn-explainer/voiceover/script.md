@@ -1,7 +1,7 @@
 # Cairn Explainer Voiceover Script
 
-Composition: `CairnReusableApiExplainer`  
-Runtime: 90 seconds at 30fps  
+Composition: `CairnReusableApiExplainer`
+Runtime: 90 seconds at 30fps
 Audio status: ElevenLabs narration generated with Eleven v3 expressive tags.
 Clean narration is kept here; tagged TTS prompts live in `voiceover/cues.json`.
 
