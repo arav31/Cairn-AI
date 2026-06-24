@@ -23,7 +23,10 @@
   "scripts": {
     "start": "node src/server.js",
     "db:migrate": "node scripts/migrate-database.js",
-    "test": "node --test tests/*.test.js"
+    "test": "node --test tests/*.test.js",
+    "video:studio": "npm --prefix video/cairn-explainer run studio",
+    "video:still": "npm --prefix video/cairn-explainer run still",
+    "video:render": "npm --prefix video/cairn-explainer run render"
   },
   "dependencies": {
     "pg": "^8.13.1"
