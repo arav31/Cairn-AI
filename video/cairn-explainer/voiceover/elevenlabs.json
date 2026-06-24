@@ -4,7 +4,7 @@
   "voiceName": "Bella - Professional, Bright, Warm",
   "modelId": "eleven_v3",
   "outputFormat": "mp3_44100_128",
-  "timelineSeconds": 90,
+  "timelineSeconds": 108,
   "sceneOutputDir": "public/assets/voiceover/cairn-explainer/scenes",
   "timelineOutput": "public/assets/voiceover/cairn-explainer/cairn-explainer-voiceover.wav",
   "voiceSettings": {

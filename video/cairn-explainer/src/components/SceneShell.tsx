@@ -1,7 +1,7 @@
 import React from "react";
 import type {Scene} from "../storyboard";
 import {shadow, theme} from "../theme";
-import {enterProgress, exitProgress, useSceneFrame} from "../timing";
+import {exitProgress, useSceneFrame} from "../timing";
 import {Brand} from "./Brand";
 import {StockVideo} from "./StockVideo";
 import {Wavefield} from "./Wavefield";
@@ -20,10 +20,9 @@ export const SceneShell = ({
   dark = false,
 }: SceneShellProps) => {
   const {frame, fps} = useSceneFrame();
-  const enter = enterProgress(frame, fps, 0.1, 0.85);
   const exit = exitProgress(frame, fps, scene.end - scene.start - 0.55, 0.5);
-  const opacity = enter * (1 - exit);
-  const y = (1 - enter) * 26 + exit * -22;
+  const opacity = 1 - exit;
+  const y = exit * -22;
 
   return (
     <div

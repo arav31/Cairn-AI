@@ -1,1 +1,1 @@
-export const showcaseVideoAvailable = false;
+export const showcaseVideoAvailable = true;

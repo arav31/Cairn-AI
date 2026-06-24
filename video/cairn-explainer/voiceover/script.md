@@ -1,38 +1,38 @@
 # Cairn Explainer Voiceover Script
 
 Composition: `CairnReusableApiExplainer`
-Runtime: 90 seconds at 30fps
+Runtime: 108 seconds at 30fps
 Audio status: ElevenLabs narration generated with Eleven v3 expressive tags.
 Clean narration is kept here; tagged TTS prompts live in `voiceover/cues.json`.
 
-## 0-6s
+## 0-4s
 
-Agents can use browsers. But repeated production work deserves better than a clunky browser interface.
+Stop making agents click through the same site over and over.
 
-## 6-20s
+## 4-15s
 
-A browser agent can click through the task, but every run spends tokens observing, planning, clicking, waiting, and recovering. It is slow, token-heavy, brittle, and hard to audit.
+Browser agents are useful for exploration. But in production, every run pays again in screenshots, planning, waits, retries, and UI drift.
 
-## 20-34s
+## 15-28s
 
-The expensive part is that the same workflow gets rediscovered every time. Cairn treats that repeated browser grind as something that should be compiled once, then reused.
+Cairn changes the interface. Record one authorized browser workflow, verify it, and turn it into a private API your agents can call directly.
 
-## 34-48s
+## 28-42s
 
-With Cairn, an authorized user performs the workflow once. Cairn captures the backend flow visible to that session and builds a durable operation from it.
+In this demo, a business renewal check starts as a normal browser task. Name the workflow, define the result you want, and record it once.
 
-## 48-62s
+## 42-55s
 
-The result is not another browser run. It is a typed API your own agents can call directly through HTTP, OpenAPI, MCP, an SDK, or a CLI.
+Cairn captures the request flow behind that session and publishes a stable contract: invoke endpoint, OpenAPI, MCP, SDK, and curl.
 
-## 62-72s
+## 55-77s
 
-This section is reserved for the actual product walkthrough. Drop in the showcase file and the explainer will use it without changing the story.
+Here is the workflow as a product surface. The new Business Renewals API lands in My APIs, exposes copyable endpoints, accepts structured input, returns JSON, and tracks verification health.
 
-## 72-82s
+## 77-94s
 
-Cairn verifies before activation, monitors health, detects drift, and repairs the underlying plan while keeping the caller's API contract stable.
+Downstream, agents spend fewer tokens, run faster, produce cleaner audit trails, and keep calling the same contract even when the website changes underneath.
 
-## 82-90s
+## 94-108s
 
-Cairn turns browser work into your reusable API. Record once. Reuse forever.
+No browser loop. No repeated rediscovery. Cairn turns website work into reusable infrastructure. Record once. Reuse forever.

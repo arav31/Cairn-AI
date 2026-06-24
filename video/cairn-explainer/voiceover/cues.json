@@ -2,57 +2,57 @@
   {
     "sceneId": "cold-open",
     "start": 0,
-    "end": 6,
-    "narration": "Agents can use browsers. But repeated production work deserves better than a clunky browser interface.",
-    "ttsText": "[conversational, curious] Agents can use browsers. [short pause] But repeated production work [firm] deserves better than a clunky browser interface."
+    "end": 4,
+    "narration": "Stop making agents click through the same site over and over.",
+    "ttsText": "[direct, confident] Stop making agents click through the same site over and over."
   },
   {
     "sceneId": "browser-loop",
-    "start": 6,
-    "end": 20,
-    "narration": "A browser agent can click through the task, but every run spends tokens observing, planning, clicking, waiting, and recovering. It is slow, token-heavy, brittle, and hard to audit.",
-    "ttsText": "[matter-of-fact] A browser agent can click through the task. [slightly faster] But every run spends tokens observing, planning, clicking, waiting, and recovering. [concerned] It is slow, token-heavy, brittle, and hard to audit."
+    "start": 4,
+    "end": 15,
+    "narration": "Browser agents are useful for exploration. But in production, every run pays again in screenshots, planning, waits, retries, and UI drift.",
+    "ttsText": "[matter-of-fact, brisk] Browser agents are useful for exploration. But in production, every run pays again in screenshots, planning, waits, retries, and UI drift."
   },
   {
     "sceneId": "repetition-cost",
-    "start": 20,
-    "end": 34,
-    "narration": "The expensive part is that the same workflow gets rediscovered every time. Cairn treats that repeated browser grind as something that should be compiled once, then reused.",
-    "ttsText": "[reflective] The expensive part is that the same workflow gets rediscovered every time. [more confident] Cairn treats that repeated browser grind as something that should be compiled once, then reused."
+    "start": 15,
+    "end": 28,
+    "narration": "Cairn changes the interface. Record one authorized browser workflow, verify it, and turn it into a private API your agents can call directly.",
+    "ttsText": "[assured, building momentum] Cairn changes the interface. Record one authorized browser workflow, verify it, and turn it into a private API your agents can call directly."
   },
   {
     "sceneId": "record-once",
-    "start": 34,
-    "end": 48,
-    "narration": "With Cairn, an authorized user performs the workflow once. Cairn captures the backend flow visible to that session and builds a durable operation from it.",
-    "ttsText": "[warm, clear] With Cairn, an authorized user performs the workflow once. [assured] Cairn captures the backend flow visible to that session, and builds a durable operation from it."
+    "start": 28,
+    "end": 42,
+    "narration": "In this demo, a business renewal check starts as a normal browser task. Name the workflow, define the result you want, and record it once.",
+    "ttsText": "[clear, product-demo cadence] In this demo, a business renewal check starts as a normal browser task. Name the workflow, define the result you want, and record it once."
   },
   {
     "sceneId": "typed-api",
-    "start": 48,
-    "end": 62,
-    "narration": "The result is not another browser run. It is a typed API your own agents can call directly through HTTP, OpenAPI, MCP, an SDK, or a CLI.",
-    "ttsText": "[assured] The result is not another browser run. [energized] It is a typed API your own agents can call directly: HTTP, OpenAPI, MCP, an SDK, or a CLI."
+    "start": 42,
+    "end": 55,
+    "narration": "Cairn captures the request flow behind that session and publishes a stable contract: invoke endpoint, OpenAPI, MCP, SDK, and curl.",
+    "ttsText": "[confident, precise] Cairn captures the request flow behind that session and publishes a stable contract: invoke endpoint, OpenAPI, MCP, SDK, and curl."
   },
   {
     "sceneId": "showcase",
-    "start": 62,
-    "end": 72,
-    "narration": "This section is reserved for the actual product walkthrough. Drop in the showcase file and the explainer will use it without changing the story.",
-    "ttsText": "[lightly] This section is reserved for the actual product walkthrough. [helpful] Drop in the showcase file, and the explainer will use it without changing the story."
+    "start": 55,
+    "end": 77,
+    "narration": "Here is the workflow as a product surface. The new Business Renewals API lands in My APIs, exposes copyable endpoints, accepts structured input, returns JSON, and tracks verification health.",
+    "ttsText": "[engaged walkthrough] Here is the workflow as a product surface. The new Business Renewals API lands in My APIs, exposes copyable endpoints, accepts structured input, returns JSON, and tracks verification health."
   },
   {
     "sceneId": "reliability",
-    "start": 72,
-    "end": 82,
-    "narration": "Cairn verifies before activation, monitors health, detects drift, and repairs the underlying plan while keeping the caller's API contract stable.",
-    "ttsText": "[steady] Cairn verifies before activation, monitors health, detects drift, and repairs the underlying plan. [firm] The caller's API contract stays stable."
+    "start": 77,
+    "end": 94,
+    "narration": "Downstream, agents spend fewer tokens, run faster, produce cleaner audit trails, and keep calling the same contract even when the website changes underneath.",
+    "ttsText": "[benefit-led, steady] Downstream, agents spend fewer tokens, run faster, produce cleaner audit trails, and keep calling the same contract even when the website changes underneath."
   },
   {
     "sceneId": "conclusion",
-    "start": 82,
-    "end": 90,
-    "narration": "Cairn turns browser work into your reusable API. Record once. Reuse forever.",
-    "ttsText": "[confident, warm] Cairn turns browser work into your reusable API. [short pause] Record once. [short pause] Reuse forever."
+    "start": 94,
+    "end": 108,
+    "narration": "No browser loop. No repeated rediscovery. Cairn turns website work into reusable infrastructure. Record once. Reuse forever.",
+    "ttsText": "[confident close] No browser loop. No repeated rediscovery. Cairn turns website work into reusable infrastructure. [short pause] Record once. Reuse forever."
   }
 ]
