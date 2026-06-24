@@ -1,5 +1,17 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Cairn">
-  <rect width="64" height="64" rx="14" fill="#00452f"/>
-  <path d="M19 44h26v-5H19v5Zm4-9h18v-5H23v5Zm5-9h8v-5h-8v5Z" fill="#fff"/>
-  <circle cx="32" cy="16" r="5" fill="#7ddc96"/>
+  <rect width="64" height="64" rx="14" fill="#efe5d1"/>
+  <g opacity="0.45">
+    <rect x="8" y="52" width="3" height="3" fill="#6f9a3f"/>
+    <rect x="54" y="16" width="3" height="3" fill="#4f7f2a"/>
+  </g>
+  <rect x="12" y="42" width="9" height="9" fill="#34571c"/>
+  <rect x="22" y="42" width="9" height="9" fill="#4f7f2a"/>
+  <rect x="32" y="42" width="9" height="9" fill="#6f9a3f"/>
+  <rect x="42" y="42" width="9" height="9" fill="#34571c"/>
+  <rect x="17" y="32" width="9" height="9" fill="#4f7f2a"/>
+  <rect x="27" y="32" width="9" height="9" fill="#6f9a3f"/>
+  <rect x="37" y="32" width="9" height="9" fill="#235f63"/>
+  <rect x="22" y="22" width="9" height="9" fill="#6f9a3f"/>
+  <rect x="32" y="22" width="9" height="9" fill="#4f7f2a"/>
+  <rect x="27" y="12" width="9" height="9" fill="#235f63"/>
 </svg>
