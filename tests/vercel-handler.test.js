@@ -34,11 +34,11 @@ function response() {
 }
 
 test("vercel adapter restores original rewritten route", () => {
-  const req = request("GET", "/api/cairn?cairnPath=/api/catalog&search=insurance");
+  const req = request("GET", "/api/cairn?cairnPath=/api/apis&search=insurance");
 
   _internal.restoreOriginalPath(req);
 
-  assert.equal(req.url, "/api/catalog?search=insurance");
+  assert.equal(req.url, "/api/apis?search=insurance");
 });
 
 test("vercel adapter derives request base url", () => {
@@ -52,17 +52,15 @@ test("vercel adapter derives request base url", () => {
   assert.equal(_internal.requestBaseUrl(req), "https://cairn.example");
 });
 
-test("vercel adapter serves rewritten marketplace API routes", async () => {
-  const req = request("GET", "/api/cairn?cairnPath=/api/catalog");
+test("vercel adapter serves rewritten private API routes (auth required)", async () => {
+  const req = request("GET", "/api/cairn?cairnPath=/api/apis");
   const res = response();
 
   await handler(req, res);
   const body = JSON.parse(res.body);
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(body.count, 0);
-  assert.deepEqual(body.listings, []);
-  assert.equal(body.storage.demoSeeded, false);
+  assert.equal(res.statusCode, 401);
+  assert.equal(body.error, "agent_auth_required");
 });
 
 test("root server export works as Vercel entrypoint", async () => {

@@ -64,22 +64,30 @@ async function withTransaction(callback) {
   }
 }
 
+const MIGRATION_FILES = [
+  "001_initial_schema.sql",
+  "002_private_apis_no_payments.sql"
+];
+
 async function migrate() {
   if (!isDatabaseConfigured()) return false;
   if (!migratePromise) {
     migratePromise = (async () => {
       const activePool = getPool();
-      const migrationPath = path.join(__dirname, "..", "..", "migrations", "001_initial_schema.sql");
-      const sql = fs.readFileSync(migrationPath, "utf8");
-      await activePool.query(sql);
+      const migrationsDir = path.join(__dirname, "..", "..", "migrations");
+      for (const file of MIGRATION_FILES) {
+        const sql = fs.readFileSync(path.join(migrationsDir, file), "utf8");
+        await activePool.query(sql);
+      }
       return true;
     })();
   }
   return migratePromise;
 }
 
-async function upsertPublishedApi({ operation, skill, listing, verificationRecord }) {
+async function upsertApi({ operation, skill, api, verificationRecord }) {
   if (!isDatabaseConfigured()) return false;
+  await ensureAccountRow(api.ownerAccountId, { source: "api_owner" });
   await withTransaction(async (client) => {
     await client.query(
       `INSERT INTO api_operations(id, name, title, target, version, definition)
@@ -105,39 +113,33 @@ async function upsertPublishedApi({ operation, skill, listing, verificationRecor
       [skill.id, operation.id, skill.owner, skill.riskTier, JSON.stringify(skill)]
     );
     await client.query(
-      `INSERT INTO marketplace_listings(
-         id, slug, skill_id, operation_id, title, category, publisher, visibility,
-         quality_gate, verification_freshness, price_cents, token_cost, listing
+      `INSERT INTO apis(
+         id, slug, skill_id, operation_id, title, owner_account_id, visibility,
+         quality_gate, verification_freshness, listing
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        ON CONFLICT (id) DO UPDATE SET
          slug = EXCLUDED.slug,
          skill_id = EXCLUDED.skill_id,
          operation_id = EXCLUDED.operation_id,
          title = EXCLUDED.title,
-         category = EXCLUDED.category,
-         publisher = EXCLUDED.publisher,
+         owner_account_id = EXCLUDED.owner_account_id,
          visibility = EXCLUDED.visibility,
          quality_gate = EXCLUDED.quality_gate,
          verification_freshness = EXCLUDED.verification_freshness,
-         price_cents = EXCLUDED.price_cents,
-         token_cost = EXCLUDED.token_cost,
          listing = EXCLUDED.listing,
          updated_at = now()`,
       [
-        listing.id,
-        listing.slug,
+        api.id,
+        api.slug,
         skill.id,
         operation.id,
-        listing.title,
-        listing.category,
-        listing.publisher,
-        listing.visibility,
-        listing.qualityGate,
-        listing.verificationFreshness,
-        listing.pricing.priceCents,
-        listing.pricing.tokenCost,
-        JSON.stringify(listing)
+        api.title,
+        api.ownerAccountId,
+        api.visibility || "private",
+        api.qualityGate || "verified",
+        api.verificationFreshness || "fresh",
+        JSON.stringify(api)
       ]
     );
     if (verificationRecord) {
@@ -160,17 +162,23 @@ function rowJson(value) {
   return value || null;
 }
 
-async function listPublishedApis() {
+async function listApis(accountId = null) {
   if (!isDatabaseConfigured()) return [];
+  const params = [];
+  let ownerClause = "";
+  if (accountId) {
+    params.push(accountId);
+    ownerClause = "WHERE api.owner_account_id = $1";
+  }
   const result = await query(
     `SELECT
-       listing.listing,
+       api.listing AS api,
        operation.definition AS operation,
        skill.manifest AS skill,
        latest.record AS verification_record
-     FROM marketplace_listings listing
-     JOIN api_operations operation ON operation.id = listing.operation_id
-     JOIN skill_manifests skill ON skill.id = listing.skill_id
+     FROM apis api
+     JOIN api_operations operation ON operation.id = api.operation_id
+     JOIN skill_manifests skill ON skill.id = api.skill_id
      LEFT JOIN LATERAL (
        SELECT record
        FROM verification_records
@@ -178,11 +186,12 @@ async function listPublishedApis() {
        ORDER BY created_at DESC
        LIMIT 1
      ) latest ON true
-     WHERE listing.visibility IN ('public', 'internal')
-     ORDER BY listing.created_at ASC`
+     ${ownerClause}
+     ORDER BY api.created_at ASC`,
+    params
   );
   return result.rows.map((row) => ({
-    listing: rowJson(row.listing),
+    api: rowJson(row.api),
     operation: rowJson(row.operation),
     skill: rowJson(row.skill),
     verificationRecord: rowJson(row.verification_record)
@@ -199,46 +208,6 @@ async function ensureAccountRow(accountId, metadata = {}) {
        updated_at = now(),
        metadata = accounts.metadata || EXCLUDED.metadata`,
     [accountId, JSON.stringify(metadata)]
-  );
-  return true;
-}
-
-async function recordUsageEvent({
-  id,
-  accountId,
-  listingSlug,
-  invocationId,
-  paymentMethod,
-  tokenCost = 0,
-  stripeCustomerId,
-  metadata = {}
-}) {
-  if (!isDatabaseConfigured() || !listingSlug) return false;
-  await ensureAccountRow(accountId, { source: "usage_event" });
-  await query(
-    `INSERT INTO usage_events(
-       id, account_id, listing_slug, invocation_id, payment_method,
-       token_cost, stripe_customer_id, metadata
-     )
-     VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-     ON CONFLICT (id) DO UPDATE SET
-       account_id = COALESCE(EXCLUDED.account_id, usage_events.account_id),
-       listing_slug = EXCLUDED.listing_slug,
-       invocation_id = COALESCE(EXCLUDED.invocation_id, usage_events.invocation_id),
-       payment_method = EXCLUDED.payment_method,
-       token_cost = EXCLUDED.token_cost,
-       stripe_customer_id = COALESCE(EXCLUDED.stripe_customer_id, usage_events.stripe_customer_id),
-       metadata = usage_events.metadata || EXCLUDED.metadata`,
-    [
-      id,
-      accountId || null,
-      listingSlug,
-      invocationId || null,
-      paymentMethod || "unknown",
-      tokenCost,
-      stripeCustomerId || null,
-      JSON.stringify(metadata)
-    ]
   );
   return true;
 }
@@ -283,30 +252,8 @@ async function recordWorkflowSubmission({
 async function accountUsageSummary(accountId, limit = 50) {
   if (!isDatabaseConfigured() || !accountId) return null;
   await ensureAccountRow(accountId, { source: "usage_summary" });
-  const [account, wallet, ledger, usage, payments, invocations, submissions] = await Promise.all([
+  const [account, invocations, submissions] = await Promise.all([
     query("SELECT * FROM accounts WHERE id = $1", [accountId]),
-    query("SELECT * FROM token_wallets WHERE account_id = $1", [accountId]),
-    query(
-      `SELECT * FROM token_ledger
-       WHERE account_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2`,
-      [accountId, limit]
-    ),
-    query(
-      `SELECT * FROM usage_events
-       WHERE account_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2`,
-      [accountId, limit]
-    ),
-    query(
-      `SELECT * FROM payments
-       WHERE account_id = $1
-       ORDER BY created_at DESC
-       LIMIT $2`,
-      [accountId, limit]
-    ),
     query(
       `SELECT * FROM invocation_logs
        WHERE caller_id = $1
@@ -324,30 +271,26 @@ async function accountUsageSummary(accountId, limit = 50) {
   ]);
   return {
     account: account.rows[0] || null,
-    wallet: wallet.rows[0] || null,
-    ledger: ledger.rows,
-    usageEvents: usage.rows,
-    payments: payments.rows,
     invocationLogs: invocations.rows,
     workflowSubmissions: submissions.rows
   };
 }
 
-async function recordInvocationLog(log, listingSlug) {
+async function recordInvocationLog(log, apiSlug) {
   if (!isDatabaseConfigured() || !log) return false;
   await query(
     `INSERT INTO invocation_logs(
-       id, skill_id, listing_slug, caller_id, status, input_hash, output_hash,
+       id, skill_id, api_slug, caller_id, status, input_hash, output_hash,
        policy_decision, metadata
      )
      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
      ON CONFLICT (id) DO UPDATE SET
-       listing_slug = COALESCE(EXCLUDED.listing_slug, invocation_logs.listing_slug),
+       api_slug = COALESCE(EXCLUDED.api_slug, invocation_logs.api_slug),
        metadata = invocation_logs.metadata || EXCLUDED.metadata`,
     [
       log.id,
       log.skillId || null,
-      listingSlug || null,
+      apiSlug || null,
       log.callerId || null,
       log.status,
       log.inputHash || null,
@@ -364,12 +307,11 @@ module.exports = {
   ensureAccountRow,
   getPool,
   isDatabaseConfigured,
-  listPublishedApis,
+  listApis,
   migrate,
   query,
   recordInvocationLog,
-  recordUsageEvent,
   recordWorkflowSubmission,
-  upsertPublishedApi,
+  upsertApi,
   withTransaction
 };

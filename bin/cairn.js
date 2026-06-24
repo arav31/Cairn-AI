@@ -23,21 +23,23 @@ function parseInput(value) {
 }
 
 function usage() {
-  return `Cairn CLI
+  return `Cairn CLI — your private, reusable workflow APIs
 
 Usage:
-  cairn catalog [--base-url URL]
   cairn account create --account ACCOUNT_ID [--base-url URL]
-  cairn wallet --account ACCOUNT_ID [--base-url URL]
-  cairn buy-tokens --pack starter --account ACCOUNT_ID [--base-url URL]
-  cairn invoke --tool SLUG --account ACCOUNT_ID --input '{"zipCode":"78701"}' [--base-url URL]
-  cairn readme --tool SLUG [--base-url URL]
-  cairn guide [--tool SLUG] [--base-url URL]
+  cairn login --account ACCOUNT_ID [--base-url URL]
+  cairn apis [--base-url URL]
+  cairn record --title "..." --url https://... --goal "..." [--base-url URL]
+  cairn call --api SLUG --input '{"zipCode":"78701"}' [--base-url URL]
+  cairn readme --api SLUG [--base-url URL]
+  cairn openapi --api SLUG [--base-url URL]
+  cairn mcp list [--base-url URL]
+  cairn mcp call --api OPERATION_NAME --input '{...}' [--base-url URL]
 
 Defaults:
   --base-url ${DEFAULT_BASE_URL}
   --account demo-user
-  CAIRN_AGENT_KEY is sent as the bearer key for protected API calls.
+  CAIRN_AGENT_KEY is sent as the bearer key. Every API is private to your account.
 `;
 }
 
@@ -54,49 +56,58 @@ async function main() {
     return;
   }
 
-  if (command === "catalog") {
-    process.stdout.write(`${compact(await client.catalog())}\n`);
-    return;
-  }
-
-  if (command === "account" && subcommand === "create") {
+  if ((command === "account" && subcommand === "create") || command === "login") {
     process.stdout.write(`${compact(await client.createAccount(accountId))}\n`);
     return;
   }
 
-  if (command === "wallet") {
-    process.stdout.write(`${compact(await client.wallet(accountId))}\n`);
+  if (command === "apis") {
+    process.stdout.write(`${compact(await client.listApis())}\n`);
     return;
   }
 
-  if (command === "buy-tokens") {
-    const packId = readFlag(args, "pack", "starter");
-    process.stdout.write(`${compact(await client.buyTokens(packId, accountId))}\n`);
+  if (command === "record") {
+    const result = await client.recordWorkflow({
+      title: readFlag(args, "title") || "Untitled workflow",
+      targetUrl: readFlag(args, "url"),
+      goal: readFlag(args, "goal") || ""
+    });
+    process.stdout.write(`${compact(result)}\n`);
     return;
   }
 
-  if (command === "invoke") {
-    const tool = readFlag(args, "tool");
-    if (!tool) throw new Error("Missing --tool");
+  if (command === "call") {
+    const api = readFlag(args, "api");
+    if (!api) throw new Error("Missing --api");
     const input = parseInput(readFlag(args, "input", "{}"));
-    process.stdout.write(`${compact(await client.invoke(tool, {
-      input,
-      accountId,
-      paymentMethod: "tokens"
-    }))}\n`);
+    process.stdout.write(`${compact(await client.invoke(api, { input, accountId }))}\n`);
     return;
   }
 
   if (command === "readme") {
-    const tool = readFlag(args, "tool");
-    if (!tool) throw new Error("Missing --tool");
-    process.stdout.write(`${await client.toolReadme(tool)}\n`);
+    const api = readFlag(args, "api");
+    if (!api) throw new Error("Missing --api");
+    process.stdout.write(`${await client.apiReadme(api)}\n`);
     return;
   }
 
-  if (command === "guide") {
-    const tool = readFlag(args, "tool");
-    process.stdout.write(`${compact(await client.integrationGuide(tool))}\n`);
+  if (command === "openapi") {
+    const api = readFlag(args, "api");
+    if (!api) throw new Error("Missing --api");
+    process.stdout.write(`${compact(await client.apiOpenApi(api))}\n`);
+    return;
+  }
+
+  if (command === "mcp" && subcommand === "list") {
+    process.stdout.write(`${compact(await client.mcpToolList())}\n`);
+    return;
+  }
+
+  if (command === "mcp" && subcommand === "call") {
+    const api = readFlag(args, "api");
+    if (!api) throw new Error("Missing --api (the MCP tool / operation name)");
+    const input = parseInput(readFlag(args, "input", "{}"));
+    process.stdout.write(`${compact(await client.mcpCall(api, input, { accountId }))}\n`);
     return;
   }
 

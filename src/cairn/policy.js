@@ -1,13 +1,13 @@
 const { now, stableHash } = require("./utils");
 
-function createSkill(operation) {
+function createSkill(operation, owner = "Integration Operations") {
   return {
     id: `skill.${operation.name}`,
     operationId: operation.id,
     operationVersion: operation.version,
     title: operation.title,
     description: operation.description,
-    owner: "Integration Operations",
+    owner,
     scopes: operation.requiredScopes,
     allowedDomains: operation.allowedDomains,
     maxFrequencyPerMinute: operation.riskTier === "read" ? 30 : 5,
@@ -15,14 +15,7 @@ function createSkill(operation) {
     approvalStatus: "approved",
     currentVerifiedVersion: operation.version,
     rollbackVersion: null,
-    marketplace: {
-      visibility: "internal",
-      pricingModel: "disabled_for_pilot",
-      billableUnit: "invocation",
-      usageMeterId: null,
-      stripeSellerAccount: null,
-      agenticCommerceEnabled: false
-    },
+    visibility: "private",
     updatedAt: now()
   };
 }

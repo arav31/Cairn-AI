@@ -1,16 +1,16 @@
 {
   "name": "Cairn",
-  "description": "Marketplace for workflow APIs that agents can call and pay for.",
-  "catalog": "/api/catalog",
-  "pricing": "/pricing",
+  "description": "Record a browser workflow once and reuse it forever as a durable, private API. Every API is scoped to its owning account and called with an agent key.",
+  "model": "private",
+  "apis": "/api/apis",
   "tools": "/api/tools",
   "mcp": "/mcp",
   "openapi": "/openapi.json",
-  "payments": {
-    "provider": "stripe",
-    "sharedPaymentTokens": true,
-    "tokens": true,
-    "tokenWallet": "/api/tokens/wallet",
-    "tokenCheckout": "/api/tokens/checkout"
+  "record": "/api/workflows/recordings",
+  "auth": {
+    "type": "bearer",
+    "createAccount": "/api/accounts",
+    "header": "Authorization: Bearer <agentKey>",
+    "note": "Every API is private to its owning account. List, inspect, and call them with that account's agent key."
   }
 }

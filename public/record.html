@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Record a workflow | Cairn</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="browser-frame">
+    <div class="browser-chrome" aria-hidden="true">
+      <span class="window-dot red"></span>
+      <span class="window-dot amber"></span>
+      <span class="window-dot green"></span>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Cairn navigation">
+        <a class="sidebar-brand" href="/">
+          <span class="brand-symbol">C</span>
+          <span>Cairn</span>
+        </a>
+        <nav class="sidebar-nav">
+          <a href="/dashboard"><span>▣</span> My APIs</a>
+          <a class="active" href="/record"><span>＋</span> Record a workflow</a>
+          <a href="/settings"><span>⚙</span> Settings</a>
+        </nav>
+
+        <section class="endpoint-card" aria-label="Agent endpoints">
+          <h2>Agent endpoints</h2>
+          <a href="/mcp"><span>MCP endpoint</span><code>/mcp</code></a>
+          <a href="/openapi.json"><span>OpenAPI</span><code>/openapi.json</code></a>
+          <a href="/.well-known/cairn.json"><span>Discovery</span><code>/.well-known/cairn.json</code></a>
+        </section>
+      </aside>
+
+      <main class="app-stage">
+        <header class="app-header">
+          <div>
+            <p class="eyebrow">Turn a task into an API</p>
+            <h1>Record a workflow</h1>
+            <p>Describe a browser task you already do. Cairn compiles it into a durable, private API — typed, verified, and yours.</p>
+          </div>
+        </header>
+
+        <div class="record-layout">
+          <section class="detail-pane">
+            <div class="detail-section">
+              <h3>Describe the workflow</h3>
+              <form id="record-form" class="contribute-form">
+                <label>Task name
+                  <input name="title" placeholder="e.g. Compare insurance prices" autocomplete="off" required>
+                </label>
+                <label>Website or starting point
+                  <input name="targetUrl" placeholder="https://app.example.com" autocomplete="off">
+                </label>
+                <label>What should the API return?
+                  <textarea name="goal" placeholder="e.g. The lowest quote and its provider for a given zip code and coverage type." required></textarea>
+                </label>
+                <button type="submit">Record workflow</button>
+                <p id="record-status" class="form-status" role="status"></p>
+              </form>
+            </div>
+          </section>
+
+          <aside class="detail-pane">
+            <div class="detail-section">
+              <p class="eyebrow">No site of your own?</p>
+              <h3>Run a sandbox demo recording</h3>
+              <p class="muted-copy">These are built-in sandbox targets so you can watch the record → API flow end to end without your own site. The new API lands in My APIs once it verifies.</p>
+              <div class="demo-actions">
+                <button id="demo-meridian" class="ghost-button" type="button">Meridian CRM</button>
+                <button id="demo-civic" class="ghost-button" type="button">Civic Records</button>
+              </div>
+              <p id="demo-status" class="form-status" role="status"></p>
+              <a class="checkout-link" href="/dashboard">Back to My APIs</a>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="/common.js"></script>
+  <script src="/record.js"></script>
+</body>
+</html>

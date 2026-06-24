@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings | Cairn</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="browser-frame">
+    <div class="browser-chrome" aria-hidden="true">
+      <span class="window-dot red"></span>
+      <span class="window-dot amber"></span>
+      <span class="window-dot green"></span>
+    </div>
+
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Cairn navigation">
+        <a class="sidebar-brand" href="/">
+          <span class="brand-symbol">C</span>
+          <span>Cairn</span>
+        </a>
+        <nav class="sidebar-nav">
+          <a href="/dashboard"><span>▣</span> My APIs</a>
+          <a href="/record"><span>＋</span> Record a workflow</a>
+          <a class="active" href="/settings"><span>⚙</span> Settings</a>
+        </nav>
+
+        <section class="endpoint-card" aria-label="Agent endpoints">
+          <h2>Agent endpoints</h2>
+          <a href="/mcp"><span>MCP endpoint</span><code>/mcp</code></a>
+          <a href="/openapi.json"><span>OpenAPI</span><code>/openapi.json</code></a>
+          <a href="/.well-known/cairn.json"><span>Discovery</span><code>/.well-known/cairn.json</code></a>
+        </section>
+      </aside>
+
+      <main class="app-stage">
+        <header class="app-header">
+          <div>
+            <p class="eyebrow">Account &amp; access</p>
+            <h1>Settings</h1>
+            <p>Manage the account this browser is linked to and the agent key your agents authenticate with.</p>
+          </div>
+        </header>
+
+        <div class="settings-layout">
+          <section class="detail-pane">
+            <div class="detail-section">
+              <h3>Account</h3>
+              <p class="muted-copy">Create a new account or load an existing one. The account id scopes every API you record.</p>
+              <label>Account id
+                <input id="account-id-input" value="demo-user" autocomplete="off">
+              </label>
+              <button id="account-button" type="button">Create / load account</button>
+              <p id="account-status" class="form-status" role="status"></p>
+            </div>
+
+            <div class="detail-section" id="agent-key-section">
+              <h3>Agent key</h3>
+              <p class="muted-copy">Your agents authenticate with this bearer key. Keep it secret. Cairn only shows a newly created key once — copy it now.</p>
+              <div id="agent-key-display"></div>
+            </div>
+          </section>
+
+          <aside class="detail-pane">
+            <div class="detail-section">
+              <h3>Attach an existing key</h3>
+              <p class="muted-copy">Already have an agent key from another browser? Paste it here to link this browser to that account.</p>
+              <label>Account id
+                <input id="attach-account-id" placeholder="demo-user" autocomplete="off">
+              </label>
+              <label>Agent key
+                <input id="attach-agent-key" placeholder="Bearer key" autocomplete="off">
+              </label>
+              <button id="attach-button" class="ghost-button" type="button">Attach this browser</button>
+              <p id="attach-status" class="form-status" role="status"></p>
+            </div>
+          </aside>
+        </div>
+      </main>
+    </div>
+  </div>
+  <script src="/common.js"></script>
+  <script src="/settings.js"></script>
+</body>
+</html>
