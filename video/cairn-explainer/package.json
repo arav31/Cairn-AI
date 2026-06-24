@@ -1,0 +1,36 @@
+{
+  "name": "cairn-explainer-video",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "prepare-showcase": "node scripts/write-showcase-manifest.mjs",
+    "prepare-voiceover": "node scripts/write-voiceover-manifest.mjs",
+    "prepare-assets": "npm run prepare-showcase && npm run prepare-voiceover",
+    "generate-voiceover": "node scripts/generate-voiceover.mjs",
+    "studio": "npm run prepare-assets && remotion studio src/index.ts",
+    "still": "npm run prepare-assets && remotion still src/index.ts CairnReusableApiExplainer out/stills/frame-1200.png --frame=1200",
+    "still:problem": "npm run prepare-assets && remotion still src/index.ts CairnReusableApiExplainer out/stills/frame-300.png --frame=300",
+    "still:solution": "npm run prepare-assets && remotion still src/index.ts CairnReusableApiExplainer out/stills/frame-1500.png --frame=1500",
+    "still:showcase": "npm run prepare-assets && remotion still src/index.ts CairnReusableApiExplainer out/stills/frame-1950.png --frame=1950",
+    "render": "npm run prepare-assets && remotion render src/index.ts CairnReusableApiExplainer out/cairn-reusable-api-explainer-silent.mp4 --codec=h264 --pixel-format=yuv420p --muted --concurrency=3 --timeout=120000",
+    "render:voiceover": "npm run prepare-assets && remotion render src/index.ts CairnReusableApiExplainer out/cairn-reusable-api-explainer-voiceover.mp4 --codec=h264 --pixel-format=yuv420p --concurrency=3 --timeout=120000",
+    "download-assets": "node scripts/download-assets.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test test/*.test.ts"
+  },
+  "dependencies": {
+    "@remotion/media": "4.0.482",
+    "@remotion/cli": "4.0.482",
+    "remotion": "4.0.482",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  }
+}
