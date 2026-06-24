@@ -48,11 +48,22 @@ function applyAgentAuth(payload) {
 }
 
 /*
- * cairnFetch injects the bearer key from localStorage and parses JSON.
- * Returns { ok, status, payload }. Pass { auth: false } to skip the bearer
- * (used only when creating a brand-new account).
+ * In demo mode the server publishes a shared demo account via the discovery
+ * doc, so a fresh — or stale — browser can recover its session automatically.
+ * Returns { accountId, agentKey } or null (e.g. outside demo mode).
  */
-async function cairnFetch(path, options = {}) {
+async function fetchDemoAccount() {
+  try {
+    const response = await fetch("/.well-known/cairn.json");
+    if (!response.ok) return null;
+    const body = await response.json();
+    return body && body.demo && body.demo.agentKey ? body.demo : null;
+  } catch (error) {
+    return null;
+  }
+}
+
+async function rawFetch(path, options = {}) {
   const { method = "GET", body, auth = true, headers = {} } = options;
   const session = getSession();
   const finalHeaders = { ...headers };
@@ -73,6 +84,25 @@ async function cairnFetch(path, options = {}) {
     payload = await response.text();
   }
   return { ok: response.ok, status: response.status, payload };
+}
+
+/*
+ * cairnFetch injects the bearer key from localStorage and parses JSON.
+ * Returns { ok, status, payload }. Pass { auth: false } to skip the bearer.
+ * Self-heals a stale/expired key: on a 401 it re-acquires the shared demo
+ * session (demo mode) and retries once, so a restarted server never strands
+ * the browser on an old key.
+ */
+async function cairnFetch(path, options = {}) {
+  let result = await rawFetch(path, options);
+  if (result.status === 401 && options.auth !== false && !options._healed) {
+    const demo = await fetchDemoAccount();
+    if (demo) {
+      saveSession(demo);
+      result = await rawFetch(path, { ...options, _healed: true });
+    }
+  }
+  return result;
 }
 
 /* Relative-time formatter for "last verified" / "created" lines. */
