@@ -3,7 +3,7 @@ export const COMPOSITION = {
   width: 1920,
   height: 1080,
   fps: 30,
-  durationInFrames: 2700,
+  durationInFrames: 3240,
 } as const;
 
 export const VOICEOVER_AUDIO_PATH =
@@ -47,28 +47,28 @@ export const scenes: Scene[] = [
   scene({
     id: "cold-open",
     start: 0,
-    end: 6,
+    end: 4,
     kicker: "// current state",
-    title: "Agents are still doing work through websites.",
+    title: "Stop making agents click the same site twice.",
     body:
-      "Browser agents can do it, but the browser is the wrong production interface for repeated work.",
-    labels: ["browser", "forms", "portals", "dashboards"],
+      "Stop making agents click through the same site over and over.",
+    labels: ["browser loop", "repeated work", "agent ops"],
     visual: "Terminal title card over a warm halftone wavefield.",
     narration:
-      "Agents can use browsers. But repeated production work deserves better than a clunky browser interface.",
+      "Stop making agents click through the same site over and over.",
   }),
   scene({
     id: "browser-loop",
-    start: 6,
-    end: 20,
+    start: 4,
+    end: 15,
     kicker: "// the browser loop",
-    title: "Every run repeats the same fragile loop.",
+    title: "Browser agents are useful for exploration.",
     body:
-      "Observe the page. Plan the next click. Wait for UI. Read screenshots. Fill forms. Retry when the site changes.",
-    labels: ["slow", "token-heavy", "brittle", "hard to audit"],
+      "In production, every run pays again in screenshots, planning, waits, retries, and UI drift.",
+    labels: ["screenshots", "planning", "waits", "retries", "UI drift"],
     visual: "Looping browser frame with task chips stacking into visible operational drag.",
     narration:
-      "A browser agent can click through the task, but every run spends tokens observing, planning, clicking, waiting, and recovering. It is slow, token-heavy, brittle, and hard to audit.",
+      "Browser agents are useful for exploration. But in production, every run pays again in screenshots, planning, waits, retries, and UI drift.",
     asset: {
       kind: "stock-video",
       path: "assets/stock/analytics-laptop.mp4",
@@ -77,16 +77,16 @@ export const scenes: Scene[] = [
   }),
   scene({
     id: "repetition-cost",
-    start: 20,
-    end: 34,
-    kicker: "// hidden cost",
-    title: "The workflow is discovered again every time.",
+    start: 15,
+    end: 28,
+    kicker: "// cairn shift",
+    title: "Cairn changes the interface.",
     body:
-      "The useful part is not the clicks. It is the hidden request flow behind the task. That should become reusable infrastructure.",
-    labels: ["same task", "new trace", "more tokens", "more latency"],
+      "Record one authorized browser workflow, verify it, and turn it into a private API your agents can call directly.",
+    labels: ["record", "verify", "private API", "agent call"],
     visual: "Three repeated agent runs collapse into one reusable contract outline.",
     narration:
-      "The expensive part is that the same workflow gets rediscovered every time. Cairn treats that repeated browser grind as something that should be compiled once, then reused.",
+      "Cairn changes the interface. Record one authorized browser workflow, verify it, and turn it into a private API your agents can call directly.",
     asset: {
       kind: "stock-video",
       path: "assets/stock/code-laptop.mp4",
@@ -95,16 +95,16 @@ export const scenes: Scene[] = [
   }),
   scene({
     id: "record-once",
-    start: 34,
-    end: 48,
-    kicker: "// cairn",
-    title: "Record the task once.",
+    start: 28,
+    end: 42,
+    kicker: "// record once",
+    title: "A browser task becomes a durable operation.",
     body:
-      "An authorized user performs the workflow. Cairn captures the client-visible backend flow and turns the task into a durable operation.",
-    labels: ["authorized session", "request graph", "inputs", "success state"],
+      "Name the workflow, define the result you want, and record it once.",
+    labels: ["business renewal", "target site", "success result", "one recording"],
     visual: "Browser recording transforms into a structured operation card.",
     narration:
-      "With Cairn, an authorized user performs the workflow once. Cairn captures the backend flow visible to that session and builds a durable operation from it.",
+      "In this demo, a business renewal check starts as a normal browser task. Name the workflow, define the result you want, and record it once.",
     asset: {
       kind: "stock-video",
       path: "assets/stock/private-team.mp4",
@@ -113,29 +113,29 @@ export const scenes: Scene[] = [
   }),
   scene({
     id: "typed-api",
-    start: 48,
-    end: 62,
+    start: 42,
+    end: 55,
     kicker: "// reusable interface",
-    title: "The browser workflow becomes a typed API.",
+    title: "Cairn publishes a stable contract.",
     body:
-      "Agents stop clicking. They call a private API with a stable contract: HTTP, OpenAPI, MCP, SDK, and CLI.",
-    labels: ["HTTP", "OpenAPI", "MCP", "SDK", "CLI"],
+      "Invoke endpoint, OpenAPI, MCP, SDK, and curl are generated from the captured request flow.",
+    labels: ["invoke endpoint", "OpenAPI", "MCP", "SDK", "curl"],
     visual: "Endpoint cards fan out from one workflow operation.",
     narration:
-      "The result is not another browser run. It is a typed API your own agents can call directly through HTTP, OpenAPI, MCP, an SDK, or a CLI.",
+      "Cairn captures the request flow behind that session and publishes a stable contract: invoke endpoint, OpenAPI, MCP, SDK, and curl.",
   }),
   scene({
     id: "showcase",
-    start: 62,
-    end: 72,
-    kicker: "// showcase slot",
-    title: "Drop the product showcase here.",
+    start: 55,
+    end: 77,
+    kicker: "// product walkthrough",
+    title: "The workflow becomes an API surface.",
     body:
-      "Place the final MP4 at public/assets/showcase/cairn-showcase.mp4 and this segment becomes the live walkthrough.",
-    labels: ["reserved", "10 seconds", "drop-in MP4"],
-    visual: "Branded placeholder panel until the final product showcase file is supplied.",
+      "My APIs, copyable endpoints, structured input, JSON output, and verification health are all generated from one workflow.",
+    labels: ["My APIs", "copy endpoints", "structured input", "JSON result", "health"],
+    visual: "Recorded product walkthrough of the Business Renewals API flow.",
     narration:
-      "This section is reserved for the actual product walkthrough. Drop in the showcase file and the explainer will use it without changing the story.",
+      "Here is the workflow as a product surface. The new Business Renewals API lands in My APIs, exposes copyable endpoints, accepts structured input, returns JSON, and tracks verification health.",
     asset: {
       kind: "showcase-video",
       path: "assets/showcase/cairn-showcase.mp4",
@@ -143,16 +143,16 @@ export const scenes: Scene[] = [
   }),
   scene({
     id: "reliability",
-    start: 72,
-    end: 82,
-    kicker: "// durability",
-    title: "Stable contract. Verified execution.",
+    start: 77,
+    end: 94,
+    kicker: "// downstream payoff",
+    title: "The benefits compound after the first recording.",
     body:
-      "Cairn verifies the workflow, watches for drift, repairs broken plans, and keeps the API contract stable for callers.",
-    labels: ["verify", "health checks", "drift detection", "repair"],
+      "Agents spend fewer tokens, run faster, leave cleaner audit trails, and keep calling the same contract when the site changes.",
+    labels: ["fewer tokens", "faster runs", "audit trails", "stable contract", "repair"],
     visual: "Health timeline moves from verified to drift detected to repaired.",
     narration:
-      "Cairn verifies before activation, monitors health, detects drift, and repairs the underlying plan while keeping the caller's API contract stable.",
+      "Downstream, agents spend fewer tokens, run faster, produce cleaner audit trails, and keep calling the same contract even when the website changes underneath.",
     asset: {
       kind: "stock-video",
       path: "assets/stock/server-room.mp4",
@@ -161,16 +161,16 @@ export const scenes: Scene[] = [
   }),
   scene({
     id: "conclusion",
-    start: 82,
-    end: 90,
+    start: 94,
+    end: 108,
     kicker: "// conclusion",
-    title: "Cairn turns browser work into your reusable API.",
+    title: "No browser loop. No repeated rediscovery.",
     body:
-      "Record once. Reuse forever. Private to your account. Built for agents that need reliable work, not repeated clicks.",
-    labels: ["private API", "typed API", "durable", "agent-ready"],
+      "Cairn turns website work into reusable infrastructure. Record once. Reuse forever.",
+    labels: ["private API", "typed API", "durable", "agent-ready", "reusable"],
     visual: "Final Cairn mark with one workflow flowing into one stable endpoint.",
     narration:
-      "Cairn turns browser work into your reusable API. Record once. Reuse forever.",
+      "No browser loop. No repeated rediscovery. Cairn turns website work into reusable infrastructure. Record once. Reuse forever.",
   }),
 ];
 

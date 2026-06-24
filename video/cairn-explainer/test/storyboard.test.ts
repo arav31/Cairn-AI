@@ -10,6 +10,19 @@ import {
   voiceoverCues,
 } from "../src/storyboard";
 
+type VoiceoverMetadataScene = {
+  sceneId: string;
+  start: number;
+  end: number;
+  preparedDuration: number;
+  speed: number;
+};
+
+type VoiceoverMetadata = {
+  timelineDuration: number;
+  scenes: VoiceoverMetadataScene[];
+};
+
 const packageJson = JSON.parse(
   readFileSync(new URL("../package.json", import.meta.url), "utf8"),
 );
@@ -19,6 +32,12 @@ const generationCues = JSON.parse(
 const elevenLabsConfig = JSON.parse(
   readFileSync(new URL("../voiceover/elevenlabs.json", import.meta.url), "utf8"),
 );
+const voiceoverMetadata = JSON.parse(
+  readFileSync(
+    new URL("../public/assets/voiceover/cairn-explainer/metadata.json", import.meta.url),
+    "utf8",
+  ),
+) as VoiceoverMetadata;
 
 const textFromScenes = scenes
   .flatMap((scene) => [
@@ -32,13 +51,13 @@ const textFromScenes = scenes
   .join("\n");
 
 describe("Cairn explainer storyboard", () => {
-  it("runs exactly 90 seconds at 30fps", () => {
+  it("runs exactly 108 seconds at 30fps", () => {
     assert.equal(COMPOSITION.fps, 30);
     assert.equal(COMPOSITION.width, 1920);
     assert.equal(COMPOSITION.height, 1080);
-    assert.equal(COMPOSITION.durationInFrames, 2700);
+    assert.equal(COMPOSITION.durationInFrames, 3240);
     assert.equal(scenes[0]?.start, 0);
-    assert.equal(scenes.at(-1)?.end, 90);
+    assert.equal(scenes.at(-1)?.end, 108);
   });
 
   it("keeps scenes contiguous and ordered", () => {
@@ -60,22 +79,24 @@ describe("Cairn explainer storyboard", () => {
     });
   });
 
-  it("centers the problem on clunky, token-heavy browser agents", () => {
+  it("centers the problem on repeated browser-agent overhead", () => {
     assert.match(textFromScenes, /browser agents/i);
-    assert.match(textFromScenes, /token-heavy/i);
-    assert.match(textFromScenes, /slow/i);
-    assert.match(textFromScenes, /brittle/i);
-    assert.match(textFromScenes, /hard to audit/i);
-    assert.match(textFromScenes, /wrong production interface/i);
+    assert.match(textFromScenes, /screenshots/i);
+    assert.match(textFromScenes, /planning/i);
+    assert.match(textFromScenes, /waits/i);
+    assert.match(textFromScenes, /retries/i);
+    assert.match(textFromScenes, /UI drift/i);
   });
 
-  it("reserves a future showcase mp4 drop-in segment", () => {
+  it("uses the real product walkthrough as the showcase segment", () => {
     const showcase = scenes.find((scene) => scene.id === "showcase");
     assert.ok(showcase, "showcase scene exists");
-    assert.equal(showcase.start, 62);
-    assert.equal(showcase.end, 72);
+    assert.equal(showcase.start, 55);
+    assert.equal(showcase.end, 77);
     assert.equal(showcase.asset?.kind, "showcase-video");
     assert.equal(showcase.asset?.path, "assets/showcase/cairn-showcase.mp4");
+    assert.match(showcase.title, /API surface/i);
+    assert.match(showcase.body, /structured input/i);
   });
 
   it("uses stock videos instead of stock still images", () => {
@@ -127,6 +148,7 @@ describe("Cairn explainer storyboard", () => {
 
   it("uses expressive ElevenLabs cues without polluting the clean script", () => {
     assert.equal(elevenLabsConfig.modelId, "eleven_v3");
+    assert.equal(elevenLabsConfig.timelineSeconds, 108);
     assert.match(elevenLabsConfig.voiceName, /Bright, Warm/);
     assert.ok(elevenLabsConfig.voiceSettings.style >= 0.7);
     assert.ok(elevenLabsConfig.voiceSettings.stability < 0.5);
@@ -136,6 +158,21 @@ describe("Cairn explainer storyboard", () => {
       assert.match(cue.ttsText, /\[[^\]]+\]/);
       assert.ok(cue.ttsText.includes(cue.narration.slice(0, 24)));
     }
+  });
+
+  it("keeps generated voiceover pacing tight without harsh compression", () => {
+    assert.equal(voiceoverMetadata.timelineDuration, 108);
+    for (const scene of voiceoverMetadata.scenes) {
+      assert.ok(scene.speed <= 1.1, `${scene.sceneId} speed is ${scene.speed}`);
+    }
+
+    const firstMinuteScenes = voiceoverMetadata.scenes.filter((scene) => scene.end <= 55);
+    const spokenSeconds = firstMinuteScenes.reduce(
+      (total, scene) => total + scene.preparedDuration,
+      0,
+    );
+
+    assert.ok(spokenSeconds / 55 > 0.65, "first minute avoids long empty gaps");
   });
 
   it("keeps separate silent and voiced render commands", () => {

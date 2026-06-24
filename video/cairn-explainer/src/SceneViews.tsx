@@ -67,8 +67,7 @@ const LabelGrid = ({labels, dark = false}: {labels: string[]; dark?: boolean}) =
 );
 
 export const ColdOpen = ({scene}: SceneViewProps) => {
-  const {frame, fps} = useSceneFrame();
-  const title = enterProgress(frame, fps, 0.15, 0.9);
+  const title = 1;
   return (
     <div style={{height: "100%", display: "grid", placeItems: "center"}}>
       <div style={{width: 1280}}>
@@ -308,62 +307,66 @@ export const TypedApi = ({scene}: SceneViewProps) => {
 
 export const ShowcaseScene = ({scene, showcaseVideoAvailable = false}: SceneViewProps) => (
   <div style={{height: "100%", display: "grid", placeItems: "center"}}>
-    <Panel
-      style={{
-        width: 1320,
-        height: 675,
-        overflow: "hidden",
-        position: "relative",
-        background: theme.dark,
-        color: theme.bg2,
-      }}
-      dark
-    >
-      {showcaseVideoAvailable ? (
-        <Video
-          src={staticFile("assets/showcase/cairn-showcase.mp4")}
-          muted
-          objectFit="cover"
-          style={{width: "100%", height: "100%"}}
-        />
-      ) : (
-        <div style={{position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 76}}>
-          <div style={{textAlign: "center"}}>
-            <Brand />
-            <div style={{height: 42}} />
-            <Title size={58} maxWidth={1080} dark>
-              {scene.title}
-            </Title>
-            <Body maxWidth={1040} dark>
-              {scene.body}
-            </Body>
-            <div style={{display: "flex", justifyContent: "center"}}>
-              <LabelGrid labels={scene.labels} dark />
+    <div style={{width: 1540}}>
+      <div style={{display: "flex", justifyContent: "space-between", alignItems: "end", marginBottom: 24}}>
+        <div>
+          <Eyebrow dark>{scene.kicker}</Eyebrow>
+          <Title size={42} maxWidth={920} dark>
+            {scene.title}
+          </Title>
+        </div>
+        <div style={{display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "end", maxWidth: 520}}>
+          {scene.labels.slice(0, 3).map((label, index) => (
+            <CodeChip key={label} tone={index % 2 === 0 ? "moss" : "teal"}>
+              {label}
+            </CodeChip>
+          ))}
+        </div>
+      </div>
+      <Panel
+        style={{
+          width: "100%",
+          aspectRatio: "16 / 9",
+          overflow: "hidden",
+          position: "relative",
+          background: theme.dark,
+          color: theme.bg2,
+        }}
+        dark
+      >
+        {showcaseVideoAvailable ? (
+          <Video
+            src={staticFile(scene.asset?.path ?? "assets/showcase/cairn-showcase.mp4")}
+            muted
+            objectFit="contain"
+            playbackRate={19.733333 / (scene.end - scene.start)}
+            style={{width: "100%", height: "100%", background: "#070f09"}}
+          />
+        ) : (
+          <div style={{position: "absolute", inset: 0, display: "grid", placeItems: "center", padding: 76}}>
+            <div style={{textAlign: "center"}}>
+              <Brand />
+              <div style={{height: 42}} />
+              <Title size={58} maxWidth={1080} dark>
+                {scene.title}
+              </Title>
+              <Body maxWidth={1040} dark>
+                {scene.body}
+              </Body>
+              <div style={{display: "flex", justifyContent: "center"}}>
+                <LabelGrid labels={scene.labels} dark />
+              </div>
             </div>
           </div>
-        </div>
-      )}
-      <div
-        style={{
-          position: "absolute",
-          left: 28,
-          right: 28,
-          bottom: 24,
-          height: 10,
-          borderRadius: 99,
-          background: "rgba(255,248,234,0.14)",
-          overflow: "hidden",
-        }}
-      >
-        <div style={{width: "62%", height: "100%", background: theme.moss}} />
-      </div>
-    </Panel>
+        )}
+      </Panel>
+    </div>
   </div>
 );
 
 export const Reliability = ({scene}: SceneViewProps) => {
   const {frame, fps} = useSceneFrame();
-  const progress = enterProgress(frame, fps, 0.3, 1.5);
+  const progress = enterProgress(frame, fps, 0.05, 1.1);
   const states = ["verified", "drift detected", "repair candidate", "verified again"];
   return (
     <div style={{height: "100%", display: "grid", gridTemplateColumns: "0.95fr 1.05fr", gap: 64, alignItems: "center"}}>
@@ -388,28 +391,29 @@ export const Reliability = ({scene}: SceneViewProps) => {
         </div>
         <div style={{display: "grid", gap: 30}}>
           {states.map((state, index) => (
-            <Staggered key={state} index={index} baseDelay={0.25} step={0.18}>
-              <div style={{display: "grid", gridTemplateColumns: "86px 1fr", alignItems: "center", minHeight: 96}}>
-                <div
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 99,
-                    background: index === 1 ? theme.teal : theme.moss,
-                    boxShadow: `0 0 0 10px ${theme.bg2}`,
-                  }}
-                />
-                <div>
-                  <div style={{fontSize: 28, color: theme.ink, fontWeight: 800}}>{state}</div>
-                  <div style={{fontSize: 20, color: theme.muted, marginTop: 8}}>
-                    {index === 0 && "deterministic replay passes"}
-                    {index === 1 && "target changed underneath"}
-                    {index === 2 && "new plan generated from fresh trace"}
-                    {index === 3 && "same stable contract for agents"}
-                  </div>
+            <div
+              key={state}
+              style={{display: "grid", gridTemplateColumns: "86px 1fr", alignItems: "center", minHeight: 96}}
+            >
+              <div
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: 99,
+                  background: index === 1 ? theme.teal : theme.moss,
+                  boxShadow: `0 0 0 10px ${theme.bg2}`,
+                }}
+              />
+              <div>
+                <div style={{fontSize: 28, color: theme.ink, fontWeight: 800}}>{state}</div>
+                <div style={{fontSize: 20, color: theme.muted, marginTop: 8}}>
+                  {index === 0 && "deterministic replay passes"}
+                  {index === 1 && "target changed underneath"}
+                  {index === 2 && "new plan generated from fresh trace"}
+                  {index === 3 && "same stable contract for agents"}
                 </div>
               </div>
-            </Staggered>
+            </div>
           ))}
         </div>
       </Panel>

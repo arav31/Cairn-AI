@@ -1,6 +1,6 @@
 # Cairn Remotion Explainer
 
-Standalone Remotion source for a 90-second silent explainer video:
+Standalone Remotion source for a 108-second explainer video:
 
 ```text
 Record once. Reuse forever.
@@ -46,7 +46,9 @@ video/cairn-explainer/out/cairn-reusable-api-explainer-voiceover.mp4
 
 ## Showcase MP4
 
-The showcase segment runs from `62s` to `72s`. Until the final product capture exists, the composition renders a branded placeholder.
+The showcase segment runs from `55s` to `77s` and uses the recorded product
+walkthrough when available. Until the final product capture exists, the
+composition renders a branded placeholder.
 
 When the showcase is ready, place it here:
 
@@ -54,7 +56,9 @@ When the showcase is ready, place it here:
 video/cairn-explainer/public/assets/showcase/cairn-showcase.mp4
 ```
 
-On the next `npm run render`, Remotion detects the file and uses it inside the reserved segment.
+On the next `npm run render`, Remotion detects the file and uses it inside the
+reserved segment. The current showcase clip is the recorded Business Renewals
+walkthrough and is rendered muted under the generated narration.
 
 ## Voiceover
 
