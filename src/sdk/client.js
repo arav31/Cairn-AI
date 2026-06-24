@@ -25,6 +25,9 @@ async function parseResponse(response) {
   return body;
 }
 
+// CairnClient calls your own private, reusable APIs. Create an account once to
+// get an agent key, then list, inspect, record, and call the APIs that belong
+// to that account. There are no credits or payments.
 class CairnClient {
   constructor(options = {}) {
     this.baseUrl = trimSlash(options.baseUrl || process.env.CAIRN_BASE_URL || DEFAULT_BASE_URL);
@@ -58,25 +61,7 @@ class CairnClient {
     return this.request("/.well-known/cairn.json");
   }
 
-  catalog() {
-    return this.request("/api/catalog");
-  }
-
-  tool(slugOrName) {
-    return this.request(`/api/tools/${encodeURIComponent(slugOrName)}`);
-  }
-
-  toolReadme(slugOrName) {
-    return this.request(`/api/tools/${encodeURIComponent(slugOrName)}/readme.md`, {
-      headers: { Accept: "text/markdown" }
-    });
-  }
-
-  integrationGuide(slugOrName) {
-    const suffix = slugOrName ? `/${encodeURIComponent(slugOrName)}` : "";
-    return this.request(`/api/integrations${suffix}`);
-  }
-
+  // Create (or attach to) an account and capture its agent key.
   async createAccount(accountId = this.accountId) {
     this.accountId = accountId || this.accountId;
     const result = await this.request("/api/accounts", {
@@ -89,64 +74,43 @@ class CairnClient {
     return result;
   }
 
-  wallet(accountId = this.accountId) {
-    return this.request(`/api/tokens/wallet?accountId=${encodeURIComponent(accountId)}`);
+  // List the APIs that belong to your account.
+  listApis() {
+    return this.request("/api/apis");
   }
 
-  tokenQuote(packId = "starter", accountId = this.accountId) {
-    return this.request("/api/tokens/quote", {
-      method: "POST",
-      body: { packId, accountId }
+  // Inspect one of your APIs (contract, verification, endpoints).
+  getApi(slug) {
+    return this.request(`/api/apis/${encodeURIComponent(slug)}`);
+  }
+
+  apiReadme(slug) {
+    return this.request(`/api/tools/${encodeURIComponent(slug)}/readme.md`, {
+      headers: { Accept: "text/markdown" }
     });
   }
 
-  async buyTokens(packId = "starter", accountId = this.accountId) {
-    const quote = await this.tokenQuote(packId, accountId);
-    return this.request("/api/tokens/checkout", {
+  apiOpenApi(slug) {
+    return this.request(`/api/tools/${encodeURIComponent(slug)}/openapi.json`);
+  }
+
+  // Submit a workflow recording so Cairn can compile it into a private API.
+  recordWorkflow({ title, targetUrl, goal, artifacts = [] } = {}) {
+    return this.request("/api/workflows/recordings", {
+      method: "POST",
+      body: { title, targetUrl, goal, artifacts }
+    });
+  }
+
+  // Call one of your APIs. Auth-gated, never payment-gated.
+  invoke(slug, options = {}) {
+    const accountId = options.accountId || this.accountId;
+    return this.request(`/api/tools/${encodeURIComponent(slug)}/invoke`, {
       method: "POST",
       body: {
-        packId,
-        accountId,
-        quote: quote.quote,
-        buyer: { accountId }
+        input: options.input || {},
+        caller: options.caller || { id: accountId }
       }
-    });
-  }
-
-  toolQuote(slugOrName, input = {}) {
-    return this.request(`/api/tools/${encodeURIComponent(slugOrName)}/quote`, {
-      method: "POST",
-      body: { input }
-    });
-  }
-
-  toolCheckout(slugOrName, input = {}, buyer = {}) {
-    return this.request(`/api/tools/${encodeURIComponent(slugOrName)}/checkout`, {
-      method: "POST",
-      body: { input, buyer }
-    });
-  }
-
-  invoke(slugOrName, options = {}) {
-    const accountId = options.accountId || this.accountId;
-    const body = {
-      input: options.input || {},
-      caller: options.caller
-    };
-    if (options.demo) {
-      body.demo = true;
-    } else if (options.paymentMethod === "tokens" || options.useTokens !== false) {
-      body.paymentMethod = "tokens";
-      body.tokenAccountId = accountId;
-      body.caller = body.caller || { id: accountId };
-    } else {
-      body.payment = options.payment;
-      body.sharedPaymentToken = options.sharedPaymentToken;
-      body.stripeCustomerId = options.stripeCustomerId;
-    }
-    return this.request(`/api/tools/${encodeURIComponent(slugOrName)}/invoke`, {
-      method: "POST",
-      body
     });
   }
 
@@ -172,11 +136,7 @@ class CairnClient {
         params: {
           name,
           arguments: args,
-          paymentMethod: options.paymentMethod || "tokens",
-          tokenAccountId: accountId,
-          demo: options.demo,
-          payment: options.payment,
-          sharedPaymentToken: options.sharedPaymentToken
+          caller: options.caller || { id: accountId }
         }
       }
     });

@@ -262,7 +262,7 @@ function compareInsuranceQuotes(input) {
       confidence: quote.confidence,
       source: "Recorded workflow demo"
     })),
-    notes: "Synthetic quote results for the Cairn marketplace demo."
+    notes: "Synthetic quote results for a recorded Cairn workflow."
   };
 }
 
@@ -290,7 +290,7 @@ function searchProperties(input) {
     maxPrice,
     bedrooms: minBedrooms,
     results: matches,
-    notes: "Synthetic property results for the Cairn marketplace demo."
+    notes: "Synthetic property results for a recorded Cairn workflow."
   };
 }
 
@@ -323,7 +323,7 @@ function checkBusinessRenewals(input) {
       status: match.renewalStatus,
       source: "Recorded workflow demo"
     },
-    notes: "Synthetic business renewal result for the Cairn marketplace demo."
+    notes: "Synthetic business renewal result for a recorded Cairn workflow."
   };
 }
 

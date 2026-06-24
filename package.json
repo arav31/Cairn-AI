@@ -2,7 +2,18 @@
   "name": "cairn",
   "version": "0.1.0",
   "private": false,
-  "description": "Cairn marketplace and SDK for agent-callable workflow APIs.",
+  "description": "Cairn turns a browser workflow into a durable, private, reusable API you and your agents own and call forever.",
+  "keywords": [
+    "workflow",
+    "api",
+    "automation",
+    "agents",
+    "mcp",
+    "openapi",
+    "private-api",
+    "browser-automation",
+    "record-and-reuse"
+  ],
   "type": "commonjs",
   "main": "src/sdk/client.js",
   "exports": {
