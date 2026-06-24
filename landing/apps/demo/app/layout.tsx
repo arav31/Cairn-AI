@@ -3,12 +3,13 @@ import './globals.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://cairn.local'),
-  title: 'Cairn — turn browser workflows into agent-ready APIs',
+  title: 'Cairn — record once, reuse forever',
   description:
-    'Cairn records slow web workflows once, compiles them into reusable skills, and gives agents a faster API path for repeat work.',
+    'Cairn turns a browser task you do by hand into a durable, private API — typed, verified, and yours. You and your agents call it forever, and Cairn repairs it when the site changes.',
   openGraph: {
-    title: 'Cairn',
-    description: 'Agent-ready APIs from recorded browser workflows.',
+    title: 'Cairn — record once, reuse forever',
+    description:
+      'Record a browser workflow once and get a durable, private API your agents own — verified end to end and repaired when targets change.',
     type: 'website',
   },
 };
