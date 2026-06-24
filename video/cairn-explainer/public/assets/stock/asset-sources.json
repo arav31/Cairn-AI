@@ -1,0 +1,26 @@
+{
+  "license": "Pexels free-use license. Attribution is not required but appreciated.",
+  "licenseUrl": "https://www.pexels.com/license/",
+  "assets": [
+    {
+      "file": "public/assets/stock/analytics-laptop.mp4",
+      "source": "https://www.pexels.com/video/a-man-using-a-laptop-8480289/",
+      "credit": "Pexels video 8480289"
+    },
+    {
+      "file": "public/assets/stock/code-laptop.mp4",
+      "source": "https://www.pexels.com/video/a-programmer-working-on-a-laptop-computer-13522186/",
+      "credit": "Pexels video 13522186 by Raddy"
+    },
+    {
+      "file": "public/assets/stock/private-team.mp4",
+      "source": "https://www.pexels.com/video/team-are-working-using-their-laptop-7989451/",
+      "credit": "Pexels video 7989451 by Mikhail Nilov"
+    },
+    {
+      "file": "public/assets/stock/server-room.mp4",
+      "source": "https://www.pexels.com/video/blue-colored-cables-1085656/",
+      "credit": "Pexels video 1085656"
+    }
+  ]
+}

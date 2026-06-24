@@ -1,0 +1,92 @@
+{
+  "provider": "elevenlabs",
+  "voiceId": "hpp4J3VqNfWAUOO0d1Us",
+  "voiceName": "Bella - Professional, Bright, Warm",
+  "modelId": "eleven_v3",
+  "outputFormat": "mp3_44100_128",
+  "timelineOutput": "public/assets/voiceover/cairn-explainer/cairn-explainer-voiceover.wav",
+  "timelineDuration": 90,
+  "generatedAt": "2026-06-24T20:35:12.876Z",
+  "scenes": [
+    {
+      "sceneId": "cold-open",
+      "start": 0,
+      "end": 6,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/cold-open.mp3",
+      "sourceDuration": 6.32,
+      "preparedDuration": 5.839,
+      "speed": 1.086,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "browser-loop",
+      "start": 6,
+      "end": 20,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/browser-loop.mp3",
+      "sourceDuration": 11.52,
+      "preparedDuration": 11.52,
+      "speed": 1,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "repetition-cost",
+      "start": 20,
+      "end": 34,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/repetition-cost.mp3",
+      "sourceDuration": 10.64,
+      "preparedDuration": 10.64,
+      "speed": 1,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "record-once",
+      "start": 34,
+      "end": 48,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/record-once.mp3",
+      "sourceDuration": 9.68,
+      "preparedDuration": 9.68,
+      "speed": 1,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "typed-api",
+      "start": 48,
+      "end": 62,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/typed-api.mp3",
+      "sourceDuration": 12.16,
+      "preparedDuration": 12.16,
+      "speed": 1,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "showcase",
+      "start": 62,
+      "end": 72,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/showcase.mp3",
+      "sourceDuration": 8.08,
+      "preparedDuration": 8.08,
+      "speed": 1,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "reliability",
+      "start": 72,
+      "end": 82,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/reliability.mp3",
+      "sourceDuration": 9.44,
+      "preparedDuration": 9.44,
+      "speed": 1,
+      "usesExpressiveText": true
+    },
+    {
+      "sceneId": "conclusion",
+      "start": 82,
+      "end": 90,
+      "source": "public/assets/voiceover/cairn-explainer/scenes/conclusion.mp3",
+      "sourceDuration": 6.72,
+      "preparedDuration": 6.72,
+      "speed": 1,
+      "usesExpressiveText": true
+    }
+  ]
+}

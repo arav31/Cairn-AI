@@ -12,3 +12,5 @@ dist/
 coverage/
 *.local
 .vercel
+
+video/cairn-explainer/out/
