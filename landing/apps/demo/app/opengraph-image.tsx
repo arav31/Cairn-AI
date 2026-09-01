@@ -23,7 +23,7 @@ export default function OpenGraphImage(): ImageResponse {
         }}
       >
         <div style={{ fontSize: 22, color: '#4f7f2a', letterSpacing: '0.08em', display: 'flex' }}>
-          $ node src/cli.js
+          $ cairn record &lt;url&gt;
         </div>
         <div
           style={{
@@ -39,7 +39,7 @@ export default function OpenGraphImage(): ImageResponse {
           <span style={{ color: '#4f7f2a' }}>cairn</span>
         </div>
         <div style={{ fontSize: 28, marginTop: 36, color: '#68705f', display: 'flex' }}>
-          record browser workflows once. run them as reusable agent skills.
+          record once. reuse forever — durable, private APIs for your agents.
         </div>
       </div>
     ),

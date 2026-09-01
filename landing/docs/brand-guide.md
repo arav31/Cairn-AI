@@ -20,10 +20,10 @@ Cairn uses a light beige technical landing page: warm sand surfaces, moss comman
 
 - First viewport is full-screen and product-led.
 - Brand sits top-left as `> cairn`.
-- Nav points to product surfaces: `Platform`, `Marketplace`, `Security`, `Launch`.
-- Main headline explains the product in one pass: Cairn turns recorded browser workflows into verified agent-ready APIs.
+- Nav points to product surfaces: `How it works`, `What you get`, `Demo`, and an `Open app` button.
+- Main headline leads with the promise — Record once. Reuse forever. — then explains: Cairn turns a recorded browser workflow into a durable, private API.
 - No floating product card in the first viewport.
-- Mobile keeps the animated background, stacks content cleanly, and reduces nav to the launch link.
+- Mobile keeps the animated background, stacks content cleanly, and reduces the nav to the Open app button.
 
 ## Motion
 
@@ -36,9 +36,10 @@ Cairn uses a light beige technical landing page: warm sand surfaces, moss comman
 
 Use short product language:
 
-- `recorded browser workflows into verified agent-ready APIs`
-- `Record once. Run directly. Repair when targets change.`
-- `company-private marketplace for verified automation APIs`
+- `Record once. Reuse forever.`
+- `a durable, private API — typed, verified, and yours`
+- `your private, durable API for verified browser automations`
+- `repaired when the site changes`
 - `authorized by design`
 
-Avoid marketing filler and avoid explaining the visual effect in public copy.
+Avoid marketing filler and avoid explaining the visual effect in public copy. Do not describe Cairn as a marketplace — APIs are private to each account and team.
